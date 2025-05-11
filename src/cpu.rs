@@ -101,6 +101,8 @@ impl CPU {
 
                 0xF0 => self.beq(&opcode.mode),
 
+                0x24 | 0x2C => self.bit(&opcode.mode),
+
                 0xa9 | 0xa5 | 0xb5 | 0xad | 0xbd | 0xb9 | 0xa1 | 0xb1 => {
                     self.lda(&opcode.mode);
                 }
@@ -142,10 +144,24 @@ impl CPU {
         self.mem_write(addr + 1, hi);
     }
 
-    fn set_status_flag(&mut self, flag: u8, set: bool) {
-        self.status = match set {
-            true => self.status | flag,
-            false => self.status & (!flag),
+    fn copy_bit_to_status(&mut self, data: u8, source_flag: u8, status_flag: u8) {
+        let mut set = self.status;
+        set = set & !status_flag; //clear the flag bit
+        if data & source_flag == source_flag {
+            set = set | status_flag;
+        }
+        self.status = set;
+    }
+
+    fn remove_status_flag_if_true(&mut self, flag: u8, set: bool) {
+        if set {
+            self.status = self.status & !flag;
+        }
+    }
+
+    fn set_status_flag_if_true(&mut self, flag: u8, set: bool) {
+        if set {
+            self.status = self.status | flag;
         }
     }
 
@@ -216,10 +232,10 @@ impl CPU {
 
         let new_sign = Self::get_flag(self.register_a, NEGATIVE_FLAG);
 
-        self.set_status_flag(OVERFLOW_FLAG, new_sign != sign);
-        self.set_status_flag(CARRY_FLAG, carry);
-        self.set_status_flag(ZERO_FLAG, self.register_a == 0);
-        self.set_status_flag(
+        self.set_status_flag_if_true(OVERFLOW_FLAG, new_sign != sign);
+        self.set_status_flag_if_true(CARRY_FLAG, carry);
+        self.set_status_flag_if_true(ZERO_FLAG, self.register_a == 0);
+        self.set_status_flag_if_true(
             NEGATIVE_FLAG,
             Self::get_flag(self.register_a, NEGATIVE_FLAG),
         );
@@ -230,8 +246,8 @@ impl CPU {
         let value = self.mem_read(addr);
 
         self.register_a = self.register_a & value;
-        self.set_status_flag(ZERO_FLAG, self.register_a == 0);
-        self.set_status_flag(
+        self.set_status_flag_if_true(ZERO_FLAG, self.register_a == 0);
+        self.set_status_flag_if_true(
             NEGATIVE_FLAG,
             Self::get_flag(self.register_a, NEGATIVE_FLAG),
         );
@@ -239,12 +255,12 @@ impl CPU {
 
     fn asl(&mut self, mode: &AddressingMode) {
         if *mode == AddressingMode::Accumulator {
-            let set_carry = Self::get_flag(self.register_a, NEGATIVE_FLAG);
+            let old = self.register_a;
             self.register_a = self.register_a << 1;
 
-            self.set_status_flag(ZERO_FLAG, self.register_a == 0);
-            self.set_status_flag(CARRY_FLAG, set_carry);
-            self.set_status_flag(
+            self.set_status_flag_if_true(ZERO_FLAG, self.register_a == 0);
+            self.copy_bit_to_status(old, NEGATIVE_FLAG, CARRY_FLAG);
+            self.set_status_flag_if_true(
                 NEGATIVE_FLAG,
                 Self::get_flag(self.register_a, NEGATIVE_FLAG),
             );
@@ -252,16 +268,15 @@ impl CPU {
         }
 
         let addr = self.get_operand_address(mode);
-        let mut value = self.mem_read(addr);
-        let set_carry = Self::get_flag(value, NEGATIVE_FLAG);
+        let old = self.mem_read(addr);
 
-        value = value << 1;
+        let value = old << 1;
 
         self.mem_write(addr, value);
 
-        self.set_status_flag(ZERO_FLAG, self.register_a == 0);
-        self.set_status_flag(CARRY_FLAG, set_carry);
-        self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG));
+        self.set_status_flag_if_true(ZERO_FLAG, self.register_a == 0);
+        self.copy_bit_to_status(old, NEGATIVE_FLAG, CARRY_FLAG);
+        self.set_status_flag_if_true(NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG));
     }
 
     fn lda(&mut self, mode: &AddressingMode) {
@@ -269,8 +284,8 @@ impl CPU {
         let value = self.mem_read(addr);
 
         self.register_a = value;
-        self.set_status_flag(ZERO_FLAG, self.register_a == 0);
-        self.set_status_flag(
+        self.set_status_flag_if_true(ZERO_FLAG, self.register_a == 0);
+        self.set_status_flag_if_true(
             NEGATIVE_FLAG,
             Self::get_flag(self.register_a, NEGATIVE_FLAG),
         );
@@ -283,8 +298,8 @@ impl CPU {
 
     fn tax(&mut self) {
         self.register_x = self.register_a;
-        self.set_status_flag(ZERO_FLAG, self.register_x == 0);
-        self.set_status_flag(
+        self.set_status_flag_if_true(ZERO_FLAG, self.register_x == 0);
+        self.set_status_flag_if_true(
             NEGATIVE_FLAG,
             Self::get_flag(self.register_x, NEGATIVE_FLAG),
         );
@@ -292,8 +307,8 @@ impl CPU {
 
     fn inx(&mut self) {
         self.register_x = self.register_x.wrapping_add(1);
-        self.set_status_flag(ZERO_FLAG, self.register_x == 0);
-        self.set_status_flag(
+        self.set_status_flag_if_true(ZERO_FLAG, self.register_x == 0);
+        self.set_status_flag_if_true(
             NEGATIVE_FLAG,
             Self::get_flag(self.register_x, NEGATIVE_FLAG),
         );
@@ -327,6 +342,15 @@ impl CPU {
         let address = self.get_operand_address(mode);
         let value = self.mem_read(address);
         self.program_counter = self.program_counter + (value as u16);
+    }
+
+    fn bit(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+
+        self.set_status_flag_if_true(ZERO_FLAG, value & self.register_a == 0);
+        self.copy_bit_to_status(value, OVERFLOW_FLAG, OVERFLOW_FLAG);
+        self.copy_bit_to_status(value, NEGATIVE_FLAG, NEGATIVE_FLAG);
     }
 }
 
@@ -508,6 +532,34 @@ mod test {
         cpu.register_a = 240;
         cpu.run();
         assert_eq!(240, cpu.mem_read(0x00A1));
+    }
+
+    #[test]
+    fn test_bit_0x24_zero_page() {
+        let mut cpu = CPU::new();
+        //Jump forward by 4 (to a STA instruction, check that we do in fact store)
+        cpu.load(vec![0x24, 0xA1]);
+        cpu.reset();
+        cpu.mem_write(0xA1, 0b1001_0110);
+        cpu.register_a = 0b0110_1001;
+        cpu.run();
+        assert!(cpu.status & ZERO_FLAG == ZERO_FLAG);
+        assert!(cpu.status & NEGATIVE_FLAG == NEGATIVE_FLAG);
+        assert!(cpu.status & OVERFLOW_FLAG == 0);
+    }
+
+    #[test]
+    fn test_bit_0x2c_absolute() {
+        let mut cpu = CPU::new();
+        //Jump forward by 4 (to a STA instruction, check that we do in fact store)
+        cpu.load(vec![0x2c, 0xA1, 0x0F, 0x00]);
+        cpu.reset();
+        cpu.mem_write_u16(0x0FA1, 0b0101_0110);
+        cpu.register_a = 0b1110_1001;
+        cpu.run();
+        assert!(cpu.status & ZERO_FLAG == 0);
+        assert!(cpu.status & NEGATIVE_FLAG == 0);
+        assert!(cpu.status & OVERFLOW_FLAG == OVERFLOW_FLAG);
     }
 
     #[test]

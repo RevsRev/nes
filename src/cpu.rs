@@ -2,13 +2,23 @@ use std::collections::HashMap;
 use crate::opp;
 
 //Flags
-pub const ZERO_FLAG: u8 = 0b0000_0010;
-pub const NEGATIVE_FLAG: u8 = 0b1000_0000;
+pub const CARRY_FLAG: u8                = 0b0000_0001;
+pub const ZERO_FLAG: u8                 = 0b0000_0010;
+pub const INTERRUPT_DISABLE_FLAG: u8    = 0b0000_0100;
+pub const DECIMAL_MODE_FLAG: u8         = 0b0000_1000;
+pub const BREAK_FLAG: u8                = 0b0001_0000;
+pub const BREAK2_FLAG: u8               = 0b0010_0000;
+pub const OVERFLOW_FLAG: u8             = 0b0100_0000;
+pub const NEGATIVE_FLAG: u8             = 0b1000_0000;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 #[allow(non_camel_case_types)]
 pub enum AddressingMode {
+    Accumulator,
+    Implied,
     Immediate,
+    Indirect,
+    Relative,
     ZeroPage,
     ZeroPage_X,
     ZeroPage_Y,
@@ -71,6 +81,18 @@ impl CPU {
             let opcode = opcodes.get(&code).expect(&format!("OpCode {:x} is not recognized", code));
 
             match code {
+                0x69 | 0x65 | 0x75 | 0x6D | 0x7D | 0x79 | 0x61 | 0x71 => {
+                    self.adc(&opcode.mode);
+                }
+
+                0x29 | 0x25 | 0x35 | 0x2D | 0x3D | 0x39 | 0x21 | 0x31 => {
+                    self.and(&opcode.mode);
+                }
+
+                0x0A | 0x06 | 0x16 | 0x0E | 0x1E => {
+                    self.asl(&opcode.mode);
+                }
+
                 0xa9 | 0xa5 | 0xb5 | 0xad | 0xbd | 0xb9 | 0xa1 | 0xb1 => {
                     self.lda(&opcode.mode);
                 }
@@ -125,7 +147,7 @@ impl CPU {
 
     fn get_operand_address(&mut self, mode: &AddressingMode) -> u16 {
         match mode {
-            AddressingMode::Immediate => self.program_counter,
+            AddressingMode::Immediate | AddressingMode::Implied => self.program_counter,
             AddressingMode::ZeroPage => self.mem_read(self.program_counter) as u16,
             AddressingMode::Absolute => self.mem_read_u16(self.program_counter),
             AddressingMode::ZeroPage_X => {
@@ -162,10 +184,63 @@ impl CPU {
                 let hi = self.mem_read(ptr.wrapping_add(1) as u16);
                 (hi as u16) << 8 | (lo as u16)
             }
-            AddressingMode::NoneAddressing => {
+            AddressingMode::NoneAddressing | AddressingMode::Accumulator | AddressingMode::Indirect | AddressingMode::Relative => {
                 panic!("mode {:?} is not supported", mode);
             }
         }
+    }
+
+    fn adc(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+        let carry = match self.register_a.checked_add(value) {
+            Some(_sum) => false,
+            None => true,
+        };
+        
+        let sign = Self::get_flag(self.register_a, NEGATIVE_FLAG);
+        
+        self.register_a = self.register_a.wrapping_add(value);
+
+        let new_sign = Self::get_flag(self.register_a, NEGATIVE_FLAG);
+
+        self.set_status_flag(OVERFLOW_FLAG, new_sign != sign);
+        self.set_status_flag(CARRY_FLAG, carry);
+        self.set_status_flag(ZERO_FLAG, self.register_a == 0);
+        self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(self.register_a, NEGATIVE_FLAG));
+    }
+
+    fn and(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+
+        self.register_a = self.register_a & value;
+        self.set_status_flag(ZERO_FLAG, self.register_a == 0);
+        self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(self.register_a, NEGATIVE_FLAG));
+    }
+
+    fn asl(&mut self, mode: &AddressingMode) {
+        if *mode == AddressingMode::Accumulator {
+            let set_carry = Self::get_flag(self.register_a, NEGATIVE_FLAG);
+            self.register_a = self.register_a << 1;
+            
+            self.set_status_flag(ZERO_FLAG, self.register_a == 0);
+            self.set_status_flag(CARRY_FLAG, set_carry);
+            self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(self.register_a, NEGATIVE_FLAG));
+            return;
+        }
+
+        let addr = self.get_operand_address(mode);
+        let mut value = self.mem_read(addr);
+        let set_carry = Self::get_flag(value, NEGATIVE_FLAG);
+        
+        value = value << 1;
+
+        self.mem_write(addr, value);
+
+        self.set_status_flag(ZERO_FLAG, self.register_a == 0);
+        self.set_status_flag(CARRY_FLAG, set_carry);
+        self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG));
     }
 
     fn lda(&mut self, mode: &AddressingMode) {
@@ -208,7 +283,113 @@ impl CPU {
 #[allow(non_snake_case)]
 mod test {
     use super::*;
-    
+   
+    #[test]
+    fn test_adc_0x69_carry_no_overflow_or_negative() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x69, 0x82, 0x00]);
+        cpu.reset();
+        cpu.register_a = 0x7F;
+        cpu.run();
+        assert_eq!(0x01, cpu.register_a);
+        assert!(CARRY_FLAG & cpu.status == CARRY_FLAG);
+        assert!(OVERFLOW_FLAG & cpu.status == 0);
+        assert!(ZERO_FLAG & cpu.status == 0);
+        assert!(NEGATIVE_FLAG & cpu.status == 0);
+    }
+
+    #[test]
+    fn test_adc_0x69_overflow_and_negative_flag() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x69, 0x03, 0x00]);
+        cpu.reset();
+        cpu.register_a = 0x7F;
+        cpu.run();
+        assert_eq!(0x82, cpu.register_a);
+        assert!(CARRY_FLAG & cpu.status == 0);
+        assert!(OVERFLOW_FLAG & cpu.status == OVERFLOW_FLAG);
+        assert!(ZERO_FLAG & cpu.status == 0);
+        assert!(NEGATIVE_FLAG & cpu.status == NEGATIVE_FLAG);
+    }
+
+    #[test]
+    fn test_adc_0x69_negative_flag_no_overflow() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x69, 0x03, 0x00]);
+        cpu.reset();
+        cpu.register_a = 0x8F;
+        cpu.run();
+        assert_eq!(0x92, cpu.register_a);
+        assert!(CARRY_FLAG & cpu.status == 0);
+        assert!(OVERFLOW_FLAG & cpu.status == 0);
+        assert!(ZERO_FLAG & cpu.status == 0);
+        assert!(NEGATIVE_FLAG & cpu.status == NEGATIVE_FLAG);
+    }
+
+    #[test]
+    fn test_adc_0x69_zero_flag() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x69, 0x01, 0x00]);
+        cpu.reset();
+        cpu.register_a = 0xFF;
+        cpu.run();
+        assert_eq!(0x00, cpu.register_a);
+        assert!(CARRY_FLAG & cpu.status == CARRY_FLAG);
+        assert!(OVERFLOW_FLAG & cpu.status == OVERFLOW_FLAG);
+        assert!(ZERO_FLAG & cpu.status == ZERO_FLAG);
+        assert!(NEGATIVE_FLAG & cpu.status == 0);
+    }
+
+    #[test]
+    fn test_and_0x29() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x29, 0xF1, 0x00]);
+        cpu.reset();
+        cpu.register_a = 0xB3;
+        cpu.run();
+        assert_eq!(0xB1, cpu.register_a);
+        assert!(NEGATIVE_FLAG & cpu.status == NEGATIVE_FLAG);
+    }
+
+    #[test]
+    fn test_and_0x3d_absolute_addr() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x3d, 0xF1, 0xa2, 0x00]);
+        cpu.mem_write(0xa2f1, 0x03);
+        cpu.reset();
+        cpu.register_a = 0xB0;
+        cpu.run();
+        assert_eq!(0x00, cpu.register_a);
+        assert!(NEGATIVE_FLAG & cpu.status == 0);
+        assert!(ZERO_FLAG & cpu.status == ZERO_FLAG);
+    }
+
+    #[test]
+    fn test_asl_0x0a_accumulator_addr() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x0a, 0x00]);
+        cpu.reset();
+        cpu.register_a = 0xB2;
+        cpu.run();
+        assert_eq!(0x64, cpu.register_a);
+        assert!(NEGATIVE_FLAG & cpu.status == 0);
+        assert!(ZERO_FLAG & cpu.status == 0);
+        assert!(CARRY_FLAG & cpu.status == CARRY_FLAG);
+    }
+
+    #[test]
+    fn test_asl_0x0e_absolute_addr() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x0E, 0xF1, 0xA2, 0x00]);
+        cpu.reset();
+        cpu.mem_write_u16(0xA2F1, 0x43);
+        cpu.run();
+        assert_eq!(0x86, cpu.mem_read_u16(0xA2F1));
+        assert!(NEGATIVE_FLAG & cpu.status == NEGATIVE_FLAG);
+        assert!(ZERO_FLAG & cpu.status == ZERO_FLAG);
+        assert!(CARRY_FLAG & cpu.status == 0);
+    }
+
     #[test]
     fn test_0x85_sta_zero_page() {
         let mut cpu = CPU::new();

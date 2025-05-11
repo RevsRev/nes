@@ -97,6 +97,8 @@ impl CPU {
 
                 0x90 => self.bcc(&opcode.mode),
 
+                0xB0 => self.bcs(&opcode.mode),
+
                 0xa9 | 0xa5 | 0xb5 | 0xad | 0xbd | 0xb9 | 0xa1 | 0xb1 => {
                     self.lda(&opcode.mode);
                 }
@@ -304,6 +306,16 @@ impl CPU {
         let value = self.mem_read(address);
         self.program_counter = self.program_counter + (value as u16);
     }
+
+    fn bcs(&mut self, mode: &AddressingMode) {
+        if !Self::get_flag(self.status, CARRY_FLAG) {
+            return;
+        }
+
+        let address = self.get_operand_address(mode);
+        let value = self.mem_read(address);
+        self.program_counter = self.program_counter + (value as u16);
+    }
 }
 
 #[cfg(test)]
@@ -418,7 +430,7 @@ mod test {
     }
 
     #[test]
-    fn test_bcc_0x90_absolute_addr() {
+    fn test_bcc_0x90_absolute_addr_carry_flag_not_set() {
         let mut cpu = CPU::new();
         //Jump forward by 4 (to a STA instruction, check that we do in fact store)
         cpu.load(vec![0x90, 0x04, 0x00, 0x00, 0x00, 0x85, 0xA1]);
@@ -438,6 +450,29 @@ mod test {
         cpu.register_a = 240;
         cpu.run();
         assert_eq!(0, cpu.mem_read(0x00A1));
+    }
+
+    #[test]
+    fn test_bcs_0xb0_absolute_addr_carry_flag_not_set() {
+        let mut cpu = CPU::new();
+        //Jump forward by 4 (to a STA instruction, check that we do in fact store)
+        cpu.load(vec![0xB0, 0x04, 0x00, 0x00, 0x00, 0x85, 0xA1]);
+        cpu.reset();
+        cpu.register_a = 240;
+        cpu.run();
+        assert_eq!(0, cpu.mem_read(0x00A1));
+    }
+
+    #[test]
+    fn test_bcs_0xb0_absolute_addr_carry_flag_set() {
+        let mut cpu = CPU::new();
+        //Jump forward by 4 (to a STA instruction, check that we do in fact store)
+        cpu.load(vec![0xB0, 0x04, 0x00, 0x00, 0x00, 0x85, 0xA1]);
+        cpu.reset();
+        cpu.status = cpu.status | CARRY_FLAG;
+        cpu.register_a = 240;
+        cpu.run();
+        assert_eq!(240, cpu.mem_read(0x00A1));
     }
 
     #[test]

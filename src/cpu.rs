@@ -1,17 +1,18 @@
-use std::collections::HashMap;
 use crate::opp;
+use std::collections::HashMap;
+use strum_macros::Display;
 
 //Flags
-pub const CARRY_FLAG: u8                = 0b0000_0001;
-pub const ZERO_FLAG: u8                 = 0b0000_0010;
-pub const INTERRUPT_DISABLE_FLAG: u8    = 0b0000_0100;
-pub const DECIMAL_MODE_FLAG: u8         = 0b0000_1000;
-pub const BREAK_FLAG: u8                = 0b0001_0000;
-pub const BREAK2_FLAG: u8               = 0b0010_0000;
-pub const OVERFLOW_FLAG: u8             = 0b0100_0000;
-pub const NEGATIVE_FLAG: u8             = 0b1000_0000;
+pub const CARRY_FLAG: u8 = 0b0000_0001;
+pub const ZERO_FLAG: u8 = 0b0000_0010;
+pub const INTERRUPT_DISABLE_FLAG: u8 = 0b0000_0100;
+pub const DECIMAL_MODE_FLAG: u8 = 0b0000_1000;
+pub const BREAK_FLAG: u8 = 0b0001_0000;
+pub const BREAK2_FLAG: u8 = 0b0010_0000;
+pub const OVERFLOW_FLAG: u8 = 0b0100_0000;
+pub const NEGATIVE_FLAG: u8 = 0b1000_0000;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Display)]
 #[allow(non_camel_case_types)]
 pub enum AddressingMode {
     Accumulator,
@@ -36,7 +37,7 @@ pub struct CPU {
     pub register_y: u8,
     pub status: u8,
     pub program_counter: u16,
-    memory: [u8; 0xFFFF]
+    memory: [u8; 0xFFFF],
 }
 
 impl CPU {
@@ -47,7 +48,7 @@ impl CPU {
             register_y: 0,
             status: 0,
             program_counter: 0,
-            memory: [0; 0xFFFF]
+            memory: [0; 0xFFFF],
         }
     }
 
@@ -66,19 +67,20 @@ impl CPU {
     }
 
     pub fn load(&mut self, program: Vec<u8>) {
-        self.memory[0x8000 .. (0x8000 + program.len())].copy_from_slice(&program[..]);
+        self.memory[0x8000..(0x8000 + program.len())].copy_from_slice(&program[..]);
         self.mem_write_u16(0xFFFC, 0x8000);
     }
 
     pub fn run(&mut self) {
-
         let ref opcodes: HashMap<u8, &'static opp::OpCode> = *opp::OPCODES_MAP;
 
         loop {
             let code = self.mem_read(self.program_counter);
             self.program_counter += 1;
             let program_counter_state = self.program_counter;
-            let opcode = opcodes.get(&code).expect(&format!("OpCode {:x} is not recognized", code));
+            let opcode = opcodes
+                .get(&code)
+                .expect(&format!("OpCode {:x} is not recognized", code));
 
             match code {
                 0x69 | 0x65 | 0x75 | 0x6D | 0x7D | 0x79 | 0x61 | 0x71 => {
@@ -92,6 +94,8 @@ impl CPU {
                 0x0A | 0x06 | 0x16 | 0x0E | 0x1E => {
                     self.asl(&opcode.mode);
                 }
+
+                0x90 => self.bcc(&opcode.mode),
 
                 0xa9 | 0xa5 | 0xb5 | 0xad | 0xbd | 0xb9 | 0xa1 | 0xb1 => {
                     self.lda(&opcode.mode);
@@ -147,7 +151,9 @@ impl CPU {
 
     fn get_operand_address(&mut self, mode: &AddressingMode) -> u16 {
         match mode {
-            AddressingMode::Immediate | AddressingMode::Implied => self.program_counter,
+            AddressingMode::Immediate | AddressingMode::Implied | AddressingMode::Relative => {
+                self.program_counter
+            }
             AddressingMode::ZeroPage => self.mem_read(self.program_counter) as u16,
             AddressingMode::Absolute => self.mem_read_u16(self.program_counter),
             AddressingMode::ZeroPage_X => {
@@ -184,7 +190,9 @@ impl CPU {
                 let hi = self.mem_read(ptr.wrapping_add(1) as u16);
                 (hi as u16) << 8 | (lo as u16)
             }
-            AddressingMode::NoneAddressing | AddressingMode::Accumulator | AddressingMode::Indirect | AddressingMode::Relative => {
+            AddressingMode::NoneAddressing
+            | AddressingMode::Accumulator
+            | AddressingMode::Indirect => {
                 panic!("mode {:?} is not supported", mode);
             }
         }
@@ -197,9 +205,9 @@ impl CPU {
             Some(_sum) => false,
             None => true,
         };
-        
+
         let sign = Self::get_flag(self.register_a, NEGATIVE_FLAG);
-        
+
         self.register_a = self.register_a.wrapping_add(value);
 
         let new_sign = Self::get_flag(self.register_a, NEGATIVE_FLAG);
@@ -207,7 +215,10 @@ impl CPU {
         self.set_status_flag(OVERFLOW_FLAG, new_sign != sign);
         self.set_status_flag(CARRY_FLAG, carry);
         self.set_status_flag(ZERO_FLAG, self.register_a == 0);
-        self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(self.register_a, NEGATIVE_FLAG));
+        self.set_status_flag(
+            NEGATIVE_FLAG,
+            Self::get_flag(self.register_a, NEGATIVE_FLAG),
+        );
     }
 
     fn and(&mut self, mode: &AddressingMode) {
@@ -216,24 +227,30 @@ impl CPU {
 
         self.register_a = self.register_a & value;
         self.set_status_flag(ZERO_FLAG, self.register_a == 0);
-        self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(self.register_a, NEGATIVE_FLAG));
+        self.set_status_flag(
+            NEGATIVE_FLAG,
+            Self::get_flag(self.register_a, NEGATIVE_FLAG),
+        );
     }
 
     fn asl(&mut self, mode: &AddressingMode) {
         if *mode == AddressingMode::Accumulator {
             let set_carry = Self::get_flag(self.register_a, NEGATIVE_FLAG);
             self.register_a = self.register_a << 1;
-            
+
             self.set_status_flag(ZERO_FLAG, self.register_a == 0);
             self.set_status_flag(CARRY_FLAG, set_carry);
-            self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(self.register_a, NEGATIVE_FLAG));
+            self.set_status_flag(
+                NEGATIVE_FLAG,
+                Self::get_flag(self.register_a, NEGATIVE_FLAG),
+            );
             return;
         }
 
         let addr = self.get_operand_address(mode);
         let mut value = self.mem_read(addr);
         let set_carry = Self::get_flag(value, NEGATIVE_FLAG);
-        
+
         value = value << 1;
 
         self.mem_write(addr, value);
@@ -277,13 +294,23 @@ impl CPU {
             Self::get_flag(self.register_x, NEGATIVE_FLAG),
         );
     }
+
+    fn bcc(&mut self, mode: &AddressingMode) {
+        if Self::get_flag(self.status, CARRY_FLAG) {
+            return;
+        }
+
+        let address = self.get_operand_address(mode);
+        let value = self.mem_read(address);
+        self.program_counter = self.program_counter + (value as u16);
+    }
 }
 
 #[cfg(test)]
 #[allow(non_snake_case)]
 mod test {
     use super::*;
-   
+
     #[test]
     fn test_adc_0x69_carry_no_overflow_or_negative() {
         let mut cpu = CPU::new();
@@ -388,6 +415,29 @@ mod test {
         assert!(NEGATIVE_FLAG & cpu.status == NEGATIVE_FLAG);
         assert!(ZERO_FLAG & cpu.status == ZERO_FLAG);
         assert!(CARRY_FLAG & cpu.status == 0);
+    }
+
+    #[test]
+    fn test_bcc_0x90_absolute_addr() {
+        let mut cpu = CPU::new();
+        //Jump forward by 4 (to a STA instruction, check that we do in fact store)
+        cpu.load(vec![0x90, 0x04, 0x00, 0x00, 0x00, 0x85, 0xA1]);
+        cpu.reset();
+        cpu.register_a = 240;
+        cpu.run();
+        assert_eq!(240, cpu.mem_read(0x00A1));
+    }
+
+    #[test]
+    fn test_bcc_0x90_absolute_addr_carry_flag_set() {
+        let mut cpu = CPU::new();
+        //Jump forward by 4 (to a STA instruction, check that we do in fact store)
+        cpu.load(vec![0x90, 0x04, 0x00, 0x00, 0x00, 0x85, 0xA1]);
+        cpu.reset();
+        cpu.status = cpu.status | CARRY_FLAG;
+        cpu.register_a = 240;
+        cpu.run();
+        assert_eq!(0, cpu.mem_read(0x00A1));
     }
 
     #[test]
@@ -563,7 +613,7 @@ mod test {
         cpu.run();
         assert!(cpu.register_a == 0xf0);
     }
- 
+
     #[test]
     fn test_0xb1_lda_indirect_Y() {
         let mut cpu = CPU::new();

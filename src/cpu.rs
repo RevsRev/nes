@@ -103,6 +103,12 @@ impl CPU {
 
                 0x24 | 0x2C => self.bit(&opcode.mode),
 
+                0x30 => self.bmi(&opcode.mode),
+
+                0xD0 => self.bne(&opcode.mode),
+
+                0x10 => self.bpl(&opcode.mode),
+
                 0xa9 | 0xa5 | 0xb5 | 0xad | 0xbd | 0xb9 | 0xa1 | 0xb1 => {
                     self.lda(&opcode.mode);
                 }
@@ -352,6 +358,36 @@ impl CPU {
         self.copy_bit_to_status(value, OVERFLOW_FLAG, OVERFLOW_FLAG);
         self.copy_bit_to_status(value, NEGATIVE_FLAG, NEGATIVE_FLAG);
     }
+
+    fn bmi(&mut self, mode: &AddressingMode) {
+        if !Self::get_flag(self.status, NEGATIVE_FLAG) {
+            return;
+        }
+
+        let address = self.get_operand_address(mode);
+        let value = self.mem_read(address);
+        self.program_counter = self.program_counter + (value as u16);
+    }
+
+    fn bne(&mut self, mode: &AddressingMode) {
+        if Self::get_flag(self.status, ZERO_FLAG) {
+            return;
+        }
+
+        let address = self.get_operand_address(mode);
+        let value = self.mem_read(address);
+        self.program_counter = self.program_counter + (value as u16);
+    }
+
+    fn bpl(&mut self, mode: &AddressingMode) {
+        if Self::get_flag(self.status, NEGATIVE_FLAG) {
+            return;
+        }
+
+        let address = self.get_operand_address(mode);
+        let value = self.mem_read(address);
+        self.program_counter = self.program_counter + (value as u16);
+    }
 }
 
 #[cfg(test)]
@@ -560,6 +596,75 @@ mod test {
         assert!(cpu.status & ZERO_FLAG == 0);
         assert!(cpu.status & NEGATIVE_FLAG == 0);
         assert!(cpu.status & OVERFLOW_FLAG == OVERFLOW_FLAG);
+    }
+
+    #[test]
+    fn test_bmi_0x30_negative_flag_not_set() {
+        let mut cpu = CPU::new();
+        //Jump forward by 4 (to a STA instruction, check that we do in fact store)
+        cpu.load(vec![0x30, 0x04, 0x00, 0x00, 0x00, 0x85, 0xA1]);
+        cpu.reset();
+        cpu.register_a = 240;
+        cpu.run();
+        assert_eq!(0, cpu.mem_read(0x00A1));
+    }
+
+    #[test]
+    fn test_bmi_0x30_negative_flag_set() {
+        let mut cpu = CPU::new();
+        //Jump forward by 4 (to a STA instruction, check that we do in fact store)
+        cpu.load(vec![0x30, 0x04, 0x00, 0x00, 0x00, 0x85, 0xA1]);
+        cpu.reset();
+        cpu.status = cpu.status | NEGATIVE_FLAG;
+        cpu.register_a = 240;
+        cpu.run();
+        assert_eq!(240, cpu.mem_read(0x00A1));
+    }
+
+    #[test]
+    fn test_bne_0xd0_zero_flag_not_set() {
+        let mut cpu = CPU::new();
+        //Jump forward by 4 (to a STA instruction, check that we do in fact store)
+        cpu.load(vec![0xd0, 0x04, 0x00, 0x00, 0x00, 0x85, 0xA1]);
+        cpu.reset();
+        cpu.register_a = 240;
+        cpu.run();
+        assert_eq!(240, cpu.mem_read(0x00A1));
+    }
+
+    #[test]
+    fn test_bme_0xd0_zero_flag_set() {
+        let mut cpu = CPU::new();
+        //Jump forward by 4 (to a STA instruction, check that we do in fact store)
+        cpu.load(vec![0xd0, 0x04, 0x00, 0x00, 0x00, 0x85, 0xA1]);
+        cpu.reset();
+        cpu.status = cpu.status | ZERO_FLAG;
+        cpu.register_a = 240;
+        cpu.run();
+        assert_eq!(0, cpu.mem_read(0x00A1));
+    }
+
+    #[test]
+    fn test_bpl_0x10_negative_flag_not_set() {
+        let mut cpu = CPU::new();
+        //Jump forward by 4 (to a STA instruction, check that we do in fact store)
+        cpu.load(vec![0x10, 0x04, 0x00, 0x00, 0x00, 0x85, 0xA1]);
+        cpu.reset();
+        cpu.register_a = 240;
+        cpu.run();
+        assert_eq!(240, cpu.mem_read(0x00A1));
+    }
+
+    #[test]
+    fn test_bpl_0x10_negative_flag_set() {
+        let mut cpu = CPU::new();
+        //Jump forward by 4 (to a STA instruction, check that we do in fact store)
+        cpu.load(vec![0x10, 0x04, 0x00, 0x00, 0x00, 0x85, 0xA1]);
+        cpu.reset();
+        cpu.status = cpu.status | NEGATIVE_FLAG;
+        cpu.register_a = 240;
+        cpu.run();
+        assert_eq!(0, cpu.mem_read(0x00A1));
     }
 
     #[test]

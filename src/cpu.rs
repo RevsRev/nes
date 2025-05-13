@@ -109,6 +109,20 @@ impl CPU {
 
                 0x10 => self.bpl(&opcode.mode),
 
+                0x00 => break,
+
+                0x50 => self.bvc(&opcode.mode),
+
+                0x70 => self.bvs(&opcode.mode),
+
+                0x18 => self.clc(&opcode.mode),
+
+                0xD8 => self.cld(&opcode.mode),
+
+                0x58 => self.cli(&opcode.mode),
+
+                0xB8 => self.clv(&opcode.mode),
+
                 0xa9 | 0xa5 | 0xb5 | 0xad | 0xbd | 0xb9 | 0xa1 | 0xb1 => {
                     self.lda(&opcode.mode);
                 }
@@ -388,6 +402,42 @@ impl CPU {
         let value = self.mem_read(address);
         self.program_counter = self.program_counter + (value as u16);
     }
+
+    fn bvc(&mut self, mode: &AddressingMode) {
+        if Self::get_flag(self.status, OVERFLOW_FLAG) {
+            return;
+        }
+
+        let address = self.get_operand_address(mode);
+        let value = self.mem_read(address);
+        self.program_counter = self.program_counter + (value as u16);
+    }
+
+    fn bvs(&mut self, mode: &AddressingMode) {
+        if !Self::get_flag(self.status, OVERFLOW_FLAG) {
+            return;
+        }
+
+        let address = self.get_operand_address(mode);
+        let value = self.mem_read(address);
+        self.program_counter = self.program_counter + (value as u16);
+    }
+
+    fn clc(&mut self, mode: &AddressingMode) {
+        self.remove_status_flag_if_true(CARRY_FLAG, true);
+    }
+
+    fn cld(&mut self, mode: &AddressingMode) {
+        self.remove_status_flag_if_true(DECIMAL_MODE_FLAG, true);
+    }
+
+    fn cli(&mut self, mode: &AddressingMode) {
+        self.remove_status_flag_if_true(INTERRUPT_DISABLE_FLAG, true);
+    }
+
+    fn clv(&mut self, mode: &AddressingMode) {
+        self.remove_status_flag_if_true(OVERFLOW_FLAG, true);
+    }
 }
 
 #[cfg(test)]
@@ -633,7 +683,7 @@ mod test {
     }
 
     #[test]
-    fn test_bme_0xd0_zero_flag_set() {
+    fn test_bne_0xd0_zero_flag_set() {
         let mut cpu = CPU::new();
         //Jump forward by 4 (to a STA instruction, check that we do in fact store)
         cpu.load(vec![0xd0, 0x04, 0x00, 0x00, 0x00, 0x85, 0xA1]);
@@ -665,6 +715,92 @@ mod test {
         cpu.register_a = 240;
         cpu.run();
         assert_eq!(0, cpu.mem_read(0x00A1));
+    }
+
+    #[test]
+    fn test_bvc_0x50_overflow_flag_set() {
+        let mut cpu = CPU::new();
+        //Jump forward by 4 (to a STA instruction, check that we do in fact store)
+        cpu.load(vec![0x50, 0x04, 0x00, 0x00, 0x00, 0x85, 0xA1]);
+        cpu.reset();
+        cpu.status = cpu.status | OVERFLOW_FLAG;
+        cpu.register_a = 240;
+        cpu.run();
+        assert_eq!(0, cpu.mem_read(0x00A1));
+    }
+
+    #[test]
+    fn test_bvc_0x50_overflow_flag_not_set() {
+        let mut cpu = CPU::new();
+        //Jump forward by 4 (to a STA instruction, check that we do in fact store)
+        cpu.load(vec![0x50, 0x04, 0x00, 0x00, 0x00, 0x85, 0xA1]);
+        cpu.reset();
+        cpu.register_a = 240;
+        cpu.run();
+        assert_eq!(240, cpu.mem_read(0x00A1));
+    }
+
+    #[test]
+    fn test_bvs_0x70_overflow_flag_set() {
+        let mut cpu = CPU::new();
+        //Jump forward by 4 (to a STA instruction, check that we do in fact store)
+        cpu.load(vec![0x70, 0x04, 0x00, 0x00, 0x00, 0x85, 0xA1]);
+        cpu.reset();
+        cpu.status = cpu.status | OVERFLOW_FLAG;
+        cpu.register_a = 240;
+        cpu.run();
+        assert_eq!(240, cpu.mem_read(0x00A1));
+    }
+
+    #[test]
+    fn test_bvs_0x70_overflow_flag_not_set() {
+        let mut cpu = CPU::new();
+        //Jump forward by 4 (to a STA instruction, check that we do in fact store)
+        cpu.load(vec![0x70, 0x04, 0x00, 0x00, 0x00, 0x85, 0xA1]);
+        cpu.reset();
+        cpu.register_a = 240;
+        cpu.run();
+        assert_eq!(0, cpu.mem_read(0x00A1));
+    }
+
+    #[test]
+    fn test_clc_0x18() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x18, 0x00]);
+        cpu.reset();
+        cpu.status = cpu.status | CARRY_FLAG;
+        cpu.run();
+        assert!(cpu.status & CARRY_FLAG == 0);
+    }
+
+    #[test]
+    fn test_cld_0xd8() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0xD8, 0x00]);
+        cpu.reset();
+        cpu.status = cpu.status | DECIMAL_MODE_FLAG;
+        cpu.run();
+        assert!(cpu.status & DECIMAL_MODE_FLAG == 0);
+    }
+
+    #[test]
+    fn test_cli_0x58() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x58, 0x00]);
+        cpu.reset();
+        cpu.status = cpu.status | INTERRUPT_DISABLE_FLAG;
+        cpu.run();
+        assert!(cpu.status & INTERRUPT_DISABLE_FLAG == 0);
+    }
+
+    #[test]
+    fn test_clv_0xb8() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0xb8, 0x00]);
+        cpu.reset();
+        cpu.status = cpu.status | OVERFLOW_FLAG;
+        cpu.run();
+        assert!(cpu.status & OVERFLOW_FLAG == 0);
     }
 
     #[test]

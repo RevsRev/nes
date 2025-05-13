@@ -241,14 +241,26 @@ impl CPU {
     fn adc(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
-        let carry = match self.register_a.checked_add(value) {
+        let mut accumulator = self.register_a;
+        let mut carry = match accumulator.checked_add(value) {
             Some(_sum) => false,
             None => true,
         };
 
+        accumulator = accumulator.wrapping_add(value);
+
+        if Self::get_flag(self.status, CARRY_FLAG) {
+            carry = carry
+                | match accumulator.checked_add(1) {
+                    Some(_sum) => false,
+                    None => true,
+                };
+            accumulator = accumulator.wrapping_add(1);
+        }
+
         let sign = Self::get_flag(self.register_a, NEGATIVE_FLAG);
 
-        self.register_a = self.register_a.wrapping_add(value);
+        self.register_a = accumulator;
 
         let new_sign = Self::get_flag(self.register_a, NEGATIVE_FLAG);
 
@@ -501,6 +513,20 @@ mod test {
         assert!(NEGATIVE_FLAG & cpu.status == 0);
     }
 
+    #[test]
+    fn test_adc_0x69_with_carry_pre_set() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x69, 0x01, 0x00]);
+        cpu.reset();
+        cpu.register_a = 0xFE;
+        cpu.status = cpu.status | CARRY_FLAG;
+        cpu.run();
+        assert_eq!(0x00, cpu.register_a);
+        assert!(CARRY_FLAG & cpu.status == CARRY_FLAG);
+        assert!(OVERFLOW_FLAG & cpu.status == OVERFLOW_FLAG);
+        assert!(ZERO_FLAG & cpu.status == ZERO_FLAG);
+        assert!(NEGATIVE_FLAG & cpu.status == 0);
+    }
     #[test]
     fn test_and_0x29() {
         let mut cpu = CPU::new();

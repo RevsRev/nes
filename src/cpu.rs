@@ -129,6 +129,12 @@ impl CPU {
 
                 0xC0 | 0xC4 | 0xCC => self.cpy(&opcode.mode),
 
+                0xC6 | 0xD6 | 0xCE | 0xDE => self.dec(&opcode.mode),
+
+                0xCA => self.dex(&opcode.mode),
+
+                0x88 => self.dey(&opcode.mode),
+
                 0xa9 | 0xa5 | 0xb5 | 0xad | 0xbd | 0xb9 | 0xa1 | 0xb1 => {
                     self.lda(&opcode.mode);
                 }
@@ -488,6 +494,38 @@ impl CPU {
         self.set_status_flag_if_true(CARRY_FLAG, self.register_y >= value);
         self.set_status_flag_if_true(ZERO_FLAG, self.register_y == value);
         self.set_status_flag_if_true(NEGATIVE_FLAG, Self::get_flag(sub, NEGATIVE_FLAG));
+    }
+
+    fn dec(&mut self, mode: &AddressingMode) {
+        let address = self.get_operand_address(mode);
+        let value = self.mem_read(address);
+
+        let sub = value.wrapping_sub(1);
+
+        self.mem_write(address, sub);
+
+        self.set_status_flag_if_true(ZERO_FLAG, sub == 0);
+        self.set_status_flag_if_true(NEGATIVE_FLAG, Self::get_flag(sub, NEGATIVE_FLAG));
+    }
+
+    fn dex(&mut self, mode: &AddressingMode) {
+        self.register_x = self.register_x.wrapping_sub(1);
+
+        self.set_status_flag_if_true(ZERO_FLAG, self.register_x == 0);
+        self.set_status_flag_if_true(
+            NEGATIVE_FLAG,
+            Self::get_flag(self.register_x, NEGATIVE_FLAG),
+        );
+    }
+
+    fn dey(&mut self, mode: &AddressingMode) {
+        self.register_y = self.register_y.wrapping_sub(1);
+
+        self.set_status_flag_if_true(ZERO_FLAG, self.register_y == 0);
+        self.set_status_flag_if_true(
+            NEGATIVE_FLAG,
+            Self::get_flag(self.register_y, NEGATIVE_FLAG),
+        );
     }
 }
 
@@ -941,6 +979,42 @@ mod test {
         cpu.register_y = 0;
         cpu.run();
         assert!(cpu.status & CARRY_FLAG == 0);
+        assert!(cpu.status & ZERO_FLAG == 0);
+        assert!(cpu.status & NEGATIVE_FLAG == NEGATIVE_FLAG);
+    }
+
+    #[test]
+    fn test_dec_0xce() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0xCE, 0xAA, 0xAA, 0x00]);
+        cpu.mem_write(0xAAAA, 0);
+        cpu.reset();
+        cpu.run();
+        assert_eq!(cpu.mem_read(0xAAAA), 0xFF);
+        assert!(cpu.status & ZERO_FLAG == 0);
+        assert!(cpu.status & NEGATIVE_FLAG == NEGATIVE_FLAG);
+    }
+
+    #[test]
+    fn test_dex_0xca() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0xCA, 0x00]);
+        cpu.reset();
+        cpu.register_x = 1;
+        cpu.run();
+        assert_eq!(cpu.register_x, 0);
+        assert!(cpu.status & ZERO_FLAG == ZERO_FLAG);
+        assert!(cpu.status & NEGATIVE_FLAG == 0);
+    }
+
+    #[test]
+    fn test_dey_0x88() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x88, 0x00]);
+        cpu.reset();
+        cpu.register_y = 0xF9;
+        cpu.run();
+        assert_eq!(cpu.register_y, 0xF8);
         assert!(cpu.status & ZERO_FLAG == 0);
         assert!(cpu.status & NEGATIVE_FLAG == NEGATIVE_FLAG);
     }

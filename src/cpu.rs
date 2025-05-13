@@ -123,6 +123,12 @@ impl CPU {
 
                 0xB8 => self.clv(&opcode.mode),
 
+                0xC9 | 0xC5 | 0xD5 | 0xCD | 0xDD | 0xD9 | 0xC1 | 0xD1 => self.cmp(&opcode.mode),
+
+                0xE0 | 0xE4 | 0xEC => self.cpx(&opcode.mode),
+
+                0xC0 | 0xC4 | 0xCC => self.cpy(&opcode.mode),
+
                 0xa9 | 0xa5 | 0xb5 | 0xad | 0xbd | 0xb9 | 0xa1 | 0xb1 => {
                     self.lda(&opcode.mode);
                 }
@@ -449,6 +455,39 @@ impl CPU {
 
     fn clv(&mut self, mode: &AddressingMode) {
         self.remove_status_flag_if_true(OVERFLOW_FLAG, true);
+    }
+
+    fn cmp(&mut self, mode: &AddressingMode) {
+        let address = self.get_operand_address(mode);
+        let value = self.mem_read(address);
+
+        let sub = self.register_a.wrapping_sub(value);
+
+        self.set_status_flag_if_true(CARRY_FLAG, self.register_a >= value);
+        self.set_status_flag_if_true(ZERO_FLAG, self.register_a == value);
+        self.set_status_flag_if_true(NEGATIVE_FLAG, Self::get_flag(sub, NEGATIVE_FLAG));
+    }
+
+    fn cpx(&mut self, mode: &AddressingMode) {
+        let address = self.get_operand_address(mode);
+        let value = self.mem_read(address);
+
+        let sub = self.register_x.wrapping_sub(value);
+
+        self.set_status_flag_if_true(CARRY_FLAG, self.register_x >= value);
+        self.set_status_flag_if_true(ZERO_FLAG, self.register_x == value);
+        self.set_status_flag_if_true(NEGATIVE_FLAG, Self::get_flag(sub, NEGATIVE_FLAG));
+    }
+
+    fn cpy(&mut self, mode: &AddressingMode) {
+        let address = self.get_operand_address(mode);
+        let value = self.mem_read(address);
+
+        let sub = self.register_y.wrapping_sub(value);
+
+        self.set_status_flag_if_true(CARRY_FLAG, self.register_y >= value);
+        self.set_status_flag_if_true(ZERO_FLAG, self.register_y == value);
+        self.set_status_flag_if_true(NEGATIVE_FLAG, Self::get_flag(sub, NEGATIVE_FLAG));
     }
 }
 
@@ -829,6 +868,82 @@ mod test {
         assert!(cpu.status & OVERFLOW_FLAG == 0);
     }
 
+    #[test]
+    fn test_cmp_0xcd_carry_and_zero() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0xCD, 0xAA, 0xAA, 0x00]);
+        cpu.mem_write(0xAAAA, 10);
+        cpu.reset();
+        cpu.register_a = 10;
+        cpu.run();
+        assert!(cpu.status & CARRY_FLAG == CARRY_FLAG);
+        assert!(cpu.status & ZERO_FLAG == ZERO_FLAG);
+        assert!(cpu.status & OVERFLOW_FLAG == 0);
+    }
+
+    #[test]
+    fn test_cmp_0xcd_overflow() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0xCD, 0xAA, 0xAA, 0x00]);
+        cpu.mem_write(0xAAAA, 10);
+        cpu.reset();
+        cpu.register_a = 0;
+        cpu.run();
+        assert!(cpu.status & CARRY_FLAG == 0);
+        assert!(cpu.status & ZERO_FLAG == 0);
+        assert!(cpu.status & NEGATIVE_FLAG == NEGATIVE_FLAG);
+    }
+
+    #[test]
+    fn test_cpx_0xec_carry_and_zero() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0xEC, 0xAA, 0xAA, 0x00]);
+        cpu.mem_write(0xAAAA, 10);
+        cpu.reset();
+        cpu.register_x = 10;
+        cpu.run();
+        assert!(cpu.status & CARRY_FLAG == CARRY_FLAG);
+        assert!(cpu.status & ZERO_FLAG == ZERO_FLAG);
+        assert!(cpu.status & OVERFLOW_FLAG == 0);
+    }
+
+    #[test]
+    fn test_cpx_0xec_overflow() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0xEC, 0xAA, 0xAA, 0x00]);
+        cpu.mem_write(0xAAAA, 10);
+        cpu.reset();
+        cpu.register_x = 0;
+        cpu.run();
+        assert!(cpu.status & CARRY_FLAG == 0);
+        assert!(cpu.status & ZERO_FLAG == 0);
+        assert!(cpu.status & NEGATIVE_FLAG == NEGATIVE_FLAG);
+    }
+    #[test]
+    fn test_cpy_0xcc_carry_and_zero() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0xCC, 0xAA, 0xAA, 0x00]);
+        cpu.mem_write(0xAAAA, 10);
+        cpu.reset();
+        cpu.register_y = 10;
+        cpu.run();
+        assert!(cpu.status & CARRY_FLAG == CARRY_FLAG);
+        assert!(cpu.status & ZERO_FLAG == ZERO_FLAG);
+        assert!(cpu.status & OVERFLOW_FLAG == 0);
+    }
+
+    #[test]
+    fn test_cpy_0xcc_overflow() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0xCC, 0xAA, 0xAA, 0x00]);
+        cpu.mem_write(0xAAAA, 10);
+        cpu.reset();
+        cpu.register_y = 0;
+        cpu.run();
+        assert!(cpu.status & CARRY_FLAG == 0);
+        assert!(cpu.status & ZERO_FLAG == 0);
+        assert!(cpu.status & NEGATIVE_FLAG == NEGATIVE_FLAG);
+    }
     #[test]
     fn test_0x85_sta_zero_page() {
         let mut cpu = CPU::new();

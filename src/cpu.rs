@@ -141,6 +141,8 @@ impl CPU {
 
                 0xE8 => self.inx(),
 
+                0xC8 => self.iny(&opcode.mode),
+
                 0xa9 | 0xa5 | 0xb5 | 0xad | 0xbd | 0xb9 | 0xa1 | 0xb1 => {
                     self.lda(&opcode.mode);
                 }
@@ -539,7 +541,7 @@ impl CPU {
 
     fn inc(&mut self, mode: &AddressingMode) {
         let address = self.get_operand_address(mode);
-        let value = self.mem_read(address) + 1;
+        let value = self.mem_read(address).wrapping_add(1);
         self.mem_write(address, value);
 
         self.set_status_flag_if_true(ZERO_FLAG, value == 0);
@@ -552,6 +554,15 @@ impl CPU {
         self.set_status_flag_if_true(
             NEGATIVE_FLAG,
             Self::get_flag(self.register_x, NEGATIVE_FLAG),
+        );
+    }
+
+    fn iny(&mut self, mode: &AddressingMode) {
+        self.register_y = self.register_y.wrapping_add(1);
+        self.set_status_flag_if_true(ZERO_FLAG, self.register_y == 0);
+        self.set_status_flag_if_true(
+            NEGATIVE_FLAG,
+            Self::get_flag(self.register_y, NEGATIVE_FLAG),
         );
     }
 }
@@ -1085,6 +1096,19 @@ mod test {
         let value = cpu.mem_read(0xBAA4);
 
         assert!(value & NEGATIVE_FLAG == NEGATIVE_FLAG);
+        assert!(cpu.status & ZERO_FLAG == 0);
+    }
+
+    #[test]
+    fn test_iny_0xc8() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0xC8, 0x00]);
+        cpu.reset();
+        cpu.register_y = 100;
+        cpu.run();
+
+        assert_eq!(101, cpu.register_y);
+        assert!(cpu.register_y & NEGATIVE_FLAG == 0);
         assert!(cpu.status & ZERO_FLAG == 0);
     }
 

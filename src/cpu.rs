@@ -163,6 +163,8 @@ impl CPU {
 
                 0xA0 | 0xA4 | 0xB4 | 0xAC | 0xAC => self.ldy(&opcode.mode),
 
+                0x4A | 0x46 | 0x56 | 0x4E | 0x5E => self.lsr(&opcode.mode),
+
                 0x85 | 0x95 | 0x8d | 0x9d | 0x99 | 0x81 | 0x91 => {
                     self.sta(&opcode.mode);
                 }
@@ -664,6 +666,32 @@ impl CPU {
             NEGATIVE_FLAG,
             Self::get_flag(self.register_y, NEGATIVE_FLAG),
         );
+    }
+
+    fn lsr(&mut self, mode: &AddressingMode) {
+        if *mode == AddressingMode::Accumulator {
+            let old = self.register_a;
+            self.register_a = self.register_a >> 1;
+
+            self.set_status_flag_if_true(ZERO_FLAG, self.register_a == 0);
+            self.copy_bit_to_status(old, CARRY_FLAG, CARRY_FLAG);
+            self.set_status_flag_if_true(
+                NEGATIVE_FLAG,
+                Self::get_flag(self.register_a, NEGATIVE_FLAG),
+            );
+            return;
+        }
+
+        let addr = self.get_operand_address(mode);
+        let old = self.mem_read(addr);
+
+        let value = old >> 1;
+
+        self.mem_write(addr, value);
+
+        self.set_status_flag_if_true(ZERO_FLAG, value == 0);
+        self.copy_bit_to_status(old, CARRY_FLAG, CARRY_FLAG);
+        self.set_status_flag_if_true(NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG));
     }
 }
 
@@ -1287,6 +1315,32 @@ mod test {
         cpu.run();
 
         assert_eq!(21, cpu.register_y)
+    }
+
+    #[test]
+    fn test_lsr_0x4a_accumulator_addr() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x4A, 0x00]);
+        cpu.reset();
+        cpu.register_a = 0xB2;
+        cpu.run();
+        assert_eq!(0x59, cpu.register_a);
+        assert!(NEGATIVE_FLAG & cpu.status == 0);
+        assert!(ZERO_FLAG & cpu.status == 0);
+        assert!(CARRY_FLAG & cpu.status == 0);
+    }
+
+    #[test]
+    fn test_lsr_0x4e_absolute_addr() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x4e, 0xF1, 0xA2, 0x00]);
+        cpu.reset();
+        cpu.mem_write_u16(0xA2F1, 0x43);
+        cpu.run();
+        assert_eq!(0x21, cpu.mem_read_u16(0xA2F1));
+        assert!(NEGATIVE_FLAG & cpu.status == 0);
+        assert!(ZERO_FLAG & cpu.status == 0);
+        assert!(CARRY_FLAG & cpu.status == CARRY_FLAG);
     }
 
     #[test]

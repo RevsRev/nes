@@ -135,6 +135,10 @@ impl CPU {
 
                 0x88 => self.dey(&opcode.mode),
 
+                0x49 | 0x45 | 0x55 | 0x4D | 0x5D | 0x59 | 0x41 | 0x51 => self.eor(&opcode.mode),
+
+                0xE8 => self.inx(),
+
                 0xa9 | 0xa5 | 0xb5 | 0xad | 0xbd | 0xb9 | 0xa1 | 0xb1 => {
                     self.lda(&opcode.mode);
                 }
@@ -144,7 +148,6 @@ impl CPU {
                 }
 
                 0xAA => self.tax(),
-                0xE8 => self.inx(),
                 0x00 => return,
                 _ => todo!(),
             }
@@ -525,6 +528,19 @@ impl CPU {
         self.set_status_flag_if_true(
             NEGATIVE_FLAG,
             Self::get_flag(self.register_y, NEGATIVE_FLAG),
+        );
+    }
+
+    fn eor(&mut self, mode: &AddressingMode) {
+        let address = self.get_operand_address(mode);
+        let value = self.mem_read(address);
+
+        self.register_a = self.register_a ^ value;
+
+        self.set_status_flag_if_true(ZERO_FLAG, self.register_a == 0);
+        self.set_status_flag_if_true(
+            NEGATIVE_FLAG,
+            Self::get_flag(self.register_a, NEGATIVE_FLAG),
         );
     }
 }
@@ -1017,6 +1033,34 @@ mod test {
         assert_eq!(cpu.register_y, 0xF8);
         assert!(cpu.status & ZERO_FLAG == 0);
         assert!(cpu.status & NEGATIVE_FLAG == NEGATIVE_FLAG);
+    }
+
+    #[test]
+    fn test_eor_0x4d_neg_flag() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x4D, 0xA4, 0xBA, 0x00]);
+        cpu.reset();
+        cpu.mem_write(0xBAA4, 0b1001_1100);
+        cpu.register_a = 0b0001_0111;
+        cpu.run();
+
+        assert_eq!(0b1000_1011, cpu.register_a);
+        assert!(cpu.status & NEGATIVE_FLAG == NEGATIVE_FLAG);
+        assert!(cpu.status & ZERO_FLAG == 0);
+    }
+
+    #[test]
+    fn test_eor_0x4d_zero_flag() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x4D, 0xA4, 0xBA, 0x00]);
+        cpu.reset();
+        cpu.mem_write(0xBAA4, 0b1001_0111);
+        cpu.register_a = 0b1001_0111;
+        cpu.run();
+
+        assert_eq!(0, cpu.register_a);
+        assert!(cpu.status & NEGATIVE_FLAG == 0);
+        assert!(cpu.status & ZERO_FLAG == ZERO_FLAG);
     }
     #[test]
     fn test_0x85_sta_zero_page() {

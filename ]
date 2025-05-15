@@ -1235,7 +1235,7 @@ mod test {
         cpu.run();
 
         assert_eq!(STACK_RESET.wrapping_sub(2) as u8, cpu.stack_pointer);
-        assert_eq!(0x8002, cpu.mem_read_u16((STACK_RESET as u16) + STACK - 1));
+        assert_eq!(0x8000, cpu.mem_read_u16(STACK_RESET as u16 + STACK));
         assert_eq!(2, cpu.register_x);
     }
 

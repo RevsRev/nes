@@ -159,6 +159,10 @@ impl CPU {
                     self.lda(&opcode.mode);
                 }
 
+                0xA2 | 0xA6 | 0xB6 | 0xAE | 0xBE => self.ldx(&opcode.mode),
+
+                0xA0 | 0xA4 | 0xB4 | 0xAC | 0xAC => self.ldy(&opcode.mode),
+
                 0x85 | 0x95 | 0x8d | 0x9d | 0x99 | 0x81 | 0x91 => {
                     self.sta(&opcode.mode);
                 }
@@ -367,18 +371,6 @@ impl CPU {
         self.set_status_flag_if_true(ZERO_FLAG, self.register_a == 0);
         self.copy_bit_to_status(old, NEGATIVE_FLAG, CARRY_FLAG);
         self.set_status_flag_if_true(NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG));
-    }
-
-    fn lda(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
-        let value = self.mem_read(addr);
-
-        self.register_a = value;
-        self.set_status_flag_if_true(ZERO_FLAG, self.register_a == 0);
-        self.set_status_flag_if_true(
-            NEGATIVE_FLAG,
-            Self::get_flag(self.register_a, NEGATIVE_FLAG),
-        );
     }
 
     fn sta(&mut self, mode: &AddressingMode) {
@@ -634,6 +626,44 @@ impl CPU {
 
         self.program_counter = pc_jump;
         return true;
+    }
+
+    fn lda(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+
+        self.register_a = value;
+        self.set_status_flag_if_true(ZERO_FLAG, self.register_a == 0);
+        self.set_status_flag_if_true(
+            NEGATIVE_FLAG,
+            Self::get_flag(self.register_a, NEGATIVE_FLAG),
+        );
+    }
+
+    fn ldx(&mut self, mode: &AddressingMode) {
+        let address = self.get_operand_address(mode);
+        let value = self.mem_read(address);
+
+        self.register_x = value;
+
+        self.set_status_flag_if_true(ZERO_FLAG, self.register_x == 0);
+        self.set_status_flag_if_true(
+            NEGATIVE_FLAG,
+            Self::get_flag(self.register_x, NEGATIVE_FLAG),
+        );
+    }
+
+    fn ldy(&mut self, mode: &AddressingMode) {
+        let address = self.get_operand_address(mode);
+        let value = self.mem_read(address);
+
+        self.register_y = value;
+
+        self.set_status_flag_if_true(ZERO_FLAG, self.register_y == 0);
+        self.set_status_flag_if_true(
+            NEGATIVE_FLAG,
+            Self::get_flag(self.register_y, NEGATIVE_FLAG),
+        );
     }
 }
 
@@ -1237,6 +1267,26 @@ mod test {
         assert_eq!(STACK_RESET.wrapping_sub(2) as u8, cpu.stack_pointer);
         assert_eq!(0x8002, cpu.mem_read_u16((STACK_RESET as u16) + STACK - 1));
         assert_eq!(2, cpu.register_x);
+    }
+
+    #[test]
+    fn test_0xa2_ldx_immediate() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0xA2, 21, 0x00]);
+        cpu.reset();
+        cpu.run();
+
+        assert_eq!(21, cpu.register_x)
+    }
+
+    #[test]
+    fn test_0xa0_ldy_immediate() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0xA0, 21, 0x00]);
+        cpu.reset();
+        cpu.run();
+
+        assert_eq!(21, cpu.register_y)
     }
 
     #[test]

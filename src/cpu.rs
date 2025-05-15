@@ -77,7 +77,7 @@ impl CPU {
         loop {
             let code = self.mem_read(self.program_counter);
             self.program_counter += 1;
-            let program_counter_state = self.program_counter;
+            let mut increment_program_counter = true;
             let opcode = opcodes
                 .get(&code)
                 .expect(&format!("OpCode {:x} is not recognized", code));
@@ -95,25 +95,25 @@ impl CPU {
                     self.asl(&opcode.mode);
                 }
 
-                0x90 => self.bcc(&opcode.mode),
+                0x90 => increment_program_counter &= !self.bcc(&opcode.mode),
 
-                0xB0 => self.bcs(&opcode.mode),
+                0xB0 => increment_program_counter &= !self.bcs(&opcode.mode),
 
-                0xF0 => self.beq(&opcode.mode),
+                0xF0 => increment_program_counter &= !self.beq(&opcode.mode),
 
                 0x24 | 0x2C => self.bit(&opcode.mode),
 
-                0x30 => self.bmi(&opcode.mode),
+                0x30 => increment_program_counter &= !self.bmi(&opcode.mode),
 
-                0xD0 => self.bne(&opcode.mode),
+                0xD0 => increment_program_counter &= !self.bne(&opcode.mode),
 
-                0x10 => self.bpl(&opcode.mode),
+                0x10 => increment_program_counter &= !self.bpl(&opcode.mode),
 
                 0x00 => break,
 
-                0x50 => self.bvc(&opcode.mode),
+                0x50 => increment_program_counter &= !self.bvc(&opcode.mode),
 
-                0x70 => self.bvs(&opcode.mode),
+                0x70 => increment_program_counter &= !self.bvs(&opcode.mode),
 
                 0x18 => self.clc(&opcode.mode),
 
@@ -143,6 +143,8 @@ impl CPU {
 
                 0xC8 => self.iny(&opcode.mode),
 
+                0x4C | 0x6C => increment_program_counter &= !self.jmp(&opcode.mode),
+
                 0xa9 | 0xa5 | 0xb5 | 0xad | 0xbd | 0xb9 | 0xa1 | 0xb1 => {
                     self.lda(&opcode.mode);
                 }
@@ -156,7 +158,7 @@ impl CPU {
                 _ => todo!(),
             }
 
-            if program_counter_state == self.program_counter {
+            if increment_program_counter {
                 self.program_counter += (opcode.len - 1) as u16;
             }
         }
@@ -356,34 +358,37 @@ impl CPU {
         );
     }
 
-    fn bcc(&mut self, mode: &AddressingMode) {
+    fn bcc(&mut self, mode: &AddressingMode) -> bool {
         if Self::get_flag(self.status, CARRY_FLAG) {
-            return;
+            return false;
         }
 
         let address = self.get_operand_address(mode);
         let value = self.mem_read(address);
         self.program_counter = self.program_counter + (value as u16);
+        return true;
     }
 
-    fn bcs(&mut self, mode: &AddressingMode) {
+    fn bcs(&mut self, mode: &AddressingMode) -> bool {
         if !Self::get_flag(self.status, CARRY_FLAG) {
-            return;
+            return false;
         }
 
         let address = self.get_operand_address(mode);
         let value = self.mem_read(address);
         self.program_counter = self.program_counter + (value as u16);
+        return true;
     }
 
-    fn beq(&mut self, mode: &AddressingMode) {
+    fn beq(&mut self, mode: &AddressingMode) -> bool {
         if !Self::get_flag(self.status, ZERO_FLAG) {
-            return;
+            return false;
         }
 
         let address = self.get_operand_address(mode);
         let value = self.mem_read(address);
         self.program_counter = self.program_counter + (value as u16);
+        return true;
     }
 
     fn bit(&mut self, mode: &AddressingMode) {
@@ -395,54 +400,59 @@ impl CPU {
         self.copy_bit_to_status(value, NEGATIVE_FLAG, NEGATIVE_FLAG);
     }
 
-    fn bmi(&mut self, mode: &AddressingMode) {
+    fn bmi(&mut self, mode: &AddressingMode) -> bool {
         if !Self::get_flag(self.status, NEGATIVE_FLAG) {
-            return;
+            return false;
         }
 
         let address = self.get_operand_address(mode);
         let value = self.mem_read(address);
         self.program_counter = self.program_counter + (value as u16);
+        return true;
     }
 
-    fn bne(&mut self, mode: &AddressingMode) {
+    fn bne(&mut self, mode: &AddressingMode) -> bool {
         if Self::get_flag(self.status, ZERO_FLAG) {
-            return;
+            return false;
         }
 
         let address = self.get_operand_address(mode);
         let value = self.mem_read(address);
         self.program_counter = self.program_counter + (value as u16);
+        return true;
     }
 
-    fn bpl(&mut self, mode: &AddressingMode) {
+    fn bpl(&mut self, mode: &AddressingMode) -> bool {
         if Self::get_flag(self.status, NEGATIVE_FLAG) {
-            return;
+            return false;
         }
 
         let address = self.get_operand_address(mode);
         let value = self.mem_read(address);
         self.program_counter = self.program_counter + (value as u16);
+        return true;
     }
 
-    fn bvc(&mut self, mode: &AddressingMode) {
+    fn bvc(&mut self, mode: &AddressingMode) -> bool {
         if Self::get_flag(self.status, OVERFLOW_FLAG) {
-            return;
+            return false;
         }
 
         let address = self.get_operand_address(mode);
         let value = self.mem_read(address);
         self.program_counter = self.program_counter + (value as u16);
+        return true;
     }
 
-    fn bvs(&mut self, mode: &AddressingMode) {
+    fn bvs(&mut self, mode: &AddressingMode) -> bool {
         if !Self::get_flag(self.status, OVERFLOW_FLAG) {
-            return;
+            return false;
         }
 
         let address = self.get_operand_address(mode);
         let value = self.mem_read(address);
         self.program_counter = self.program_counter + (value as u16);
+        return true;
     }
 
     fn clc(&mut self, mode: &AddressingMode) {
@@ -564,6 +574,21 @@ impl CPU {
             NEGATIVE_FLAG,
             Self::get_flag(self.register_y, NEGATIVE_FLAG),
         );
+    }
+
+    fn jmp(&mut self, mode: &AddressingMode) -> bool {
+        let pc_jump;
+        if mode == &AddressingMode::Indirect {
+            pc_jump = self.mem_read_u16(self.program_counter);
+        } else {
+            let address = self.get_operand_address(mode);
+            pc_jump = self.mem_read_u16(address);
+        }
+
+        println!("Jumping to {:x}", pc_jump);
+
+        self.program_counter = pc_jump;
+        return true;
     }
 }
 
@@ -1110,6 +1135,48 @@ mod test {
         assert_eq!(101, cpu.register_y);
         assert!(cpu.register_y & NEGATIVE_FLAG == 0);
         assert!(cpu.status & ZERO_FLAG == 0);
+    }
+
+    #[test]
+    fn test_jmp_0x4c_absolute() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x4C, 0xAB, 0xBC]);
+        cpu.mem_write(0xBCAB, 0x90);
+        cpu.mem_write(0xBCAC, 0x21); // Memory address to jump to (0x2190)
+        cpu.mem_write(0x2190, 0xE8); // INX
+        cpu.mem_write(0x2191, 0xE8); // INX
+        cpu.mem_write(0x2192, 0x00); // BRK
+        cpu.reset();
+        cpu.run();
+
+        assert_eq!(2, cpu.register_x);
+    }
+
+    #[test]
+    fn test_jmp_0x6c_indirect() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x6C, 0xAB, 0xBC]); // JMP 0xBCAB
+        cpu.mem_write(0xBCAB, 0xE8); // INX
+        cpu.mem_write(0xBCAC, 0xE8); // INX
+        cpu.mem_write(0xBCAD, 0x00); // BRK
+        cpu.reset();
+        cpu.run();
+
+        assert_eq!(2, cpu.register_x);
+    }
+
+    #[test]
+    fn test_jmp_0x6c_indirect_loop() {
+        // Note - this test will cause the cpu to loop forever - so we have it commented out - it's
+        // a good sanity check though
+
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x6C, 0xAB, 0xBC]); // JMP 0xBCAB
+        cpu.mem_write(0xBCAB, 0x6C); //JMP 0xBCAB
+        cpu.mem_write(0xBCAC, 0xAB);
+        cpu.mem_write(0xBCAD, 0xBC);
+        cpu.reset();
+        //        cpu.run();
     }
 
     #[test]

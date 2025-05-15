@@ -76,7 +76,9 @@ impl CPU {
 
         loop {
             let code = self.mem_read(self.program_counter);
+
             self.program_counter += 1;
+
             let mut increment_program_counter = true;
             let opcode = opcodes
                 .get(&code)
@@ -183,6 +185,10 @@ impl CPU {
         let hi = (data >> 8) as u8;
         self.mem_write(addr, lo);
         self.mem_write(addr + 1, hi);
+    }
+
+    fn mem_write_vec(&mut self, addr: u16, program: &Vec<u8>) {
+        self.memory[addr as usize..(addr as usize + program.len())].copy_from_slice(&program[..]);
     }
 
     fn copy_bit_to_status(&mut self, data: u8, source_flag: u8, status_flag: u8) {
@@ -584,8 +590,6 @@ impl CPU {
             let address = self.get_operand_address(mode);
             pc_jump = self.mem_read_u16(address);
         }
-
-        println!("Jumping to {:x}", pc_jump);
 
         self.program_counter = pc_jump;
         return true;
@@ -1167,16 +1171,14 @@ mod test {
 
     #[test]
     fn test_jmp_0x6c_indirect_loop() {
-        // Note - this test will cause the cpu to loop forever - so we have it commented out - it's
-        // a good sanity check though
-
         let mut cpu = CPU::new();
-        cpu.load(vec![0x6C, 0xAB, 0xBC]); // JMP 0xBCAB
-        cpu.mem_write(0xBCAB, 0x6C); //JMP 0xBCAB
-        cpu.mem_write(0xBCAC, 0xAB);
-        cpu.mem_write(0xBCAD, 0xBC);
+        cpu.load(vec![0x6C, 0xAB, 0xBC]);
+        //increment x, branch if negative else loop back
+        cpu.mem_write_vec(0xBCAB, &vec![0xE8, 0x30, 0x04, 0x6C, 0xAB, 0xBC, 0x00]);
         cpu.reset();
-        //        cpu.run();
+        cpu.run();
+        assert_eq!(cpu.register_x, 128);
+        cpu.run();
     }
 
     #[test]

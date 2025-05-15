@@ -137,6 +137,8 @@ impl CPU {
 
                 0x49 | 0x45 | 0x55 | 0x4D | 0x5D | 0x59 | 0x41 | 0x51 => self.eor(&opcode.mode),
 
+                0xE6 | 0xF6 | 0xEE | 0xFE => self.inc(&opcode.mode),
+
                 0xE8 => self.inx(),
 
                 0xa9 | 0xa5 | 0xb5 | 0xad | 0xbd | 0xb9 | 0xa1 | 0xb1 => {
@@ -352,15 +354,6 @@ impl CPU {
         );
     }
 
-    fn inx(&mut self) {
-        self.register_x = self.register_x.wrapping_add(1);
-        self.set_status_flag_if_true(ZERO_FLAG, self.register_x == 0);
-        self.set_status_flag_if_true(
-            NEGATIVE_FLAG,
-            Self::get_flag(self.register_x, NEGATIVE_FLAG),
-        );
-    }
-
     fn bcc(&mut self, mode: &AddressingMode) {
         if Self::get_flag(self.status, CARRY_FLAG) {
             return;
@@ -541,6 +534,24 @@ impl CPU {
         self.set_status_flag_if_true(
             NEGATIVE_FLAG,
             Self::get_flag(self.register_a, NEGATIVE_FLAG),
+        );
+    }
+
+    fn inc(&mut self, mode: &AddressingMode) {
+        let address = self.get_operand_address(mode);
+        let value = self.mem_read(address) + 1;
+        self.mem_write(address, value);
+
+        self.set_status_flag_if_true(ZERO_FLAG, value == 0);
+        self.set_status_flag_if_true(NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG));
+    }
+
+    fn inx(&mut self) {
+        self.register_x = self.register_x.wrapping_add(1);
+        self.set_status_flag_if_true(ZERO_FLAG, self.register_x == 0);
+        self.set_status_flag_if_true(
+            NEGATIVE_FLAG,
+            Self::get_flag(self.register_x, NEGATIVE_FLAG),
         );
     }
 }
@@ -1062,6 +1073,21 @@ mod test {
         assert!(cpu.status & NEGATIVE_FLAG == 0);
         assert!(cpu.status & ZERO_FLAG == ZERO_FLAG);
     }
+
+    #[test]
+    fn test_inc_0xee() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0xEE, 0xA4, 0xBA, 0x00]);
+        cpu.reset();
+        cpu.mem_write(0xBAA4, 250);
+        cpu.run();
+
+        let value = cpu.mem_read(0xBAA4);
+
+        assert!(value & NEGATIVE_FLAG == NEGATIVE_FLAG);
+        assert!(cpu.status & ZERO_FLAG == 0);
+    }
+
     #[test]
     fn test_0x85_sta_zero_page() {
         let mut cpu = CPU::new();

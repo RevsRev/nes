@@ -177,6 +177,8 @@ impl CPU {
 
                 0x28 => self.plp(&opcode.mode),
 
+                0x2A | 0x26 | 0x36 | 0x2E | 0x3E => self.rol(&opcode.mode),
+
                 0x85 | 0x95 | 0x8d | 0x9d | 0x99 | 0x81 | 0x91 => {
                     self.sta(&opcode.mode);
                 }
@@ -740,6 +742,41 @@ impl CPU {
 
     fn plp(&mut self, mode: &AddressingMode) {
         self.status = self.stack_pop();
+    }
+
+    fn rol(&mut self, mode: &AddressingMode) {
+        if mode == &AddressingMode::Accumulator {
+            let old_value = self.register_a;
+            let carry = Self::get_flag(self.status, CARRY_FLAG);
+
+            let value = match carry {
+                true => (old_value << 1) + 1,
+                false => old_value << 1,
+            };
+
+            self.register_a = value;
+
+            self.copy_bit_to_status(old_value, NEGATIVE_FLAG, CARRY_FLAG);
+            self.set_status_flag_if_true(ZERO_FLAG, value == 0);
+            self.set_status_flag_if_true(NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG));
+
+            return;
+        }
+
+        let address = self.get_operand_address(mode);
+        let old_value = self.mem_read(address);
+        let carry = Self::get_flag(self.status, CARRY_FLAG);
+
+        let value = match carry {
+            true => (old_value << 1) + 1,
+            false => old_value << 1,
+        };
+
+        self.mem_write(address, value);
+
+        self.copy_bit_to_status(old_value, NEGATIVE_FLAG, CARRY_FLAG);
+        self.set_status_flag_if_true(ZERO_FLAG, value == 0);
+        self.set_status_flag_if_true(NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG));
     }
 }
 
@@ -1453,6 +1490,34 @@ mod test {
         cpu.reset();
         cpu.run();
         assert_eq!(0, cpu.register_a);
+    }
+
+    #[test]
+    fn test_rol_0x2a_accumulator() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x2A, 0x00]);
+        cpu.reset();
+        cpu.status = CARRY_FLAG;
+        cpu.register_a = 0b1001_0010;
+        cpu.run();
+        assert_eq!(0b0010_0101, cpu.register_a);
+        assert!(cpu.status & CARRY_FLAG == CARRY_FLAG);
+        assert!(cpu.status & NEGATIVE_FLAG == 0);
+        assert!(cpu.status & ZERO_FLAG == 0);
+    }
+
+    #[test]
+    fn test_rol_0x2e_absolute() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x2E, 0xAA, 0xAA, 0x00]);
+        cpu.reset();
+        cpu.status = CARRY_FLAG;
+        cpu.mem_write_u16(0xAAAA, 0b1001_0010);
+        cpu.run();
+        assert_eq!(0b0010_0101, cpu.mem_read_u16(0xAAAA));
+        assert!(cpu.status & CARRY_FLAG == CARRY_FLAG);
+        assert!(cpu.status & NEGATIVE_FLAG == 0);
+        assert!(cpu.status & ZERO_FLAG == 0);
     }
 
     #[test]

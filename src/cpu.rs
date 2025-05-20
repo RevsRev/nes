@@ -15,6 +15,9 @@ pub const NEGATIVE_FLAG: u8 = 0b1000_0000;
 const STACK: u16 = 0x0100;
 const STACK_RESET: u8 = 0xfd;
 
+const INTERRUPT_ADDRESS: u16 = 0xFFFE;
+const HALT_VALUE: u16 = 0x00FF;
+
 #[derive(Debug, PartialEq, Display)]
 #[allow(non_camel_case_types)]
 pub enum AddressingMode {
@@ -41,7 +44,7 @@ pub struct CPU {
     pub status: u8,
     pub program_counter: u16,
     pub stack_pointer: u8,
-    memory: [u8; 0xFFFF],
+    memory: [u8; 0x00010000],
 }
 
 impl CPU {
@@ -53,7 +56,7 @@ impl CPU {
             status: 0,
             program_counter: 0,
             stack_pointer: STACK_RESET,
-            memory: [0; 0xFFFF],
+            memory: [0; 0x00010000],
         }
     }
 
@@ -64,6 +67,7 @@ impl CPU {
         self.status = 0;
         self.stack_pointer = STACK_RESET;
         self.program_counter = self.mem_read_u16(0xFFFC);
+        self.mem_write_u16(INTERRUPT_ADDRESS, HALT_VALUE);
     }
 
     pub fn load_and_run(&mut self, program: Vec<u8>) {
@@ -117,8 +121,6 @@ impl CPU {
 
                 0x10 => increment_program_counter &= !self.bpl(&opcode.mode),
 
-                0x00 => break,
-
                 0x50 => increment_program_counter &= !self.bvc(&opcode.mode),
 
                 0x70 => increment_program_counter &= !self.bvs(&opcode.mode),
@@ -161,7 +163,7 @@ impl CPU {
 
                 0xA2 | 0xA6 | 0xB6 | 0xAE | 0xBE => self.ldx(&opcode.mode),
 
-                0xA0 | 0xA4 | 0xB4 | 0xAC | 0xAC => self.ldy(&opcode.mode),
+                0xA0 | 0xA4 | 0xB4 | 0xAC | 0xBC => self.ldy(&opcode.mode),
 
                 0x4A | 0x46 | 0x56 | 0x4E | 0x5E => self.lsr(&opcode.mode),
 
@@ -181,12 +183,20 @@ impl CPU {
 
                 0x6A | 0x66 | 0x76 | 0x6E | 0x7E => self.ror(&opcode.mode),
 
+                0x40 => self.rti(&opcode.mode),
+
+                0x60 => self.rts(&opcode.mode),
+
                 0x85 | 0x95 | 0x8d | 0x9d | 0x99 | 0x81 | 0x91 => {
                     self.sta(&opcode.mode);
                 }
 
                 0xAA => self.tax(),
-                0x00 => return,
+                0x00 => {
+                    if self.brk(&opcode.mode) {
+                        return;
+                    }
+                }
                 _ => todo!(),
             }
 
@@ -815,6 +825,30 @@ impl CPU {
         self.set_status_flag_if_true(ZERO_FLAG, value == 0);
         self.set_status_flag_if_true(NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG));
     }
+
+    fn rti(&mut self, mode: &AddressingMode) {
+        self.status = self.stack_pop();
+        self.program_counter = self.stack_pop_u16();
+    }
+
+    fn rts(&mut self, mode: &AddressingMode) {
+        self.program_counter = self.stack_pop_u16() + 1;
+    }
+
+    fn brk(&mut self, mode: &AddressingMode) -> bool {
+        self.stack_push_u16(self.program_counter);
+        self.stack_push(self.status);
+
+        self.program_counter = self.mem_read_u16(INTERRUPT_ADDRESS);
+        if self.program_counter == HALT_VALUE {
+            return true;
+        }
+
+        //we do this after the return check, because it's easier to test and doesn't make a
+        //difference when we exit :)
+        self.set_status_flag_if_true(BREAK_FLAG, true);
+        return false;
+    }
 }
 
 #[cfg(test)]
@@ -1414,7 +1448,7 @@ mod test {
         cpu.reset();
         cpu.run();
 
-        assert_eq!(STACK_RESET.wrapping_sub(2) as u8, cpu.stack_pointer);
+        assert_eq!(STACK_RESET.wrapping_sub(5) as u8, cpu.stack_pointer); // 2 (jsr) + 3 (brk)
         assert_eq!(0x8002, cpu.mem_read_u16((STACK_RESET as u16) + STACK - 1));
         assert_eq!(2, cpu.register_x);
     }
@@ -1581,6 +1615,72 @@ mod test {
         assert!(cpu.status & CARRY_FLAG == CARRY_FLAG);
         assert!(cpu.status & NEGATIVE_FLAG == 0);
         assert!(cpu.status & ZERO_FLAG == 0);
+    }
+
+    #[test]
+    fn test_brk_0x00() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x00]); //Break immediately, which will take us to 0xAABB
+        cpu.reset();
+        cpu.mem_write_u16(INTERRUPT_ADDRESS, 0xAABB); //So we don't quit immediately
+        cpu.mem_write_u16(0x0000, HALT_VALUE); //Store the HALT value at 0x0000
+        cpu.mem_write_vec(
+            0xAABB,
+            &vec![
+                0x08, //push status onto the stack, so we can check that the break flag is set
+                0xAD, 0x00, 0x00, //load lo byte of HALT into ACC
+                0x8D, 0xFE, 0xFF, //store ACC in 0xFFFE
+                0xAD, 0x00, 0x01, //load hi byte of HALT into ACC
+                0x8D, 0xFF, 0xFF, //store ACC in 0xFFFF
+                0xE8, //INX, another thing to assert on to check program executed as expected.
+                0x00, //BRK
+            ],
+        );
+        cpu.run();
+        assert_eq!(1, cpu.register_x);
+        assert_eq!(0x00, cpu.register_a); //hi bytes
+        assert_eq!(BREAK_FLAG, cpu.mem_read((STACK_RESET as u16) + STACK - 3));
+    }
+
+    //(This also doubles up as another test for BRK)
+    #[test]
+    fn test_rti_0x40() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x00, 0x00]); //First 0x00 takes us to 0xAABB, second exits program
+        cpu.reset();
+        cpu.mem_write_u16(INTERRUPT_ADDRESS, 0xAABB); //So we don't quit immediately
+        cpu.mem_write_u16(0x0000, HALT_VALUE); //Store the HALT value at 0x0000
+        cpu.mem_write_vec(
+            0xAABB,
+            &vec![
+                0xAD, 0x00, 0x00, //load lo byte of HALT into ACC
+                0x8D, 0xFE, 0xFF, //store ACC in 0xFFFE
+                0xAD, 0x00, 0x01, //load hi byte of HALT into ACC
+                0x8D, 0xFF, 0xFF, //store ACC in 0xFFFF
+                0xE8, //INX, another thing to assert on to check program executed as expected.
+                0x40,
+            ],
+        ); //BRK
+        cpu.run();
+        assert_eq!(1, cpu.register_x);
+        assert_eq!(0x00, cpu.register_a); //hi bytes
+    }
+
+    #[test]
+    fn test_rts_0x60() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x20, 0xAB, 0xBC, 0xE8]);
+        cpu.mem_write(0xBCAB, 0x90);
+        cpu.mem_write(0xBCAC, 0x21); // Memory address to jump to (0x2190)
+        cpu.mem_write(0x2190, 0xE8); // INX
+        cpu.mem_write(0x2191, 0xE8); // INX
+        cpu.mem_write(0x2192, 0x60); // RTS, what we are testing
+        cpu.reset();
+        cpu.run();
+
+        assert_eq!((STACK_RESET as u8).wrapping_sub(3), cpu.stack_pointer); //3 because the BRK
+        //instruction adds sp (2) and status (1) to the stack before we quit
+        assert_eq!(3, cpu.register_x);
     }
 
     #[test]

@@ -187,6 +187,8 @@ impl CPU {
 
                 0x60 => self.rts(&opcode.mode),
 
+                0xE9 | 0xE5 | 0xF5 | 0xED | 0xFD | 0xF9 | 0xE1 | 0xF1 => self.sbc(&opcode.mode),
+
                 0x85 | 0x95 | 0x8d | 0x9d | 0x99 | 0x81 | 0x91 => {
                     self.sta(&opcode.mode);
                 }
@@ -272,6 +274,12 @@ impl CPU {
     fn set_status_flag_if_true(&mut self, flag: u8, set: bool) {
         if set {
             self.status = self.status | flag;
+        }
+    }
+
+    fn clear_status_flag_if_true(&mut self, flag: u8, set: bool) {
+        if set {
+            self.status = self.status & (!flag);
         }
     }
 
@@ -848,6 +856,37 @@ impl CPU {
         //difference when we exit :)
         self.set_status_flag_if_true(BREAK_FLAG, true);
         return false;
+    }
+
+    fn sbc(&mut self, mode: &AddressingMode) {
+        let c = match Self::get_flag(self.stack_pointer, CARRY_FLAG) {
+            true => 1,
+            false => 0,
+        };
+
+        let a = self.register_a;
+        let address = self.get_operand_address(mode);
+        let value = self.mem_read(address);
+
+        let clear_carry = match a.checked_sub(value) {
+            Some(_sub) => match _sub.checked_sub(1 - c) {
+                Some(_sub2) => false,
+                None => true,
+            },
+            None => true,
+        };
+
+        self.register_a = a.wrapping_sub(value).wrapping_sub(1 - c);
+        self.clear_status_flag_if_true(CARRY_FLAG, clear_carry);
+        self.set_status_flag_if_true(ZERO_FLAG, self.register_a == 0);
+        self.set_status_flag_if_true(
+            OVERFLOW_FLAG,
+            Self::get_flag(self.register_a, NEGATIVE_FLAG) != Self::get_flag(a, NEGATIVE_FLAG),
+        );
+        self.set_status_flag_if_true(
+            NEGATIVE_FLAG,
+            Self::get_flag(self.register_a, NEGATIVE_FLAG),
+        );
     }
 }
 
@@ -1681,6 +1720,81 @@ mod test {
         assert_eq!((STACK_RESET as u8).wrapping_sub(3), cpu.stack_pointer); //3 because the BRK
         //instruction adds sp (2) and status (1) to the stack before we quit
         assert_eq!(3, cpu.register_x);
+    }
+
+    #[test]
+    fn test_sbc_0xe9_carry_no_overflow_or_negative() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0xE9, 0x70, 0x00]);
+        cpu.reset();
+        cpu.register_a = 0x7F;
+        cpu.set_status_flag_if_true(CARRY_FLAG, true);
+        cpu.run();
+        assert_eq!(0x0F, cpu.register_a);
+        assert!(CARRY_FLAG & cpu.status == CARRY_FLAG);
+        assert!(OVERFLOW_FLAG & cpu.status == 0);
+        assert!(ZERO_FLAG & cpu.status == 0);
+        assert!(NEGATIVE_FLAG & cpu.status == 0);
+    }
+
+    #[test]
+    fn test_sbc_0xe9_overflow() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0xE9, 0x01, 0x00]);
+        cpu.reset();
+        cpu.register_a = 0x80;
+        cpu.set_status_flag_if_true(CARRY_FLAG, true);
+        cpu.run();
+        assert_eq!(0x7F, cpu.register_a);
+        assert!(CARRY_FLAG & cpu.status == CARRY_FLAG);
+        assert!(OVERFLOW_FLAG & cpu.status == OVERFLOW_FLAG);
+        assert!(ZERO_FLAG & cpu.status == 0);
+        assert!(NEGATIVE_FLAG & cpu.status == 0);
+    }
+
+    #[test]
+    fn test_sbc_0xe9_negative_flag_no_overflow() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0xE9, 0x03, 0x00]);
+        cpu.reset();
+        cpu.register_a = 0x8F;
+        cpu.set_status_flag_if_true(CARRY_FLAG, true);
+        cpu.run();
+        assert_eq!(0x8C, cpu.register_a);
+        assert!(CARRY_FLAG & cpu.status == CARRY_FLAG);
+        assert!(OVERFLOW_FLAG & cpu.status == 0);
+        assert!(ZERO_FLAG & cpu.status == 0);
+        assert!(NEGATIVE_FLAG & cpu.status == NEGATIVE_FLAG);
+    }
+
+    #[test]
+    fn test_sbc_0xe9_zero_flag() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0xE9, 0x81, 0x00]);
+        cpu.reset();
+        cpu.register_a = 0x81;
+        cpu.set_status_flag_if_true(CARRY_FLAG, true);
+        cpu.run();
+        assert_eq!(0x00, cpu.register_a);
+        assert!(CARRY_FLAG & cpu.status == CARRY_FLAG);
+        assert!(OVERFLOW_FLAG & cpu.status == OVERFLOW_FLAG);
+        assert!(ZERO_FLAG & cpu.status == ZERO_FLAG);
+        assert!(NEGATIVE_FLAG & cpu.status == 0);
+    }
+
+    #[test]
+    fn test_sbc_0xe9_with_carry_cleared() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0xE9, 0x01, 0x00]);
+        cpu.reset();
+        cpu.register_a = 0x00;
+        cpu.status = cpu.status | CARRY_FLAG;
+        cpu.run();
+        assert_eq!(0xFF, cpu.register_a);
+        assert!(CARRY_FLAG & cpu.status == 0);
+        assert!(OVERFLOW_FLAG & cpu.status == OVERFLOW_FLAG);
+        assert!(ZERO_FLAG & cpu.status == 0);
+        assert!(NEGATIVE_FLAG & cpu.status == NEGATIVE_FLAG);
     }
 
     #[test]

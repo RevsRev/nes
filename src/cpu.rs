@@ -209,6 +209,12 @@ impl CPU {
 
                 0xBA => self.tsx(),
 
+                0x8A => self.txa(),
+
+                0x9A => self.txs(),
+
+                0x98 => self.tya(),
+
                 0x00 => {
                     if self.brk(&opcode.mode) {
                         return;
@@ -909,14 +915,12 @@ impl CPU {
 
     fn stx(&mut self, mode: &AddressingMode) {
         let address = self.get_operand_address(mode);
-        let value = self.mem_read(address);
-        self.register_x = value;
+        self.mem_write(address, self.register_x);
     }
 
     fn sty(&mut self, mode: &AddressingMode) {
         let address = self.get_operand_address(mode);
-        let value = self.mem_read(address);
-        self.register_y = value;
+        self.mem_write(address, self.register_y);
     }
 
     fn tax(&mut self) {
@@ -943,6 +947,28 @@ impl CPU {
         self.set_status_flag_if_true(
             NEGATIVE_FLAG,
             Self::get_flag(self.register_x, NEGATIVE_FLAG),
+        );
+    }
+
+    fn txa(&mut self) {
+        self.register_a = self.register_x;
+        self.set_status_flag_if_true(ZERO_FLAG, self.register_a == 0);
+        self.set_status_flag_if_true(
+            NEGATIVE_FLAG,
+            Self::get_flag(self.register_a, NEGATIVE_FLAG),
+        );
+    }
+
+    fn txs(&mut self) {
+        self.stack_pointer = self.register_x;
+    }
+
+    fn tya(&mut self) {
+        self.register_a = self.register_y;
+        self.set_status_flag_if_true(ZERO_FLAG, self.register_a == 0);
+        self.set_status_flag_if_true(
+            NEGATIVE_FLAG,
+            Self::get_flag(self.register_a, NEGATIVE_FLAG),
         );
     }
 }
@@ -1964,20 +1990,20 @@ mod test {
     fn test_stx_0x8e() {
         let mut cpu = CPU::new();
         cpu.load(vec![0x8E, 0xAA, 0xBB, 0x00]);
-        cpu.mem_write(0xBBAA, 0x05);
         cpu.reset();
+        cpu.register_x = 0x05;
         cpu.run();
-        assert_eq!(cpu.register_x, 0x05);
+        assert_eq!(cpu.mem_read(0xBBAA), 0x05);
     }
 
     #[test]
     fn test_sty_0x8c() {
         let mut cpu = CPU::new();
         cpu.load(vec![0x8C, 0xAA, 0xBB, 0x00]);
-        cpu.mem_write(0xBBAA, 0x05);
         cpu.reset();
+        cpu.register_y = 0x05;
         cpu.run();
-        assert_eq!(cpu.register_y, 0x05);
+        assert_eq!(cpu.mem_read(0xBBAA), 0x05);
     }
 
     #[test]
@@ -2051,6 +2077,43 @@ mod test {
         cpu.reset();
         cpu.run();
         assert!(cpu.register_x == STACK_RESET);
+    }
+
+    #[test]
+    fn test_0x8a_txa() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x8A, 0x00]);
+        cpu.reset();
+        cpu.register_x = 0x05;
+        cpu.run();
+        assert_eq!(cpu.register_a, 0x05);
+    }
+
+    #[test]
+    fn test_0x9a_txs() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![
+            0x9A, // X TO STACK PTR
+            0xA2, 0x01, // LD 0x01 INTO X
+            0x8E, 0xAA, 0xAA, // STR X IN 0xAAAA
+            0xBA, // LD STACK PTR TO X
+            0x00, // BRK
+        ]);
+        cpu.reset();
+        cpu.register_x = 0xFF;
+        cpu.run();
+        assert_eq!(0x01, cpu.mem_read(0xAAAA));
+        assert_eq!(0xFF, cpu.register_x)
+    }
+
+    #[test]
+    fn test_0x98_txy() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x98, 0x00]);
+        cpu.reset();
+        cpu.register_y = 0x05;
+        cpu.run();
+        assert_eq!(cpu.register_a, 0x05);
     }
 
     #[test]

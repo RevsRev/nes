@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use crate::cpu::AddressingMode;
+use std::collections::HashMap;
 
 pub struct OpCode {
     pub code: u8,
@@ -15,15 +15,14 @@ impl OpCode {
         mnemonic: &'static str,
         len: u8,
         cycles: u8,
-        mode: AddressingMode
-    ) -> Self 
-    {
+        mode: AddressingMode,
+    ) -> Self {
         OpCode {
             code,
             mnemonic,
             len,
             cycles,
-            mode
+            mode,
         }
     }
 }
@@ -190,7 +189,7 @@ lazy_static! {
         OpCode::new(0x76, "ROR", 2, 6, AddressingMode::ZeroPage_X),
         OpCode::new(0x6E, "ROR", 3, 6, AddressingMode::Absolute),
         OpCode::new(0x7E, "ROR", 3, 7, AddressingMode::Absolute_X),
-        
+
         OpCode::new(0x40, "RTI", 1, 6, AddressingMode::Implied),
 
         OpCode::new(0x60, "RTS", 1, 6, AddressingMode::Implied),
@@ -230,7 +229,7 @@ lazy_static! {
 
         OpCode::new(0xA8, "TAY", 1, 2, AddressingMode::Implied),
 
-        OpCode::new(0xB8, "TSX", 1, 2, AddressingMode::Implied),
+        OpCode::new(0xBA, "TSX", 1, 2, AddressingMode::Implied),
 
         OpCode::new(0x8A, "TXA", 1, 2, AddressingMode::Implied),
 

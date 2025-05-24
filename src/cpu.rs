@@ -207,6 +207,8 @@ impl CPU {
 
                 0xA8 => self.tay(),
 
+                0xBA => self.tsx(),
+
                 0x00 => {
                     if self.brk(&opcode.mode) {
                         return;
@@ -932,6 +934,15 @@ impl CPU {
         self.set_status_flag_if_true(
             NEGATIVE_FLAG,
             Self::get_flag(self.register_y, NEGATIVE_FLAG),
+        );
+    }
+
+    fn tsx(&mut self) {
+        self.register_x = self.stack_pointer;
+        self.set_status_flag_if_true(ZERO_FLAG, self.register_x == 0);
+        self.set_status_flag_if_true(
+            NEGATIVE_FLAG,
+            Self::get_flag(self.register_x, NEGATIVE_FLAG),
         );
     }
 }
@@ -2031,6 +2042,15 @@ mod test {
         cpu.register_a = 250;
         cpu.run();
         assert!(cpu.status & 0b1000_0000 == 0b1000_0000);
+    }
+
+    #[test]
+    fn test_0xba_tsx() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0xBA, 0x00]);
+        cpu.reset();
+        cpu.run();
+        assert!(cpu.register_x == STACK_RESET);
     }
 
     #[test]

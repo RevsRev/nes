@@ -189,6 +189,12 @@ impl CPU {
 
                 0xE9 | 0xE5 | 0xF5 | 0xED | 0xFD | 0xF9 | 0xE1 | 0xF1 => self.sbc(&opcode.mode),
 
+                0x38 => self.sec(&opcode.mode),
+
+                0xF8 => self.sed(&opcode.mode),
+
+                0x78 => self.sei(&opcode.mode),
+
                 0x85 | 0x95 | 0x8d | 0x9d | 0x99 | 0x81 | 0x91 => {
                     self.sta(&opcode.mode);
                 }
@@ -887,6 +893,18 @@ impl CPU {
             NEGATIVE_FLAG,
             Self::get_flag(self.register_a, NEGATIVE_FLAG),
         );
+    }
+
+    fn sec(&mut self, mode: &AddressingMode) {
+        self.status = self.status | CARRY_FLAG;
+    }
+
+    fn sed(&mut self, mode: &AddressingMode) {
+        self.status = self.status | DECIMAL_MODE_FLAG;
+    }
+
+    fn sei(&mut self, mode: &AddressingMode) {
+        self.status = self.status | INTERRUPT_DISABLE_FLAG;
     }
 }
 
@@ -1795,6 +1813,33 @@ mod test {
         assert!(OVERFLOW_FLAG & cpu.status == OVERFLOW_FLAG);
         assert!(ZERO_FLAG & cpu.status == 0);
         assert!(NEGATIVE_FLAG & cpu.status == NEGATIVE_FLAG);
+    }
+
+    #[test]
+    fn test_sec_0x38() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x38, 0x00]);
+        cpu.reset();
+        cpu.run();
+        assert_eq!(CARRY_FLAG, cpu.status);
+    }
+
+    #[test]
+    fn test_sed_0xF8() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0xF8, 0x00]);
+        cpu.reset();
+        cpu.run();
+        assert_eq!(DECIMAL_MODE_FLAG, cpu.status);
+    }
+
+    #[test]
+    fn test_sei_0x78() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x78, 0x00]);
+        cpu.reset();
+        cpu.run();
+        assert_eq!(INTERRUPT_DISABLE_FLAG, cpu.status);
     }
 
     #[test]

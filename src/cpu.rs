@@ -204,6 +204,9 @@ impl CPU {
                 0x84 | 0x94 | 0x8C => self.sty(&opcode.mode),
 
                 0xAA => self.tax(),
+
+                0xA8 => self.tay(),
+
                 0x00 => {
                     if self.brk(&opcode.mode) {
                         return;
@@ -422,15 +425,6 @@ impl CPU {
     fn sta(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         self.mem_write(addr, self.register_a);
-    }
-
-    fn tax(&mut self) {
-        self.register_x = self.register_a;
-        self.set_status_flag_if_true(ZERO_FLAG, self.register_x == 0);
-        self.set_status_flag_if_true(
-            NEGATIVE_FLAG,
-            Self::get_flag(self.register_x, NEGATIVE_FLAG),
-        );
     }
 
     fn bcc(&mut self, mode: &AddressingMode) -> bool {
@@ -921,6 +915,24 @@ impl CPU {
         let address = self.get_operand_address(mode);
         let value = self.mem_read(address);
         self.register_y = value;
+    }
+
+    fn tax(&mut self) {
+        self.register_x = self.register_a;
+        self.set_status_flag_if_true(ZERO_FLAG, self.register_x == 0);
+        self.set_status_flag_if_true(
+            NEGATIVE_FLAG,
+            Self::get_flag(self.register_x, NEGATIVE_FLAG),
+        );
+    }
+
+    fn tay(&mut self) {
+        self.register_y = self.register_a;
+        self.set_status_flag_if_true(ZERO_FLAG, self.register_y == 0);
+        self.set_status_flag_if_true(
+            NEGATIVE_FLAG,
+            Self::get_flag(self.register_y, NEGATIVE_FLAG),
+        );
     }
 }
 
@@ -1958,6 +1970,70 @@ mod test {
     }
 
     #[test]
+    fn test_0xaa_tax_immediate_load_data() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0xaa, 0x00]);
+        cpu.reset();
+        cpu.register_a = 5;
+        cpu.run();
+        assert_eq!(cpu.register_x, 0x05);
+        assert!(cpu.status & 0b0000_0010 == 0b00);
+        assert!(cpu.status & 0b1000_0000 == 0);
+    }
+
+    #[test]
+    fn test_0xaa_tax_zero_flag() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0xaa, 0x00]);
+        cpu.reset();
+        cpu.register_a = 0;
+        cpu.run();
+        assert!(cpu.status & 0b0000_0010 == 0b10);
+    }
+
+    #[test]
+    fn test_0xaa_tax_negative_flag() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0xaa, 0x00]);
+        cpu.reset();
+        cpu.register_a = 250;
+        cpu.run();
+        assert!(cpu.status & 0b1000_0000 == 0b1000_0000);
+    }
+
+    #[test]
+    fn test_0xA8_tay_immediate_load_data() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0xA8, 0x00]);
+        cpu.reset();
+        cpu.register_a = 5;
+        cpu.run();
+        assert_eq!(cpu.register_y, 0x05);
+        assert!(cpu.status & 0b0000_0010 == 0b00);
+        assert!(cpu.status & 0b1000_0000 == 0);
+    }
+
+    #[test]
+    fn test_0xA8_tay_zero_flag() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0xA8, 0x00]);
+        cpu.reset();
+        cpu.register_a = 0;
+        cpu.run();
+        assert!(cpu.status & 0b0000_0010 == 0b10);
+    }
+
+    #[test]
+    fn test_0xA8_tay_negative_flag() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0xA8, 0x00]);
+        cpu.reset();
+        cpu.register_a = 250;
+        cpu.run();
+        assert!(cpu.status & 0b1000_0000 == 0b1000_0000);
+    }
+
+    #[test]
     fn test_0xa9_lda_immediate_load_data() {
         let mut cpu = CPU::new();
         cpu.load(vec![0xa9, 0x05, 0x00]);
@@ -2063,38 +2139,6 @@ mod test {
         cpu.register_y = 0x04;
         cpu.run();
         assert!(cpu.register_a == 0xf0);
-    }
-
-    #[test]
-    fn test_0xaa_tax_immediate_load_data() {
-        let mut cpu = CPU::new();
-        cpu.load(vec![0xaa, 0x00]);
-        cpu.reset();
-        cpu.register_a = 5;
-        cpu.run();
-        assert_eq!(cpu.register_x, 0x05);
-        assert!(cpu.status & 0b0000_0010 == 0b00);
-        assert!(cpu.status & 0b1000_0000 == 0);
-    }
-
-    #[test]
-    fn test_0xaa_tax_zero_flag() {
-        let mut cpu = CPU::new();
-        cpu.load(vec![0xaa, 0x00]);
-        cpu.reset();
-        cpu.register_a = 0;
-        cpu.run();
-        assert!(cpu.status & 0b0000_0010 == 0b10);
-    }
-
-    #[test]
-    fn test_0xaa_tax_negative_flag() {
-        let mut cpu = CPU::new();
-        cpu.load(vec![0xaa, 0x00]);
-        cpu.reset();
-        cpu.register_a = 250;
-        cpu.run();
-        assert!(cpu.status & 0b1000_0000 == 0b1000_0000);
     }
 
     #[test]

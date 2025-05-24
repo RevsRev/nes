@@ -199,6 +199,10 @@ impl CPU {
                     self.sta(&opcode.mode);
                 }
 
+                0x86 | 0x96 | 0x8E => self.stx(&opcode.mode),
+
+                0x84 | 0x94 | 0x8C => self.sty(&opcode.mode),
+
                 0xAA => self.tax(),
                 0x00 => {
                     if self.brk(&opcode.mode) {
@@ -905,6 +909,18 @@ impl CPU {
 
     fn sei(&mut self, mode: &AddressingMode) {
         self.status = self.status | INTERRUPT_DISABLE_FLAG;
+    }
+
+    fn stx(&mut self, mode: &AddressingMode) {
+        let address = self.get_operand_address(mode);
+        let value = self.mem_read(address);
+        self.register_x = value;
+    }
+
+    fn sty(&mut self, mode: &AddressingMode) {
+        let address = self.get_operand_address(mode);
+        let value = self.mem_read(address);
+        self.register_y = value;
     }
 }
 
@@ -1919,6 +1935,26 @@ mod test {
         cpu.register_a = 0xf0;
         cpu.run();
         assert!(cpu.mem_read(0xdda1) == 0xf0);
+    }
+
+    #[test]
+    fn test_stx_0x8e() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x8E, 0xAA, 0xBB, 0x00]);
+        cpu.mem_write(0xBBAA, 0x05);
+        cpu.reset();
+        cpu.run();
+        assert_eq!(cpu.register_x, 0x05);
+    }
+
+    #[test]
+    fn test_sty_0x8c() {
+        let mut cpu = CPU::new();
+        cpu.load(vec![0x8C, 0xAA, 0xBB, 0x00]);
+        cpu.mem_write(0xBBAA, 0x05);
+        cpu.reset();
+        cpu.run();
+        assert_eq!(cpu.register_y, 0x05);
     }
 
     #[test]

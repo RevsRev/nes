@@ -1,5 +1,6 @@
 use crate::cpu::AddressingMode;
 use std::collections::HashMap;
+use std::fmt;
 
 pub struct OpCode {
     pub code: u8,
@@ -7,6 +8,16 @@ pub struct OpCode {
     pub len: u8,
     pub cycles: u8,
     pub mode: AddressingMode,
+}
+
+impl fmt::Display for OpCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "code: {:#04x}, mnemonic: {}, len: {}, cycles: {}, mode: {}",
+            self.code, self.mnemonic, self.len, self.cycles, self.mode
+        )
+    }
 }
 
 impl OpCode {

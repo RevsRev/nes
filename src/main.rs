@@ -1,5 +1,7 @@
 use std::fmt;
 
+use crate::traits::mem::Mem;
+use bus::Bus;
 use clap::Parser;
 use cpu::CPU;
 use rand::Rng;
@@ -10,8 +12,11 @@ use sdl2::{
     pixels::{Color, PixelFormatEnum},
 };
 
+mod bus;
 mod cpu;
+mod nes;
 mod opp;
+mod traits;
 
 #[macro_use]
 extern crate lazy_static;
@@ -75,7 +80,8 @@ fn main() {
         0x60, 0xa2, 0x00, 0xea, 0xea, 0xca, 0xd0, 0xfb, 0x60,
     ];
 
-    let mut cpu = CPU::new();
+    let mut bus = Bus::new();
+    let mut cpu = CPU::new(&mut bus);
     cpu.debug = args.debug;
     cpu.load_with_start_address(0x0600, game_code);
     cpu.reset();
@@ -97,7 +103,7 @@ fn main() {
     });
 }
 
-fn handle_user_input(cpu: &mut CPU, event_pump: &mut EventPump) {
+fn handle_user_input<T: Mem>(cpu: &mut CPU<T>, event_pump: &mut EventPump) {
     for event in event_pump.poll_iter() {
         match event {
             Event::Quit { .. }
@@ -145,7 +151,7 @@ fn color(byte: u8) -> Color {
     }
 }
 
-fn read_screen_state(cpu: &mut CPU, frame: &mut [u8; 32 * 3 * 32]) -> bool {
+fn read_screen_state<T: Mem>(cpu: &mut CPU<T>, frame: &mut [u8; 32 * 3 * 32]) -> bool {
     let mut frame_idx = 0;
     let mut update = false;
 

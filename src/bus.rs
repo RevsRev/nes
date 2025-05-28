@@ -25,6 +25,7 @@ impl Mem for Bus {
                 self.cpu_vram[mirror_down_addr as usize]
             }
             PPU_REGISTERS..=PPU_REGISTERS_MIRRORS_END => {
+                let _mirror_down_addr = addr & 0b00100000_00000111;
                 todo!("PPU is not supported yet")
             }
             _ => {

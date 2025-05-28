@@ -16,6 +16,7 @@ mod bus;
 mod cpu;
 mod nes;
 mod opp;
+mod rom;
 mod traits;
 
 #[macro_use]

@@ -1,0 +1,147 @@
+const NES_TAG: [u8; 4] = [0x4E, 0x45, 0x53, 0x1A];
+const PRG_ROM_PAGE_SIZE: usize = 16384;
+const CHR_ROM_PAGE_SIZE: usize = 8292;
+
+#[derive(Debug, PartialEq)]
+pub enum Mirroring {
+    VERTICAL,
+    HORIZONTAL,
+    FOUR_SCREEN,
+}
+
+pub struct Rom {
+    pub prg_rom: Vec<u8>,
+    pub chr_rom: Vec<u8>,
+    pub mapper: u8,
+    pub screen_mirroring: Mirroring,
+}
+
+impl Rom {
+    pub fn new(raw: &Vec<u8>) -> Result<Rom, String> {
+        if raw.len() < 8 {
+            return Err("File is not in iNES file format".to_string());
+        }
+
+        if &raw[0..4] != NES_TAG {
+            return Err("File is not in iNES file format".to_string());
+        }
+
+        let mapper = (raw[7] & 0b1111_0000) | (raw[6] >> 4);
+
+        let ines_ver = (raw[7] >> 2) & 0b11;
+        if ines_ver != 0 {
+            return Err("NES2.0 is not supported".to_string());
+        }
+
+        let four_screen = raw[6] & 0b1000 != 0;
+        let vertical_mirroring = raw[6] & 0b1 != 0;
+        let screen_mirroring = match (four_screen, vertical_mirroring) {
+            (true, _) => Mirroring::FOUR_SCREEN,
+            (false, true) => Mirroring::VERTICAL,
+            (false, false) => Mirroring::HORIZONTAL,
+        };
+
+        let prg_rom_size = raw[4] as usize * PRG_ROM_PAGE_SIZE;
+        let chr_rom_size = raw[5] as usize * CHR_ROM_PAGE_SIZE;
+
+        let skip_trainer = raw[6] & 0b100 != 0;
+
+        let prg_rom_start = 16 + if skip_trainer { 512 } else { 0 };
+        let chr_rom_start = prg_rom_start + prg_rom_size;
+
+        Ok(Rom {
+            prg_rom: raw[prg_rom_start..(prg_rom_start + prg_rom_size)].to_vec(),
+            chr_rom: raw[chr_rom_start..(chr_rom_start + chr_rom_size)].to_vec(),
+            mapper: mapper,
+            screen_mirroring: screen_mirroring,
+        })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_invalid_file_format_too_short() {
+        let rom = Rom::new(&vec![0x00]);
+        match rom {
+            Err(ref e) => assert_eq!("File is not in iNES file format", e),
+            Ok(_) => panic!("Expected failure, got success"),
+        }
+    }
+
+    #[test]
+    fn test_invalid_file_format_invalid_nes_tag() {
+        let rom = Rom::new(&vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+        match rom {
+            Err(ref e) => assert_eq!("File is not in iNES file format", e),
+            Ok(_) => panic!("Expected failure, got success"),
+        }
+    }
+
+    #[test]
+    fn test_invalid_file_format_unsupported_version() {
+        let rom = Rom::new(&vec![0x4E, 0x45, 0x53, 0x1A, 0x00, 0x00, 0x00, 0x0C]);
+        match rom {
+            Err(ref e) => assert_eq!("NES2.0 is not supported", e),
+            Ok(_) => panic!("Expected failure, got success"),
+        }
+    }
+
+    #[test]
+    fn test_valid_rom_no_skip_trainer() {
+        let mut prg_rom = vec![0x12, 0xAB, 0x6C, 0x11];
+        prg_rom.resize(PRG_ROM_PAGE_SIZE, 0x00);
+        let mut chr_rom = vec![0x43, 0xFF, 0xFA, 0xAB];
+        chr_rom.resize(2 * CHR_ROM_PAGE_SIZE, 0x00);
+
+        //First few elements of raw, specifying iNES version and rom sizes
+        let mut raw = vec![0x4E, 0x45, 0x53, 0x1A, 0x01, 0x02, 0b0000_1000, 0x00];
+        raw.resize(16 + PRG_ROM_PAGE_SIZE + 2 * CHR_ROM_PAGE_SIZE, 0x00);
+
+        //Copy our rom over
+        raw[16..16 + PRG_ROM_PAGE_SIZE].copy_from_slice(&prg_rom);
+        raw[16 + PRG_ROM_PAGE_SIZE..16 + PRG_ROM_PAGE_SIZE + 2 * CHR_ROM_PAGE_SIZE]
+            .copy_from_slice(&chr_rom);
+
+        let maybe_rom = Rom::new(&raw);
+
+        let rom = match maybe_rom {
+            Err(ref e) => panic!("Expected success, got error"),
+            Ok(r) => r,
+        };
+
+        assert_eq!(Mirroring::FOUR_SCREEN, rom.screen_mirroring);
+        assert_eq!(prg_rom, rom.prg_rom);
+        assert_eq!(chr_rom, rom.chr_rom);
+    }
+
+    #[test]
+    fn test_valid_rom_skip_trainer() {
+        let mut prg_rom = vec![0x12, 0xAB, 0x6C, 0x11];
+        prg_rom.resize(PRG_ROM_PAGE_SIZE, 0x00);
+        let mut chr_rom = vec![0x43, 0xFF, 0xFA, 0xAB];
+        chr_rom.resize(2 * CHR_ROM_PAGE_SIZE, 0x00);
+
+        //First few elements of raw, specifying iNES version and rom sizes
+        let mut raw = vec![0x4E, 0x45, 0x53, 0x1A, 0x01, 0x02, 0b0000_0101, 0x00];
+        raw.resize(16 + 512 + PRG_ROM_PAGE_SIZE + 2 * CHR_ROM_PAGE_SIZE, 0x00);
+
+        //Copy our rom over
+        raw[16 + 512..16 + 512 + PRG_ROM_PAGE_SIZE].copy_from_slice(&prg_rom);
+        raw[16 + 512 + PRG_ROM_PAGE_SIZE..16 + 512 + PRG_ROM_PAGE_SIZE + 2 * CHR_ROM_PAGE_SIZE]
+            .copy_from_slice(&chr_rom);
+
+        let maybe_rom = Rom::new(&raw);
+
+        let rom = match maybe_rom {
+            Err(ref e) => panic!("Expected success, got error"),
+            Ok(r) => r,
+        };
+
+        assert_eq!(prg_rom, rom.prg_rom);
+        assert_eq!(chr_rom, rom.chr_rom);
+        assert_eq!(Mirroring::VERTICAL, rom.screen_mirroring);
+    }
+}

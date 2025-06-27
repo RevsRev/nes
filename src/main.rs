@@ -25,6 +25,7 @@ mod bus;
 mod cpu;
 mod nes;
 mod opp;
+mod ppu;
 mod rom;
 mod traits;
 

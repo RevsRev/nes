@@ -1,7 +1,7 @@
 use core::fmt;
 
-use crate::rom::{self, Rom};
-use crate::traits::mem::{self, Mem};
+use crate::rom::Rom;
+use crate::traits::mem::Mem;
 
 const RAM: u16 = 0x0000;
 const RAM_MIRRORS_END: u16 = 0x1FFF;

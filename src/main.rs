@@ -1,14 +1,11 @@
 use std::{
-    cell::RefCell,
     fmt,
     fs::File,
-    io::{self, Read},
-    rc::Rc,
+    io::Read,
     sync::{Arc, atomic::AtomicBool},
 };
 
 use crate::traits::mem::Mem;
-use bus::Bus;
 use clap::Parser;
 use cpu::CPU;
 use nes::NES;
@@ -92,12 +89,12 @@ fn main() {
 
     let halt = Arc::new(AtomicBool::new(false));
     let mut nes = NES::new(rom, halt);
-    nes.setDebug(args.debug);
+    nes.set_debug(args.debug);
 
     let mut screen_state = [0 as u8; 32 * 3 * 32];
     let mut rng = rand::thread_rng();
 
-    nes.run_with_callback(move |cpu| {
+    let _ = nes.run_with_callback(move |cpu| {
         handle_user_input(cpu, &mut event_pump);
         cpu.mem_write(0xFE, rng.gen_range(1, 16));
 

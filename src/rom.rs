@@ -7,17 +7,17 @@ pub const CHR_ROM_PAGE_SIZE: usize = 8192;
 
 #[derive(Debug, PartialEq)]
 pub enum Mirroring {
-    VERTICAL,
-    HORIZONTAL,
-    FOUR_SCREEN,
+    Vertical,
+    Horizontal,
+    FourScreen,
 }
 
 impl fmt::Display for Mirroring {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mirroring = match self {
-            Mirroring::VERTICAL => "VERTICAL",
-            Mirroring::HORIZONTAL => "HORIZONATAL",
-            Mirroring::FOUR_SCREEN => "FOUR_SCREEN",
+            Mirroring::Vertical => "VERTICAL",
+            Mirroring::Horizontal => "HORIZONATAL",
+            Mirroring::FourScreen => "FOUR_SCREEN",
         };
 
         write!(f, "{}", mirroring)
@@ -61,9 +61,9 @@ impl Rom {
         let four_screen = raw[6] & 0b1000 != 0;
         let vertical_mirroring = raw[6] & 0b1 != 0;
         let screen_mirroring = match (four_screen, vertical_mirroring) {
-            (true, _) => Mirroring::FOUR_SCREEN,
-            (false, true) => Mirroring::VERTICAL,
-            (false, false) => Mirroring::HORIZONTAL,
+            (true, _) => Mirroring::FourScreen,
+            (false, true) => Mirroring::Vertical,
+            (false, false) => Mirroring::Horizontal,
         };
 
         let prg_rom_size = raw[4] as usize * PRG_ROM_PAGE_SIZE;
@@ -83,18 +83,16 @@ impl Rom {
     }
 
     pub fn from_file(file_path: &str) -> Rom {
-        // let mut file = match File::open(file_path) {
-        //     Ok(f) => f,
-        //     Err(e) => panic!("Could not open file {}", e),
-        // };
-        //
-        // let mut buffer = Vec::new();
-        // match file.read_to_end(&mut buffer) {
-        //     Ok(_) => (),
-        //     Err(e) => panic!("Could not read file contents {}", e),
-        // };
+        let mut file = match File::open(file_path) {
+            Ok(f) => f,
+            Err(e) => panic!("Could not open file {}", e),
+        };
 
-        let buffer = std::fs::read(file_path).unwrap();
+        let mut buffer = Vec::new();
+        match file.read_to_end(&mut buffer) {
+            Ok(_) => (),
+            Err(e) => panic!("Could not read file contents {}", e),
+        };
 
         match Rom::new(&buffer) {
             Ok(r) => r,
@@ -194,11 +192,11 @@ pub mod test {
         let maybe_rom = Rom::new(&raw);
 
         let rom = match maybe_rom {
-            Err(ref e) => panic!("Expected success, got error"),
+            Err(_) => panic!("Expected success, got error"),
             Ok(r) => r,
         };
 
-        assert_eq!(Mirroring::FOUR_SCREEN, rom.screen_mirroring);
+        assert_eq!(Mirroring::FourScreen, rom.screen_mirroring);
         assert_eq!(prg_rom, rom.prg_rom);
         assert_eq!(chr_rom, rom.chr_rom);
     }
@@ -222,12 +220,12 @@ pub mod test {
         let maybe_rom = Rom::new(&raw);
 
         let rom = match maybe_rom {
-            Err(ref e) => panic!("Expected success, got error"),
+            Err(_) => panic!("Expected success, got error"),
             Ok(r) => r,
         };
 
         assert_eq!(prg_rom, rom.prg_rom);
         assert_eq!(chr_rom, rom.chr_rom);
-        assert_eq!(Mirroring::VERTICAL, rom.screen_mirroring);
+        assert_eq!(Mirroring::Vertical, rom.screen_mirroring);
     }
 }

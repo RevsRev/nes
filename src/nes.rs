@@ -2,7 +2,7 @@ use core::fmt;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 
 use crate::bus::Bus;
 use crate::cpu::CPU;
@@ -23,7 +23,7 @@ impl fmt::Display for NES {
 
 impl NES {
     pub fn new(rom: Rom, halt: Arc<AtomicBool>) -> Self {
-        let mut bus = Rc::new(RefCell::new(Bus::new(rom)));
+        let bus = Rc::new(RefCell::new(Bus::new(rom)));
         let mut cpu = CPU::new(Rc::clone(&bus), halt);
         cpu.reset();
         NES {
@@ -33,27 +33,20 @@ impl NES {
         }
     }
 
-    pub fn setDebug(&mut self, debug: bool) {
+    pub fn set_debug(&mut self, debug: bool) {
         self.debug = debug;
         self.cpu.debug = debug;
         self.bus.borrow_mut().debug = debug;
     }
 
-    pub fn run(&mut self) {
-        if self.debug {
-            println!("{}", self);
-        }
-        self.cpu.run();
-    }
-
-    pub fn run_with_callback<F>(&mut self, mut callback: F)
+    pub fn run_with_callback<F>(&mut self, callback: F) -> Result<(), String>
     where
         F: FnMut(&mut CPU<Bus>),
     {
         if self.debug {
             println!("{}", self);
         }
-        self.cpu.run_with_callback(callback);
+        self.cpu.run_with_callback(callback)
     }
 }
 
@@ -61,7 +54,6 @@ impl NES {
 mod test {
     use clap::error::Result;
 
-    use crate::rom::test::test_rom;
     use crate::rom::{self, Rom};
     use crate::traits::mem::Mem;
     use std::io::{BufRead, BufReader};
@@ -98,7 +90,7 @@ mod test {
 
         let rom = crate::rom::test::test_rom(program);
 
-        let mut halt = Arc::new(AtomicBool::new(false));
+        let halt = Arc::new(AtomicBool::new(false));
         let mut nes = NES::new(rom, Arc::clone(&halt));
         let mut result: Vec<String> = Vec::new();
 
@@ -158,7 +150,7 @@ mod test {
 
         let rom = crate::rom::test::test_rom(program);
 
-        let mut halt = Arc::new(AtomicBool::new(false));
+        let halt = Arc::new(AtomicBool::new(false));
         let mut nes = NES::new(rom, Arc::clone(&halt));
         let mut result: Vec<String> = Vec::new();
 
@@ -181,7 +173,7 @@ mod test {
             halt_share.store(true, Ordering::Relaxed);
         });
 
-        nes.run_with_callback(|cpu| {
+        let _ = nes.run_with_callback(|cpu| {
             let trace = cpu.get_trace_str();
             match trace {
                 None => println!("WARN: No CPU trace"),
@@ -199,7 +191,7 @@ mod test {
 
     #[test]
     fn test_nestest() {
-        let mut halt = Arc::new(AtomicBool::new(false));
+        let halt = Arc::new(AtomicBool::new(false));
         let mut nes = NES::new(nestest_rom(), Arc::clone(&halt));
         let mut result: Vec<String> = Vec::new();
         let nes_test_log = nestest_log();
@@ -216,7 +208,7 @@ mod test {
         });
 
         let runtime_result = panic::catch_unwind(AssertUnwindSafe(|| {
-            nes.run_with_callback(|cpu| {
+            let _ = nes.run_with_callback(|cpu| {
                 let trace = cpu.get_trace_str();
                 match trace {
                     None => println!("WARN: No CPU trace"),

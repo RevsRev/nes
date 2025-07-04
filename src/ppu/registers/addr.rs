@@ -16,7 +16,7 @@ impl AddrRegister {
         self.value.1 = (data & 0xFF) as u8;
     }
 
-    fn update(&mut self, data: u8) {
+    pub fn update(&mut self, data: u8) {
         if self.hi_ptr {
             self.value.0 = data;
         } else {

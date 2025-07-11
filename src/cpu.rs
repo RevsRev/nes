@@ -238,7 +238,7 @@ pub struct CPU<T: Mem> {
 }
 
 impl<T: Mem> Mem for CPU<T> {
-    fn mem_read(&self, addr: u16) -> u8 {
+    fn mem_read(&mut self, addr: u16) -> u8 {
         self.bus.borrow_mut().mem_read(addr)
     }
 
@@ -1433,7 +1433,7 @@ mod test {
     }
 
     impl Mem for BusStub {
-        fn mem_read(&self, addr: u16) -> u8 {
+        fn mem_read(&mut self, addr: u16) -> u8 {
             self.memory[addr as usize]
         }
 

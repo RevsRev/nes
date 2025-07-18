@@ -21,10 +21,10 @@ impl ControlRegister {
     }
 
     pub fn vram_addr_increment(&self) -> u8 {
-        if self.has_flag(VRAM_ADD_INCREMENT) {
+        if !self.has_flag(VRAM_ADD_INCREMENT) {
             0b0000_0001 //1
         } else {
-            0b0001_0000 //32
+            0b0010_0000 //32
         }
     }
 

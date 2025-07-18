@@ -60,9 +60,13 @@ impl Mem for Bus {
             0x2000 | 0x2001 | 0x2003 | 0x2005 | 0x2006 | 0x4014 => {
                 panic!("Attempt to read from write-only PPU address {:#04X}", addr);
             }
+
+            0x2002 => self.ppu.read_status(),
+            0x2004 => self.ppu.read_oam_data(),
             0x2007 => self.ppu.read_data(),
+
             0x2008..=PPU_REGISTERS_MIRRORS_END => {
-                let mirror_down_addr = addr & 0b00100000_00000111;
+                let mirror_down_addr = addr & 0b0010_0000_0000_0111;
                 self.mem_read(mirror_down_addr)
             }
             ROM_START..=ROM_END => self.read_prg_rom(addr),
@@ -89,10 +93,17 @@ impl Mem for Bus {
                 self.cpu_vram[mirror_down_addr as usize] = data;
             }
             0x2000 => self.ppu.write_to_ctl(data),
+            // 0x2001 => self.ppu.write_to_mask(data),
+            0x2002 => panic!("attempt to write to PPU status register"),
+            0x2003 => self.ppu.write_to_oam_addr(data),
+            0x2004 => self.ppu.write_to_oam_data(data),
+            // 0x2005 => self.ppu.write_to_scroll(data),
             0x2006 => self.ppu.write_to_ppu_addr(data),
             0x2007 => self.ppu.write_data(data),
+
             0x2008..=PPU_REGISTERS_MIRRORS_END => {
-                todo!("PPU is not supported yet");
+                let mirror_down_addr = addr & 0b0010_0000_0000_0111;
+                self.mem_write(mirror_down_addr, data);
             }
             ROM_START..=ROM_END => {
                 panic!("Attempt to write to Cartridge in ROM space");

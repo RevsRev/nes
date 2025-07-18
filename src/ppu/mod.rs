@@ -149,11 +149,11 @@ impl PPU {
         self.ctl.update(value);
     }
 
-    fn write_to_oam_addr(&mut self, value: u8) {
+    pub fn write_to_oam_addr(&mut self, value: u8) {
         self.oam_addr = value;
     }
 
-    fn write_to_oam_data(&mut self, value: u8) {
+    pub fn write_to_oam_data(&mut self, value: u8) {
         self.oam_data[self.oam_addr as usize] = value;
         self.oam_addr = self.oam_addr.wrapping_add(1);
     }

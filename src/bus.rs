@@ -62,9 +62,8 @@ impl Mem for Bus {
             }
             0x2007 => self.ppu.read_data(),
             0x2008..=PPU_REGISTERS_MIRRORS_END => {
-                let _mirror_down_addr = addr & 0b00100000_00000111;
-                //                todo!("PPU is not supported yet")
-                0
+                let mirror_down_addr = addr & 0b00100000_00000111;
+                self.mem_read(mirror_down_addr)
             }
             ROM_START..=ROM_END => self.read_prg_rom(addr),
             _ => {

@@ -1,4 +1,4 @@
-use registers::status::StatusRegister;
+use registers::{oam_addr, status::StatusRegister};
 
 use crate::{
     ppu::registers::{addr::AddrRegister, ctl::ControlRegister},
@@ -19,6 +19,7 @@ pub struct PPU {
     addr: AddrRegister,
     pub ctl: ControlRegister,
     status: StatusRegister,
+    oam_addr: u8,
 }
 
 impl PPU {
@@ -35,6 +36,7 @@ impl PPU {
             addr: AddrRegister::new(),
             ctl: ControlRegister::new(),
             status: StatusRegister::new(),
+            oam_addr: 0,
         }
     }
 
@@ -130,6 +132,10 @@ impl PPU {
         self.ctl.update(value);
     }
 
+    pub fn read_oam_data(&self) -> u8 {
+        self.oam_data[self.oam_addr as usize]
+    }
+
     pub fn read_status(&mut self) -> u8 {
         let data = self.status.snapshot();
         self.status.reset_vblank_status();
@@ -141,6 +147,21 @@ impl PPU {
     fn write_to_ctrl(&mut self, value: u8) {
         let before_nmi_status = self.ctl.generate_vblank_nmi();
         self.ctl.update(value);
+    }
+
+    fn write_to_oam_addr(&mut self, value: u8) {
+        self.oam_addr = value;
+    }
+
+    fn write_to_oam_data(&mut self, value: u8) {
+        self.oam_data[self.oam_addr as usize] = value;
+        self.oam_addr = self.oam_addr.wrapping_add(1);
+    }
+
+    fn write_oam_dma(&mut self, data: &[u8; 256]) {
+        for d in data.iter() {
+            self.write_to_oam_data(*d);
+        }
     }
 }
 #[cfg(test)]
@@ -312,38 +333,38 @@ pub mod test {
         assert_eq!(ppu.status.snapshot() >> 7, 0);
     }
 
-    // #[test]
-    // fn test_oam_read_write() {
-    //     let mut ppu = ppu_empty_rom(Mirroring::Horizontal);
-    //     ppu.write_to_oam_addr(0x10);
-    //     ppu.write_to_oam_data(0x66);
-    //     ppu.write_to_oam_data(0x77);
-    //
-    //     ppu.write_to_oam_addr(0x10);
-    //     assert_eq!(ppu.read_oam_data(), 0x66);
-    //
-    //     ppu.write_to_oam_addr(0x11);
-    //     assert_eq!(ppu.read_oam_data(), 0x77);
-    // }
-    //
-    // #[test]
-    // fn test_oam_dma() {
-    //     let mut ppu = ppu_empty_rom(Mirroring::Horizontal);
-    //
-    //     let mut data = [0x66; 256];
-    //     data[0] = 0x77;
-    //     data[255] = 0x88;
-    //
-    //     ppu.write_to_oam_addr(0x10);
-    //     ppu.write_oam_dma(&data);
-    //
-    //     ppu.write_to_oam_addr(0xf); //wrap around
-    //     assert_eq!(ppu.read_oam_data(), 0x88);
-    //
-    //     ppu.write_to_oam_addr(0x10);
-    //     assert_eq!(ppu.read_oam_data(), 0x77);
-    //
-    //     ppu.write_to_oam_addr(0x11);
-    //     assert_eq!(ppu.read_oam_data(), 0x66);
-    // }
+    #[test]
+    fn test_oam_read_write() {
+        let mut ppu = ppu_empty_rom(Mirroring::Horizontal);
+        ppu.write_to_oam_addr(0x10);
+        ppu.write_to_oam_data(0x66);
+        ppu.write_to_oam_data(0x77);
+
+        ppu.write_to_oam_addr(0x10);
+        assert_eq!(ppu.read_oam_data(), 0x66);
+
+        ppu.write_to_oam_addr(0x11);
+        assert_eq!(ppu.read_oam_data(), 0x77);
+    }
+
+    #[test]
+    fn test_oam_dma() {
+        let mut ppu = ppu_empty_rom(Mirroring::Horizontal);
+
+        let mut data = [0x66; 256];
+        data[0] = 0x77;
+        data[255] = 0x88;
+
+        ppu.write_to_oam_addr(0x10);
+        ppu.write_oam_dma(&data);
+
+        ppu.write_to_oam_addr(0xf); //wrap around
+        assert_eq!(ppu.read_oam_data(), 0x88);
+
+        ppu.write_to_oam_addr(0x10);
+        assert_eq!(ppu.read_oam_data(), 0x77);
+
+        ppu.write_to_oam_addr(0x11);
+        assert_eq!(ppu.read_oam_data(), 0x66);
+    }
 }

@@ -31,4 +31,8 @@ impl ControlRegister {
     pub fn update(&mut self, data: u8) {
         self.bits = data;
     }
+
+    pub(crate) fn generate_vblank_nmi(&self) -> bool {
+        self.bits & GENERATE_NMI != 0
+    }
 }

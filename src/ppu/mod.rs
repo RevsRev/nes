@@ -1,3 +1,5 @@
+use registers::status::StatusRegister;
+
 use crate::{
     ppu::registers::{addr::AddrRegister, ctl::ControlRegister},
     rom::Mirroring,
@@ -16,6 +18,7 @@ pub struct PPU {
 
     addr: AddrRegister,
     pub ctl: ControlRegister,
+    status: StatusRegister,
 }
 
 impl PPU {
@@ -31,6 +34,7 @@ impl PPU {
 
             addr: AddrRegister::new(),
             ctl: ControlRegister::new(),
+            status: StatusRegister::new(),
         }
     }
 
@@ -123,6 +127,19 @@ impl PPU {
     }
 
     pub fn write_to_ctl(&mut self, value: u8) {
+        self.ctl.update(value);
+    }
+
+    pub fn read_status(&mut self) -> u8 {
+        let data = self.status.snapshot();
+        self.status.reset_vblank_status();
+        self.addr.reset_latch();
+        //self.scroll.reset_latch();
+        data
+    }
+
+    fn write_to_ctrl(&mut self, value: u8) {
+        let before_nmi_status = self.ctl.generate_vblank_nmi();
         self.ctl.update(value);
     }
 }
@@ -248,53 +265,53 @@ pub mod test {
         ppu.read_data(); //load into buffer
         assert_eq!(ppu.read_data(), 0x77); //read from B
     }
-    //
-    // #[test]
-    // fn test_read_status_resets_latch() {
-    //     let mut ppu = ppu_empty_rom(Mirroring::Horizontal);
-    //     ppu.vram[0x0305] = 0x66;
-    //
-    //     ppu.write_to_ppu_addr(0x21);
-    //     ppu.write_to_ppu_addr(0x23);
-    //     ppu.write_to_ppu_addr(0x05);
-    //
-    //     ppu.read_data(); //load_into_buffer
-    //     assert_ne!(ppu.read_data(), 0x66);
-    //
-    //     ppu.read_status();
-    //
-    //     ppu.write_to_ppu_addr(0x23);
-    //     ppu.write_to_ppu_addr(0x05);
-    //
-    //     ppu.read_data(); //load_into_buffer
-    //     assert_eq!(ppu.read_data(), 0x66);
-    // }
-    //
-    // #[test]
-    // fn test_ppu_vram_mirroring() {
-    //     let mut ppu = ppu_empty_rom(Mirroring::Horizontal);
-    //     ppu.write_to_ctrl(0);
-    //     ppu.vram[0x0305] = 0x66;
-    //
-    //     ppu.write_to_ppu_addr(0x63); //0x6305 -> 0x2305
-    //     ppu.write_to_ppu_addr(0x05);
-    //
-    //     ppu.read_data(); //load into_buffer
-    //     assert_eq!(ppu.read_data(), 0x66);
-    //     // assert_eq!(ppu.addr.read(), 0x0306)
-    // }
-    //
-    // #[test]
-    // fn test_read_status_resets_vblank() {
-    //     let mut ppu = ppu_empty_rom(Mirroring::Horizontal);
-    //     ppu.status.set_vblank_status(true);
-    //
-    //     let status = ppu.read_status();
-    //
-    //     assert_eq!(status >> 7, 1);
-    //     assert_eq!(ppu.status.snapshot() >> 7, 0);
-    // }
-    //
+
+    #[test]
+    fn test_read_status_resets_latch() {
+        let mut ppu = ppu_empty_rom(Mirroring::Horizontal);
+        ppu.vram[0x0305] = 0x66;
+
+        ppu.write_to_ppu_addr(0x21);
+        ppu.write_to_ppu_addr(0x23);
+        ppu.write_to_ppu_addr(0x05);
+
+        ppu.read_data(); //load_into_buffer
+        assert_ne!(ppu.read_data(), 0x66);
+
+        ppu.read_status();
+
+        ppu.write_to_ppu_addr(0x23);
+        ppu.write_to_ppu_addr(0x05);
+
+        ppu.read_data(); //load_into_buffer
+        assert_eq!(ppu.read_data(), 0x66);
+    }
+
+    #[test]
+    fn test_ppu_vram_mirroring() {
+        let mut ppu = ppu_empty_rom(Mirroring::Horizontal);
+        ppu.write_to_ctrl(0);
+        ppu.vram[0x0305] = 0x66;
+
+        ppu.write_to_ppu_addr(0x63); //0x6305 -> 0x2305
+        ppu.write_to_ppu_addr(0x05);
+
+        ppu.read_data(); //load into_buffer
+        assert_eq!(ppu.read_data(), 0x66);
+        // assert_eq!(ppu.addr.read(), 0x0306)
+    }
+
+    #[test]
+    fn test_read_status_resets_vblank() {
+        let mut ppu = ppu_empty_rom(Mirroring::Horizontal);
+        ppu.status.set_vblank(true);
+
+        let status = ppu.read_status();
+
+        assert_eq!(status >> 7, 1);
+        assert_eq!(ppu.status.snapshot() >> 7, 0);
+    }
+
     // #[test]
     // fn test_oam_read_write() {
     //     let mut ppu = ppu_empty_rom(Mirroring::Horizontal);

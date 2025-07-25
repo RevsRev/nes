@@ -322,7 +322,11 @@ impl<T: Bus> CPU<T> {
     fn store_trace(&mut self, op: &OpCode) {
         let mut param_1 = Option::None;
         let mut param_2 = Option::None;
-        let absolute_address = self.get_absolute_address(&op.mode, self.program_counter + 1);
+
+        let absolute_address = match (&op.mode) {
+            AddressingMode::Accumulator => Option::None,
+            a => Option::Some(self.get_absolute_address(a, self.program_counter + 1).0),
+        };
 
         let mem_value = match absolute_address {
             Some(addr) => Option::Some(self.mem_read(addr)),
@@ -598,55 +602,54 @@ impl<T: Bus> CPU<T> {
     }
 
     fn get_operand_address(&mut self, mode: &AddressingMode) -> u16 {
-        let addr = self.get_absolute_address(mode, self.program_counter);
-        match addr {
-            Some(a) => a,
-            None => panic!("Opcode {} is not supported", mode),
-        }
+        self.get_absolute_address(mode, self.program_counter).0
     }
 
-    fn get_absolute_address(&mut self, mode: &AddressingMode, begin: u16) -> Option<u16> {
+    fn get_absolute_address(&mut self, mode: &AddressingMode, begin: u16) -> (u16, bool) {
         match mode {
-            AddressingMode::Immediate | AddressingMode::Implied => Option::Some(begin),
+            AddressingMode::Immediate | AddressingMode::Implied => (begin, false),
             AddressingMode::Relative => {
                 let value = self.mem_read(begin) as i8;
                 let addr = begin.wrapping_add(1).wrapping_add(value as u16);
-                Option::Some(addr)
+                (addr, false)
             }
-            AddressingMode::ZeroPage => Option::Some(self.mem_read(begin) as u16),
-            AddressingMode::Absolute => Option::Some(self.mem_read_u16(begin)),
+            AddressingMode::ZeroPage => (self.mem_read(begin) as u16, false),
+            AddressingMode::Absolute => (self.mem_read_u16(begin), false),
             AddressingMode::ZeroPage_X => {
                 let pos = self.mem_read(begin);
                 let addr = pos.wrapping_add(self.register_x) as u16;
-                Option::Some(addr)
+                (addr, false)
             }
             AddressingMode::ZeroPage_Y => {
                 let pos = self.mem_read(begin);
                 let addr = pos.wrapping_add(self.register_y) as u16;
-                Option::Some(addr)
+                (addr, false)
             }
             AddressingMode::Absolute_X => {
                 let base = self.mem_read_u16(begin);
                 let addr = base.wrapping_add(self.register_x as u16);
-                Option::Some(addr)
+                (addr, false)
             }
             AddressingMode::Absolute_Y => {
                 let base = self.mem_read_u16(begin);
                 let addr = base.wrapping_add(self.register_y as u16);
-                Option::Some(addr)
+                (addr, false)
             }
             AddressingMode::Indirect_X => {
                 let base = self.mem_read(begin);
                 let ptr: u8 = base.wrapping_add(self.register_x);
                 let lo = self.mem_read(ptr as u16);
                 let hi = self.mem_read(ptr.wrapping_add(1) as u16);
-                Option::Some((hi as u16) << 8 | (lo as u16))
+                ((hi as u16) << 8 | (lo as u16), false)
             }
             AddressingMode::Indirect_Y => {
                 let base = self.mem_read(begin);
                 let lo = self.mem_read(base as u16);
                 let hi = self.mem_read(base.wrapping_add(1) as u16);
-                Option::Some(((hi as u16) << 8 | (lo as u16)).wrapping_add(self.register_y as u16))
+                (
+                    ((hi as u16) << 8 | (lo as u16)).wrapping_add(self.register_y as u16),
+                    false,
+                )
             }
             AddressingMode::Indirect => {
                 let target_addr = self.bus.borrow_mut().mem_read_u16(begin);
@@ -664,9 +667,9 @@ impl<T: Bus> CPU<T> {
                 let hi = self.bus.borrow_mut().mem_read(second) as u16;
 
                 // let target_addr = self.mem_read_u16(begin);
-                Option::Some((hi << 8) | lo)
+                ((hi << 8) | lo, false)
             }
-            AddressingMode::Accumulator => Option::None,
+            AddressingMode::Accumulator => panic!("Unsupported op code 'Accumulator'"),
         }
     }
 

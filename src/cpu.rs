@@ -683,8 +683,14 @@ impl<T: Bus> CPU<T> {
     }
 
     fn adc(&mut self, mode: &AddressingMode) {
-        let addr = self.evaluate_operand(mode).0;
+        let eval = self.evaluate_operand(mode);
+        let addr = eval.0;
         let value = self.mem_read(addr);
+
+        if eval.1 {
+            self.op_cycles += 1;
+        }
+
         let mut result = self.register_a;
         let mut carry = match result.checked_add(value) {
             Some(_sum) => false,
@@ -716,8 +722,13 @@ impl<T: Bus> CPU<T> {
     }
 
     fn and(&mut self, mode: &AddressingMode) {
-        let addr = self.evaluate_operand(mode).0;
+        let eval = self.evaluate_operand(mode);
+        let addr = eval.0;
         let value = self.mem_read(addr);
+
+        if eval.1 {
+            self.op_cycles += 1;
+        }
 
         self.register_a = self.register_a & value;
         self.set_status_flag(ZERO_FLAG, self.register_a == 0);
@@ -896,8 +907,13 @@ impl<T: Bus> CPU<T> {
     }
 
     fn cmp(&mut self, mode: &AddressingMode) {
-        let address = self.evaluate_operand(mode).0;
-        let value = self.mem_read(address);
+        let eval = self.evaluate_operand(mode);
+        let addr = eval.0;
+        let value = self.mem_read(addr);
+
+        if eval.1 {
+            self.op_cycles += 1;
+        }
 
         let sub = self.register_a.wrapping_sub(value);
 
@@ -976,8 +992,13 @@ impl<T: Bus> CPU<T> {
     }
 
     fn eor(&mut self, mode: &AddressingMode) {
-        let address = self.evaluate_operand(mode).0;
-        let value = self.mem_read(address);
+        let eval = self.evaluate_operand(mode);
+        let addr = eval.0;
+        let value = self.mem_read(addr);
+
+        if eval.1 {
+            self.op_cycles += 1;
+        }
 
         self.register_a = self.register_a ^ value;
 
@@ -1062,8 +1083,13 @@ impl<T: Bus> CPU<T> {
     }
 
     fn lda(&mut self, mode: &AddressingMode) {
-        let addr = self.evaluate_operand(mode).0;
+        let eval = self.evaluate_operand(mode);
+        let addr = eval.0;
         let value = self.mem_read(addr);
+
+        if eval.1 {
+            self.op_cycles += 1;
+        }
 
         self.register_a = value;
         self.set_status_flag(ZERO_FLAG, self.register_a == 0);
@@ -1074,8 +1100,13 @@ impl<T: Bus> CPU<T> {
     }
 
     fn ldx(&mut self, mode: &AddressingMode) {
-        let address = self.evaluate_operand(mode).0;
-        let value = self.mem_read(address);
+        let eval = self.evaluate_operand(mode);
+        let addr = eval.0;
+        let value = self.mem_read(addr);
+
+        if eval.1 {
+            self.op_cycles += 1;
+        }
 
         self.register_x = value;
 
@@ -1098,8 +1129,13 @@ impl<T: Bus> CPU<T> {
     }
 
     fn ldy(&mut self, mode: &AddressingMode) {
-        let address = self.evaluate_operand(mode).0;
-        let value = self.mem_read(address);
+        let eval = self.evaluate_operand(mode);
+        let addr = eval.0;
+        let value = self.mem_read(addr);
+
+        if eval.1 {
+            self.op_cycles += 1;
+        }
 
         self.register_y = value;
 
@@ -1143,8 +1179,13 @@ impl<T: Bus> CPU<T> {
     fn top(&mut self, _mode: &AddressingMode) {}
 
     fn ora(&mut self, mode: &AddressingMode) {
-        let address = self.evaluate_operand(mode).0;
-        let value = self.mem_read(address);
+        let eval = self.evaluate_operand(mode);
+        let addr = eval.0;
+        let value = self.mem_read(addr);
+
+        if eval.1 {
+            self.op_cycles += 1;
+        }
 
         self.register_a = self.register_a | value;
 
@@ -1343,8 +1384,13 @@ impl<T: Bus> CPU<T> {
         };
 
         let a = self.register_a;
-        let address = self.evaluate_operand(mode).0;
+        let eval = self.evaluate_operand(mode);
+        let address = eval.0;
         let value = self.mem_read(address);
+
+        if eval.1 {
+            self.op_cycles += 1;
+        }
 
         let clear_carry = match a.checked_sub(value) {
             Some(_sub) => match _sub.checked_sub(1 - c) {

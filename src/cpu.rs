@@ -325,7 +325,10 @@ impl<T: Bus> CPU<T> {
 
         let absolute_address = match (&op.mode) {
             AddressingMode::Accumulator => Option::None,
-            a => Option::Some(self.get_absolute_address(a, self.program_counter + 1).0),
+            a => Option::Some(
+                self.evaluate_operand_at_address(a, self.program_counter + 1)
+                    .0,
+            ),
         };
 
         let mem_value = match absolute_address {
@@ -601,11 +604,11 @@ impl<T: Bus> CPU<T> {
         return register & flag == flag;
     }
 
-    fn get_operand_address(&mut self, mode: &AddressingMode) -> (u16, bool) {
-        self.get_absolute_address(mode, self.program_counter)
+    fn evaluate_operand(&mut self, mode: &AddressingMode) -> (u16, bool) {
+        self.evaluate_operand_at_address(mode, self.program_counter)
     }
 
-    fn get_absolute_address(&mut self, mode: &AddressingMode, begin: u16) -> (u16, bool) {
+    fn evaluate_operand_at_address(&mut self, mode: &AddressingMode, begin: u16) -> (u16, bool) {
         match mode {
             AddressingMode::Immediate | AddressingMode::Implied => (begin, false),
             AddressingMode::Relative => {
@@ -680,7 +683,7 @@ impl<T: Bus> CPU<T> {
     }
 
     fn adc(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode).0;
+        let addr = self.evaluate_operand(mode).0;
         let value = self.mem_read(addr);
         let mut result = self.register_a;
         let mut carry = match result.checked_add(value) {
@@ -713,7 +716,7 @@ impl<T: Bus> CPU<T> {
     }
 
     fn and(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode).0;
+        let addr = self.evaluate_operand(mode).0;
         let value = self.mem_read(addr);
 
         self.register_a = self.register_a & value;
@@ -738,7 +741,7 @@ impl<T: Bus> CPU<T> {
             return;
         }
 
-        let addr = self.get_operand_address(mode).0;
+        let addr = self.evaluate_operand(mode).0;
         let old = self.mem_read(addr);
 
         let value = old << 1;
@@ -751,7 +754,7 @@ impl<T: Bus> CPU<T> {
     }
 
     fn sta(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode).0;
+        let addr = self.evaluate_operand(mode).0;
         self.mem_write(addr, self.register_a);
     }
 
@@ -761,7 +764,7 @@ impl<T: Bus> CPU<T> {
         }
 
         self.op_cycles += 1;
-        self.next_program_counter = self.get_operand_address(mode).0;
+        self.next_program_counter = self.evaluate_operand(mode).0;
 
         if Self::page_boundary_crossed(self.program_counter, self.next_program_counter) {
             self.op_cycles += 2;
@@ -773,7 +776,7 @@ impl<T: Bus> CPU<T> {
             return;
         }
 
-        self.next_program_counter = self.get_operand_address(mode).0;
+        self.next_program_counter = self.evaluate_operand(mode).0;
     }
 
     fn beq(&mut self, mode: &AddressingMode) {
@@ -781,11 +784,11 @@ impl<T: Bus> CPU<T> {
             return;
         }
 
-        self.next_program_counter = self.get_operand_address(mode).0;
+        self.next_program_counter = self.evaluate_operand(mode).0;
     }
 
     fn bit(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode).0;
+        let addr = self.evaluate_operand(mode).0;
         let value = self.mem_read(addr);
 
         self.set_status_flag(ZERO_FLAG, value & self.register_a == 0);
@@ -798,7 +801,7 @@ impl<T: Bus> CPU<T> {
             return;
         }
 
-        self.next_program_counter = self.get_operand_address(mode).0;
+        self.next_program_counter = self.evaluate_operand(mode).0;
     }
 
     fn bne(&mut self, mode: &AddressingMode) {
@@ -806,7 +809,7 @@ impl<T: Bus> CPU<T> {
             return;
         }
 
-        self.next_program_counter = self.get_operand_address(mode).0;
+        self.next_program_counter = self.evaluate_operand(mode).0;
     }
 
     fn bpl(&mut self, mode: &AddressingMode) {
@@ -814,7 +817,7 @@ impl<T: Bus> CPU<T> {
             return;
         }
 
-        self.next_program_counter = self.get_operand_address(mode).0;
+        self.next_program_counter = self.evaluate_operand(mode).0;
     }
 
     fn bvc(&mut self, mode: &AddressingMode) {
@@ -822,7 +825,7 @@ impl<T: Bus> CPU<T> {
             return;
         }
 
-        self.next_program_counter = self.get_operand_address(mode).0;
+        self.next_program_counter = self.evaluate_operand(mode).0;
     }
 
     fn bvs(&mut self, mode: &AddressingMode) {
@@ -830,7 +833,7 @@ impl<T: Bus> CPU<T> {
             return;
         }
 
-        self.next_program_counter = self.get_operand_address(mode).0;
+        self.next_program_counter = self.evaluate_operand(mode).0;
     }
 
     fn clc(&mut self, _mode: &AddressingMode) {
@@ -850,7 +853,7 @@ impl<T: Bus> CPU<T> {
     }
 
     fn cmp(&mut self, mode: &AddressingMode) {
-        let address = self.get_operand_address(mode).0;
+        let address = self.evaluate_operand(mode).0;
         let value = self.mem_read(address);
 
         let sub = self.register_a.wrapping_sub(value);
@@ -861,7 +864,7 @@ impl<T: Bus> CPU<T> {
     }
 
     fn cpx(&mut self, mode: &AddressingMode) {
-        let address = self.get_operand_address(mode).0;
+        let address = self.evaluate_operand(mode).0;
         let value = self.mem_read(address);
 
         let sub = self.register_x.wrapping_sub(value);
@@ -872,7 +875,7 @@ impl<T: Bus> CPU<T> {
     }
 
     fn cpy(&mut self, mode: &AddressingMode) {
-        let address = self.get_operand_address(mode).0;
+        let address = self.evaluate_operand(mode).0;
         let value = self.mem_read(address);
 
         let sub = self.register_y.wrapping_sub(value);
@@ -883,7 +886,7 @@ impl<T: Bus> CPU<T> {
     }
 
     fn dec(&mut self, mode: &AddressingMode) {
-        let address = self.get_operand_address(mode).0;
+        let address = self.evaluate_operand(mode).0;
         let value = self.mem_read(address);
 
         let sub = value.wrapping_sub(1);
@@ -895,7 +898,7 @@ impl<T: Bus> CPU<T> {
     }
 
     fn dcp(&mut self, mode: &AddressingMode) {
-        let address = self.get_operand_address(mode).0;
+        let address = self.evaluate_operand(mode).0;
         let value = self.mem_read(address);
 
         let sub = value.wrapping_sub(1);
@@ -930,7 +933,7 @@ impl<T: Bus> CPU<T> {
     }
 
     fn eor(&mut self, mode: &AddressingMode) {
-        let address = self.get_operand_address(mode).0;
+        let address = self.evaluate_operand(mode).0;
         let value = self.mem_read(address);
 
         self.register_a = self.register_a ^ value;
@@ -943,7 +946,7 @@ impl<T: Bus> CPU<T> {
     }
 
     fn inc(&mut self, mode: &AddressingMode) {
-        let address = self.get_operand_address(mode).0;
+        let address = self.evaluate_operand(mode).0;
         let value = self.mem_read(address).wrapping_add(1);
         self.mem_write(address, value);
 
@@ -970,7 +973,7 @@ impl<T: Bus> CPU<T> {
     }
 
     fn isb(&mut self, mode: &AddressingMode) {
-        let address = self.get_operand_address(mode).0;
+        let address = self.evaluate_operand(mode).0;
         let value = self.mem_read(address).wrapping_add(1);
         self.mem_write(address, value);
 
@@ -1003,12 +1006,12 @@ impl<T: Bus> CPU<T> {
     }
 
     fn jmp(&mut self, mode: &AddressingMode) {
-        let pc_jump = self.get_operand_address(mode).0;
+        let pc_jump = self.evaluate_operand(mode).0;
         self.next_program_counter = pc_jump;
     }
 
     fn jsr(&mut self, mode: &AddressingMode) {
-        let pc_jump = self.get_operand_address(mode).0;
+        let pc_jump = self.evaluate_operand(mode).0;
 
         self.stack_push_u16(self.program_counter + 2 - 1);
 
@@ -1016,7 +1019,7 @@ impl<T: Bus> CPU<T> {
     }
 
     fn lda(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode).0;
+        let addr = self.evaluate_operand(mode).0;
         let value = self.mem_read(addr);
 
         self.register_a = value;
@@ -1028,7 +1031,7 @@ impl<T: Bus> CPU<T> {
     }
 
     fn ldx(&mut self, mode: &AddressingMode) {
-        let address = self.get_operand_address(mode).0;
+        let address = self.evaluate_operand(mode).0;
         let value = self.mem_read(address);
 
         self.register_x = value;
@@ -1041,7 +1044,7 @@ impl<T: Bus> CPU<T> {
     }
 
     fn lax(&mut self, mode: &AddressingMode) {
-        let address = self.get_operand_address(mode).0;
+        let address = self.evaluate_operand(mode).0;
         let value = self.mem_read(address);
 
         self.register_a = value;
@@ -1052,7 +1055,7 @@ impl<T: Bus> CPU<T> {
     }
 
     fn ldy(&mut self, mode: &AddressingMode) {
-        let address = self.get_operand_address(mode).0;
+        let address = self.evaluate_operand(mode).0;
         let value = self.mem_read(address);
 
         self.register_y = value;
@@ -1078,7 +1081,7 @@ impl<T: Bus> CPU<T> {
             return;
         }
 
-        let addr = self.get_operand_address(mode).0;
+        let addr = self.evaluate_operand(mode).0;
         let old = self.mem_read(addr);
 
         let value = old >> 1;
@@ -1097,7 +1100,7 @@ impl<T: Bus> CPU<T> {
     fn top(&mut self, _mode: &AddressingMode) {}
 
     fn ora(&mut self, mode: &AddressingMode) {
-        let address = self.get_operand_address(mode).0;
+        let address = self.evaluate_operand(mode).0;
         let value = self.mem_read(address);
 
         self.register_a = self.register_a | value;
@@ -1149,7 +1152,7 @@ impl<T: Bus> CPU<T> {
             return;
         }
 
-        let address = self.get_operand_address(mode).0;
+        let address = self.evaluate_operand(mode).0;
         let old_value = self.mem_read(address);
         let carry = Self::get_flag(self.status, CARRY_FLAG);
 
@@ -1184,7 +1187,7 @@ impl<T: Bus> CPU<T> {
             return;
         }
 
-        let address = self.get_operand_address(mode).0;
+        let address = self.evaluate_operand(mode).0;
         let old_value = self.mem_read(address);
         let carry = Self::get_flag(self.status, CARRY_FLAG);
 
@@ -1201,7 +1204,7 @@ impl<T: Bus> CPU<T> {
     }
 
     fn rla(&mut self, mode: &AddressingMode) {
-        let address = self.get_operand_address(mode).0;
+        let address = self.evaluate_operand(mode).0;
         let orig_value = self.mem_read(address);
         let value = (orig_value << 1) | (self.status & CARRY_FLAG);
 
@@ -1217,7 +1220,7 @@ impl<T: Bus> CPU<T> {
     }
 
     fn rra(&mut self, mode: &AddressingMode) {
-        let address = self.get_operand_address(mode).0;
+        let address = self.evaluate_operand(mode).0;
         let orig_value = self.mem_read(address);
 
         let should_carry = Self::get_flag(orig_value, CARRY_FLAG);
@@ -1280,7 +1283,7 @@ impl<T: Bus> CPU<T> {
     }
 
     fn sax(&mut self, mode: &AddressingMode) {
-        let address = self.get_operand_address(mode).0;
+        let address = self.evaluate_operand(mode).0;
         let value = self.register_x & self.register_a;
 
         self.mem_write(address, value);
@@ -1297,7 +1300,7 @@ impl<T: Bus> CPU<T> {
         };
 
         let a = self.register_a;
-        let address = self.get_operand_address(mode).0;
+        let address = self.evaluate_operand(mode).0;
         let value = self.mem_read(address);
 
         let clear_carry = match a.checked_sub(value) {
@@ -1334,7 +1337,7 @@ impl<T: Bus> CPU<T> {
     }
 
     fn slo(&mut self, mode: &AddressingMode) {
-        let address = self.get_operand_address(mode).0;
+        let address = self.evaluate_operand(mode).0;
         let original = self.mem_read(address);
         let value = original << 1;
         self.mem_write(address, value);
@@ -1349,7 +1352,7 @@ impl<T: Bus> CPU<T> {
     }
 
     fn sre(&mut self, mode: &AddressingMode) {
-        let address = self.get_operand_address(mode).0;
+        let address = self.evaluate_operand(mode).0;
         let original = self.mem_read(address);
         let value = original >> 1;
 
@@ -1364,12 +1367,12 @@ impl<T: Bus> CPU<T> {
     }
 
     fn stx(&mut self, mode: &AddressingMode) {
-        let address = self.get_operand_address(mode).0;
+        let address = self.evaluate_operand(mode).0;
         self.mem_write(address, self.register_x);
     }
 
     fn sty(&mut self, mode: &AddressingMode) {
-        let address = self.get_operand_address(mode).0;
+        let address = self.evaluate_operand(mode).0;
         self.mem_write(address, self.register_y);
     }
 

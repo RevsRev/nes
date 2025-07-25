@@ -611,7 +611,7 @@ impl<T: Bus> CPU<T> {
             AddressingMode::Relative => {
                 let value = self.mem_read(begin) as i8;
                 let addr = begin.wrapping_add(1).wrapping_add(value as u16);
-                (addr, false)
+                (addr, Self::page_boundary_crossed(begin, addr))
             }
             AddressingMode::ZeroPage => (self.mem_read(begin) as u16, false),
             AddressingMode::Absolute => (self.mem_read_u16(begin), false),
@@ -628,12 +628,12 @@ impl<T: Bus> CPU<T> {
             AddressingMode::Absolute_X => {
                 let base = self.mem_read_u16(begin);
                 let addr = base.wrapping_add(self.register_x as u16);
-                (addr, false)
+                (addr, Self::page_boundary_crossed(base, addr))
             }
             AddressingMode::Absolute_Y => {
                 let base = self.mem_read_u16(begin);
                 let addr = base.wrapping_add(self.register_y as u16);
-                (addr, false)
+                (addr, Self::page_boundary_crossed(base, addr))
             }
             AddressingMode::Indirect_X => {
                 let base = self.mem_read(begin);

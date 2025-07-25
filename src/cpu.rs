@@ -670,6 +670,12 @@ impl<T: Bus> CPU<T> {
         }
     }
 
+    fn page_boundary_crossed(old_address: u16, new_address: u16) -> bool {
+        let old_high = old_address >> 8;
+        let new_high = new_address >> 8;
+        old_high != new_high
+    }
+
     fn adc(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
@@ -751,7 +757,12 @@ impl<T: Bus> CPU<T> {
             return;
         }
 
+        self.op_cycles += 1;
         self.next_program_counter = self.get_operand_address(mode);
+
+        if Self::page_boundary_crossed(self.program_counter, self.next_program_counter) {
+            self.op_cycles += 2;
+        }
     }
 
     fn bcs(&mut self, mode: &AddressingMode) {
@@ -1418,6 +1429,7 @@ mod test {
 
     struct BusStub {
         pub memory: [u8; 0x00010000],
+        pub cycles: u32,
     }
 
     impl BusStub {
@@ -1426,14 +1438,19 @@ mod test {
             mem[INTERRUPT_ADDRESS as usize] = (HALT_VALUE & 0xFF) as u8;
             mem[(INTERRUPT_ADDRESS + 1) as usize] = (HALT_VALUE >> 8) as u8;
 
-            BusStub { memory: mem }
+            BusStub {
+                memory: mem,
+                cycles: 0,
+            }
         }
     }
 
     impl Bus for BusStub {}
 
     impl Tick for BusStub {
-        fn tick(&mut self, cycles: u8) {}
+        fn tick(&mut self, cycles: u8) {
+            self.cycles += cycles as u32;
+        }
     }
 
     impl Mem for BusStub {
@@ -1580,24 +1597,27 @@ mod test {
         let bus = BusStub::new();
         let mut cpu = CPU::new(Rc::new(RefCell::new(bus)), Arc::new(AtomicBool::new(false)));
         //Jump forward by 4 (to a STA instruction, check that we do in fact store)
-        cpu.load_with_start_address(0x8000, vec![0x90, 0x04, 0x00, 0x00, 0x00, 0x00, 0x85, 0xA1]);
+        cpu.load_with_start_address(0x80F0, vec![0x90, 0x0E]);
+        cpu.mem_write_vec(0x8100, &vec![0x85, 0xA1]);
         cpu.reset();
+        cpu.debug = true;
         cpu.register_a = 240;
         let _ = cpu.run_with_callback(|_| {});
         assert_eq!(240, cpu.mem_read(0x00A1));
+        assert_eq!(8, cpu.bus.borrow().cycles);
     }
 
     #[test]
     fn test_bcc_0x90_absolute_addr_carry_flag_set() {
         let bus = BusStub::new();
         let mut cpu = CPU::new(Rc::new(RefCell::new(bus)), Arc::new(AtomicBool::new(false)));
-        //Jump forward by 4 (to a STA instruction, check that we do in fact store)
         cpu.load_with_start_address(0x8000, vec![0x90, 0x04, 0x00, 0x00, 0x00, 0x00, 0x85, 0xA1]);
         cpu.reset();
         cpu.status = cpu.status | CARRY_FLAG;
         cpu.register_a = 240;
         let _ = cpu.run_with_callback(|_| {});
         assert_eq!(0, cpu.mem_read(0x00A1));
+        assert_eq!(2, cpu.bus.borrow().cycles);
     }
 
     #[test]

@@ -17,6 +17,7 @@ use sdl2::{
     keyboard::Keycode,
     pixels::{Color, PixelFormatEnum},
 };
+use traits::bus::Bus;
 
 mod bus;
 mod cpu;
@@ -108,7 +109,7 @@ fn main() {
     });
 }
 
-fn handle_user_input<T: Mem>(cpu: &mut CPU<T>, event_pump: &mut EventPump) {
+fn handle_user_input<T: Bus>(cpu: &mut CPU<T>, event_pump: &mut EventPump) {
     for event in event_pump.poll_iter() {
         match event {
             Event::Quit { .. }
@@ -156,7 +157,7 @@ fn color(byte: u8) -> Color {
     }
 }
 
-fn read_screen_state<T: Mem>(cpu: &mut CPU<T>, frame: &mut [u8; 32 * 3 * 32]) -> bool {
+fn read_screen_state<T: Bus>(cpu: &mut CPU<T>, frame: &mut [u8; 32 * 3 * 32]) -> bool {
     let mut frame_idx = 0;
     let mut update = false;
 

@@ -2,6 +2,7 @@ use core::fmt;
 
 use crate::ppu::PPU;
 use crate::rom::Rom;
+use crate::traits::bus::Bus;
 use crate::traits::mem::Mem;
 
 const RAM: u16 = 0x0000;
@@ -11,7 +12,7 @@ const PPU_REGISTERS_MIRRORS_END: u16 = 0x3FFF;
 const ROM_START: u16 = 0x8000;
 const ROM_END: u16 = 0xFFFF;
 
-pub struct Bus {
+pub struct BusImpl {
     pub debug: bool,
 
     cpu_vram: [u8; 2048],
@@ -19,11 +20,11 @@ pub struct Bus {
     ppu: PPU,
 }
 
-impl Bus {
+impl BusImpl {
     pub fn new(rom: Rom) -> Self {
         let ppu = PPU::new(rom.chr_rom, rom.screen_mirroring);
 
-        Bus {
+        BusImpl {
             debug: false,
             cpu_vram: [0; 2048],
             prg_rom: rom.prg_rom,
@@ -38,9 +39,11 @@ impl Bus {
         }
         self.prg_rom[addr as usize]
     }
+
+    pub fn tick(&mut self, cycles: u8) {}
 }
 
-impl fmt::Display for Bus {
+impl fmt::Display for BusImpl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -50,7 +53,7 @@ impl fmt::Display for Bus {
     }
 }
 
-impl Mem for Bus {
+impl Mem for BusImpl {
     fn mem_read(&mut self, addr: u16) -> u8 {
         let value = match addr {
             RAM..=RAM_MIRRORS_END => {
@@ -113,4 +116,8 @@ impl Mem for Bus {
             }
         }
     }
+}
+
+impl Bus for BusImpl {
+    fn tick(&mut self, cycles: u8) {}
 }

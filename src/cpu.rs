@@ -1,4 +1,5 @@
 use crate::opp::{OpCode, OpCodeBehaviour};
+use crate::traits::bus::Bus;
 use crate::{opp, traits::mem::Mem};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -221,7 +222,7 @@ impl fmt::Display for CpuTrace {
     }
 }
 
-pub struct CPU<T: Mem> {
+pub struct CPU<T: Bus> {
     pub debug: bool,
 
     pub register_a: u8,
@@ -240,7 +241,7 @@ pub struct CPU<T: Mem> {
     op_cycles: u8,
 }
 
-impl<T: Mem> Mem for CPU<T> {
+impl<T: Bus> Mem for CPU<T> {
     fn mem_read(&mut self, addr: u16) -> u8 {
         self.bus.borrow_mut().mem_read(addr)
     }
@@ -258,7 +259,7 @@ impl<T: Mem> Mem for CPU<T> {
     }
 }
 
-impl<T: Mem> fmt::Display for CPU<T> {
+impl<T: Bus> fmt::Display for CPU<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
@@ -274,7 +275,7 @@ impl<T: Mem> fmt::Display for CPU<T> {
     }
 }
 
-impl<T: Mem> CPU<T> {
+impl<T: Bus> CPU<T> {
     pub fn new(bus: Rc<RefCell<T>>, halt: Arc<AtomicBool>) -> Self {
         CPU {
             debug: false,
@@ -379,6 +380,7 @@ impl<T: Mem> CPU<T> {
             self.store_trace(opcode);
 
             callback(self);
+            self.op_cycles = opcode.cycles;
             self.program_counter += 1;
             self.next_program_counter = self.program_counter + (opcode.len - 1) as u16;
 
@@ -535,6 +537,7 @@ impl<T: Mem> CPU<T> {
             }
 
             self.program_counter = self.next_program_counter;
+            self.bus.borrow_mut().tick(self.op_cycles);
 
             if self.halt.load(Ordering::Relaxed) {
                 self.graceful_shutdown = false;
@@ -1423,6 +1426,10 @@ mod test {
 
             BusStub { memory: mem }
         }
+    }
+
+    impl Bus for BusStub {
+        fn tick(&mut self, cycles: u8) {}
     }
 
     impl Mem for BusStub {

@@ -4,15 +4,16 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use crate::bus::Bus;
+use crate::bus::BusImpl;
 use crate::cpu::CPU;
 use crate::rom::Rom;
+use crate::traits;
 
 pub struct NES {
     debug: bool,
 
-    pub cpu: CPU<Bus>,
-    pub bus: Rc<RefCell<Bus>>,
+    pub cpu: CPU<BusImpl>,
+    pub bus: Rc<RefCell<BusImpl>>,
 }
 
 impl fmt::Display for NES {
@@ -23,7 +24,7 @@ impl fmt::Display for NES {
 
 impl NES {
     pub fn new(rom: Rom, halt: Arc<AtomicBool>) -> Self {
-        let bus = Rc::new(RefCell::new(Bus::new(rom)));
+        let bus = Rc::new(RefCell::new(BusImpl::new(rom)));
         let mut cpu = CPU::new(Rc::clone(&bus), halt);
         cpu.reset();
         NES {
@@ -41,7 +42,7 @@ impl NES {
 
     pub fn run_with_callback<F>(&mut self, callback: F) -> Result<(), String>
     where
-        F: FnMut(&mut CPU<Bus>),
+        F: FnMut(&mut CPU<BusImpl>),
     {
         if self.debug {
             println!("{}", self);

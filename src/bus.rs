@@ -124,5 +124,7 @@ impl Mem for BusImpl {
 }
 
 impl Tick for BusImpl {
-    fn tick(&mut self, cycles: u8) {}
+    fn tick(&mut self, cycles: u8) {
+        self.ppu.tick(3 * cycles);
+    }
 }

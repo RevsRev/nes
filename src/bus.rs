@@ -41,7 +41,9 @@ impl BusImpl {
         self.prg_rom[addr as usize]
     }
 
-    pub fn tick(&mut self, cycles: u8) {}
+    pub fn tick(&mut self, cycles: u8) {
+        self.ppu.tick(3 * cycles);
+    }
 }
 
 impl fmt::Display for BusImpl {

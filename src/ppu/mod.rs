@@ -3,6 +3,7 @@ use registers::{mask::MaskRegister, scroll::ScrollRegister, status::StatusRegist
 use crate::{
     ppu::registers::{addr::AddrRegister, ctl::ControlRegister},
     rom::Mirroring,
+    traits::tick::Tick,
 };
 
 pub mod registers;
@@ -22,6 +23,10 @@ pub struct PPU {
     pub ctl: ControlRegister,
     status: StatusRegister,
     oam_addr: u8,
+}
+
+impl Tick for PPU {
+    fn tick(&mut self, cycles: u8) {}
 }
 
 impl PPU {

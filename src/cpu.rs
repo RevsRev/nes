@@ -763,10 +763,11 @@ impl<T: Bus> CPU<T> {
             return;
         }
 
+        let eval = self.evaluate_operand(mode);
         self.op_cycles += 1;
-        self.next_program_counter = self.evaluate_operand(mode).0;
+        self.next_program_counter = eval.0;
 
-        if Self::page_boundary_crossed(self.program_counter, self.next_program_counter) {
+        if eval.1 {
             self.op_cycles += 2;
         }
     }
@@ -776,7 +777,13 @@ impl<T: Bus> CPU<T> {
             return;
         }
 
-        self.next_program_counter = self.evaluate_operand(mode).0;
+        let eval = self.evaluate_operand(mode);
+        self.op_cycles += 1;
+        self.next_program_counter = eval.0;
+
+        if eval.1 {
+            self.op_cycles += 2;
+        }
     }
 
     fn beq(&mut self, mode: &AddressingMode) {
@@ -784,7 +791,13 @@ impl<T: Bus> CPU<T> {
             return;
         }
 
-        self.next_program_counter = self.evaluate_operand(mode).0;
+        let eval = self.evaluate_operand(mode);
+        self.op_cycles += 1;
+        self.next_program_counter = eval.0;
+
+        if eval.1 {
+            self.op_cycles += 2;
+        }
     }
 
     fn bit(&mut self, mode: &AddressingMode) {
@@ -801,7 +814,13 @@ impl<T: Bus> CPU<T> {
             return;
         }
 
-        self.next_program_counter = self.evaluate_operand(mode).0;
+        let eval = self.evaluate_operand(mode);
+        self.op_cycles += 1;
+        self.next_program_counter = eval.0;
+
+        if eval.1 {
+            self.op_cycles += 2;
+        }
     }
 
     fn bne(&mut self, mode: &AddressingMode) {
@@ -809,7 +828,13 @@ impl<T: Bus> CPU<T> {
             return;
         }
 
-        self.next_program_counter = self.evaluate_operand(mode).0;
+        let eval = self.evaluate_operand(mode);
+        self.op_cycles += 1;
+        self.next_program_counter = eval.0;
+
+        if eval.1 {
+            self.op_cycles += 2;
+        }
     }
 
     fn bpl(&mut self, mode: &AddressingMode) {
@@ -817,7 +842,13 @@ impl<T: Bus> CPU<T> {
             return;
         }
 
-        self.next_program_counter = self.evaluate_operand(mode).0;
+        let eval = self.evaluate_operand(mode);
+        self.op_cycles += 1;
+        self.next_program_counter = eval.0;
+
+        if eval.1 {
+            self.op_cycles += 2;
+        }
     }
 
     fn bvc(&mut self, mode: &AddressingMode) {
@@ -825,7 +856,13 @@ impl<T: Bus> CPU<T> {
             return;
         }
 
-        self.next_program_counter = self.evaluate_operand(mode).0;
+        let eval = self.evaluate_operand(mode);
+        self.op_cycles += 1;
+        self.next_program_counter = eval.0;
+
+        if eval.1 {
+            self.op_cycles += 2;
+        }
     }
 
     fn bvs(&mut self, mode: &AddressingMode) {
@@ -833,7 +870,13 @@ impl<T: Bus> CPU<T> {
             return;
         }
 
-        self.next_program_counter = self.evaluate_operand(mode).0;
+        let eval = self.evaluate_operand(mode);
+        self.op_cycles += 1;
+        self.next_program_counter = eval.0;
+
+        if eval.1 {
+            self.op_cycles += 2;
+        }
     }
 
     fn clc(&mut self, _mode: &AddressingMode) {

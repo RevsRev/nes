@@ -1118,8 +1118,13 @@ impl<T: Bus> CPU<T> {
     }
 
     fn lax(&mut self, mode: &AddressingMode) {
-        let address = self.evaluate_operand(mode).0;
-        let value = self.mem_read(address);
+        let eval = self.evaluate_operand(mode);
+        let addr = eval.0;
+        let value = self.mem_read(addr);
+
+        if eval.1 {
+            self.op_cycles += 1;
+        }
 
         self.register_a = value;
         self.register_x = value;
@@ -1176,7 +1181,12 @@ impl<T: Bus> CPU<T> {
 
     fn dop(&mut self, _mode: &AddressingMode) {}
 
-    fn top(&mut self, _mode: &AddressingMode) {}
+    fn top(&mut self, mode: &AddressingMode) {
+        let cross_page = self.evaluate_operand(mode).1;
+        if cross_page {
+            self.op_cycles += 1
+        }
+    }
 
     fn ora(&mut self, mode: &AddressingMode) {
         let eval = self.evaluate_operand(mode);

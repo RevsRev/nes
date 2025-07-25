@@ -93,11 +93,11 @@ impl Mem for Bus {
                 self.cpu_vram[mirror_down_addr as usize] = data;
             }
             0x2000 => self.ppu.write_to_ctl(data),
-            // 0x2001 => self.ppu.write_to_mask(data),
+            0x2001 => self.ppu.write_to_mask(data),
             0x2002 => panic!("attempt to write to PPU status register"),
             0x2003 => self.ppu.write_to_oam_addr(data),
             0x2004 => self.ppu.write_to_oam_data(data),
-            // 0x2005 => self.ppu.write_to_scroll(data),
+            0x2005 => self.ppu.write_to_scroll(data),
             0x2006 => self.ppu.write_to_ppu_addr(data),
             0x2007 => self.ppu.write_data(data),
 

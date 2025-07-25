@@ -1,4 +1,4 @@
-use registers::{oam_addr, status::StatusRegister};
+use registers::{mask::MaskRegister, scroll::ScrollRegister, status::StatusRegister};
 
 use crate::{
     ppu::registers::{addr::AddrRegister, ctl::ControlRegister},
@@ -17,6 +17,8 @@ pub struct PPU {
     internal_data_buf: u8,
 
     addr: AddrRegister,
+    scroll: ScrollRegister,
+    mask: MaskRegister,
     pub ctl: ControlRegister,
     status: StatusRegister,
     oam_addr: u8,
@@ -33,6 +35,8 @@ impl PPU {
 
             internal_data_buf: 0x0000,
 
+            mask: MaskRegister::new(),
+            scroll: ScrollRegister::new(),
             addr: AddrRegister::new(),
             ctl: ControlRegister::new(),
             status: StatusRegister::new(),
@@ -162,6 +166,14 @@ impl PPU {
         for d in data.iter() {
             self.write_to_oam_data(*d);
         }
+    }
+
+    pub fn write_to_mask(&mut self, value: u8) {
+        self.mask.write(value);
+    }
+
+    pub fn write_to_scroll(&mut self, value: u8) {
+        self.scroll.write(value);
     }
 }
 #[cfg(test)]

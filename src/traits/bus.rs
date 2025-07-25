@@ -1,5 +1,3 @@
-use super::mem::Mem;
+use super::{mem::Mem, tick::Tick};
 
-pub trait Bus: Mem {
-    fn tick(&mut self, cycles: u8);
-}
+pub trait Bus: Mem + Tick {}

@@ -4,6 +4,7 @@ use crate::ppu::PPU;
 use crate::rom::Rom;
 use crate::traits::bus::Bus;
 use crate::traits::mem::Mem;
+use crate::traits::tick::Tick;
 
 const RAM: u16 = 0x0000;
 const RAM_MIRRORS_END: u16 = 0x1FFF;
@@ -52,6 +53,8 @@ impl fmt::Display for BusImpl {
         )
     }
 }
+
+impl Bus for BusImpl {}
 
 impl Mem for BusImpl {
     fn mem_read(&mut self, addr: u16) -> u8 {
@@ -118,6 +121,6 @@ impl Mem for BusImpl {
     }
 }
 
-impl Bus for BusImpl {
+impl Tick for BusImpl {
     fn tick(&mut self, cycles: u8) {}
 }

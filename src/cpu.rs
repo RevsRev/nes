@@ -1412,6 +1412,8 @@ impl<T: Bus> CPU<T> {
 #[cfg(test)]
 #[allow(non_snake_case)]
 mod test {
+    use crate::traits::tick::Tick;
+
     use super::*;
 
     struct BusStub {
@@ -1428,7 +1430,9 @@ mod test {
         }
     }
 
-    impl Bus for BusStub {
+    impl Bus for BusStub {}
+
+    impl Tick for BusStub {
         fn tick(&mut self, cycles: u8) {}
     }
 

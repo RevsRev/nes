@@ -235,6 +235,9 @@ pub struct CPU<T: Mem> {
     trace: Option<CpuTrace>,
     halt: Arc<AtomicBool>,
     graceful_shutdown: bool,
+
+    next_program_counter: u16,
+    op_cycles: u8,
 }
 
 impl<T: Mem> Mem for CPU<T> {
@@ -285,6 +288,8 @@ impl<T: Mem> CPU<T> {
             trace: Option::None,
             halt: halt,
             graceful_shutdown: true,
+            next_program_counter: 0,
+            op_cycles: 0,
         }
     }
 
@@ -364,7 +369,6 @@ impl<T: Mem> CPU<T> {
                 println!("{}", self);
             }
 
-            let mut increment_program_counter = true;
             let opcode_result = opcodes.get(&op);
 
             let opcode = match opcode_result {
@@ -376,6 +380,7 @@ impl<T: Mem> CPU<T> {
 
             callback(self);
             self.program_counter += 1;
+            self.next_program_counter = self.program_counter + (opcode.len - 1) as u16;
 
             match op {
                 0x69 | 0x65 | 0x75 | 0x6D | 0x7D | 0x79 | 0x61 | 0x71 => {
@@ -390,23 +395,23 @@ impl<T: Mem> CPU<T> {
                     self.asl(&opcode.mode);
                 }
 
-                0x90 => increment_program_counter &= !self.bcc(&opcode.mode),
+                0x90 => self.bcc(&opcode.mode),
 
-                0xB0 => increment_program_counter &= !self.bcs(&opcode.mode),
+                0xB0 => self.bcs(&opcode.mode),
 
-                0xF0 => increment_program_counter &= !self.beq(&opcode.mode),
+                0xF0 => self.beq(&opcode.mode),
 
                 0x24 | 0x2C => self.bit(&opcode.mode),
 
-                0x30 => increment_program_counter &= !self.bmi(&opcode.mode),
+                0x30 => self.bmi(&opcode.mode),
 
-                0xD0 => increment_program_counter &= !self.bne(&opcode.mode),
+                0xD0 => self.bne(&opcode.mode),
 
-                0x10 => increment_program_counter &= !self.bpl(&opcode.mode),
+                0x10 => self.bpl(&opcode.mode),
 
-                0x50 => increment_program_counter &= !self.bvc(&opcode.mode),
+                0x50 => self.bvc(&opcode.mode),
 
-                0x70 => increment_program_counter &= !self.bvs(&opcode.mode),
+                0x70 => self.bvs(&opcode.mode),
 
                 0x18 => self.clc(&opcode.mode),
 
@@ -440,9 +445,9 @@ impl<T: Mem> CPU<T> {
 
                 0xE7 | 0xF7 | 0xEF | 0xFF | 0xFB | 0xE3 | 0xF3 => self.isb(&opcode.mode),
 
-                0x4C | 0x6C => increment_program_counter &= !self.jmp(&opcode.mode),
+                0x4C | 0x6C => self.jmp(&opcode.mode),
 
-                0x20 => increment_program_counter &= !self.jsr(&opcode.mode),
+                0x20 => self.jsr(&opcode.mode),
 
                 0xa9 | 0xa5 | 0xb5 | 0xad | 0xbd | 0xb9 | 0xa1 | 0xb1 => {
                     self.lda(&opcode.mode);
@@ -529,9 +534,7 @@ impl<T: Mem> CPU<T> {
                 _ => todo!(),
             }
 
-            if increment_program_counter {
-                self.program_counter += (opcode.len - 1) as u16;
-            }
+            self.program_counter = self.next_program_counter;
 
             if self.halt.load(Ordering::Relaxed) {
                 self.graceful_shutdown = false;
@@ -740,31 +743,28 @@ impl<T: Mem> CPU<T> {
         self.mem_write(addr, self.register_a);
     }
 
-    fn bcc(&mut self, mode: &AddressingMode) -> bool {
+    fn bcc(&mut self, mode: &AddressingMode) {
         if Self::get_flag(self.status, CARRY_FLAG) {
-            return false;
+            return;
         }
 
-        self.program_counter = self.get_operand_address(mode);
-        return true;
+        self.next_program_counter = self.get_operand_address(mode);
     }
 
-    fn bcs(&mut self, mode: &AddressingMode) -> bool {
+    fn bcs(&mut self, mode: &AddressingMode) {
         if !Self::get_flag(self.status, CARRY_FLAG) {
-            return false;
+            return;
         }
 
-        self.program_counter = self.get_operand_address(mode);
-        return true;
+        self.next_program_counter = self.get_operand_address(mode);
     }
 
-    fn beq(&mut self, mode: &AddressingMode) -> bool {
+    fn beq(&mut self, mode: &AddressingMode) {
         if !Self::get_flag(self.status, ZERO_FLAG) {
-            return false;
+            return;
         }
 
-        self.program_counter = self.get_operand_address(mode);
-        return true;
+        self.next_program_counter = self.get_operand_address(mode);
     }
 
     fn bit(&mut self, mode: &AddressingMode) {
@@ -776,49 +776,44 @@ impl<T: Mem> CPU<T> {
         self.copy_bit_to_status(value, NEGATIVE_FLAG, NEGATIVE_FLAG);
     }
 
-    fn bmi(&mut self, mode: &AddressingMode) -> bool {
+    fn bmi(&mut self, mode: &AddressingMode) {
         if !Self::get_flag(self.status, NEGATIVE_FLAG) {
-            return false;
+            return;
         }
 
-        self.program_counter = self.get_operand_address(mode);
-        return true;
+        self.next_program_counter = self.get_operand_address(mode);
     }
 
-    fn bne(&mut self, mode: &AddressingMode) -> bool {
+    fn bne(&mut self, mode: &AddressingMode) {
         if Self::get_flag(self.status, ZERO_FLAG) {
-            return false;
+            return;
         }
 
-        self.program_counter = self.get_operand_address(mode);
-        return true;
+        self.next_program_counter = self.get_operand_address(mode);
     }
 
-    fn bpl(&mut self, mode: &AddressingMode) -> bool {
+    fn bpl(&mut self, mode: &AddressingMode) {
         if Self::get_flag(self.status, NEGATIVE_FLAG) {
-            return false;
+            return;
         }
 
-        self.program_counter = self.get_operand_address(mode);
-        return true;
+        self.next_program_counter = self.get_operand_address(mode);
     }
 
-    fn bvc(&mut self, mode: &AddressingMode) -> bool {
+    fn bvc(&mut self, mode: &AddressingMode) {
         if Self::get_flag(self.status, OVERFLOW_FLAG) {
-            return false;
+            return;
         }
 
-        self.program_counter = self.get_operand_address(mode);
-        return true;
+        self.next_program_counter = self.get_operand_address(mode);
     }
 
-    fn bvs(&mut self, mode: &AddressingMode) -> bool {
+    fn bvs(&mut self, mode: &AddressingMode) {
         if !Self::get_flag(self.status, OVERFLOW_FLAG) {
-            return false;
+            return;
         }
 
-        self.program_counter = self.get_operand_address(mode);
-        return true;
+        self.next_program_counter = self.get_operand_address(mode);
     }
 
     fn clc(&mut self, _mode: &AddressingMode) {
@@ -990,19 +985,17 @@ impl<T: Mem> CPU<T> {
         );
     }
 
-    fn jmp(&mut self, mode: &AddressingMode) -> bool {
+    fn jmp(&mut self, mode: &AddressingMode) {
         let pc_jump = self.get_operand_address(mode);
-        self.program_counter = pc_jump;
-        return true;
+        self.next_program_counter = pc_jump;
     }
 
-    fn jsr(&mut self, mode: &AddressingMode) -> bool {
+    fn jsr(&mut self, mode: &AddressingMode) {
         let pc_jump = self.get_operand_address(mode);
 
         self.stack_push_u16(self.program_counter + 2 - 1);
 
-        self.program_counter = pc_jump;
-        return true;
+        self.next_program_counter = pc_jump;
     }
 
     fn lda(&mut self, mode: &AddressingMode) {
@@ -1247,19 +1240,19 @@ impl<T: Mem> CPU<T> {
 
     fn rti(&mut self, _mode: &AddressingMode) {
         self.status = self.stack_pop() | BREAK2_FLAG;
-        self.program_counter = self.stack_pop_u16();
+        self.next_program_counter = self.stack_pop_u16();
     }
 
     fn rts(&mut self, _mode: &AddressingMode) {
-        self.program_counter = self.stack_pop_u16() + 1;
+        self.next_program_counter = self.stack_pop_u16() + 1;
     }
 
     fn brk(&mut self, _mode: &AddressingMode) -> bool {
         self.stack_push_u16(self.program_counter);
         self.stack_push(self.status);
 
-        self.program_counter = self.mem_read_u16(INTERRUPT_ADDRESS);
-        if self.program_counter == HALT_VALUE {
+        self.next_program_counter = self.mem_read_u16(INTERRUPT_ADDRESS);
+        if self.next_program_counter == HALT_VALUE {
             return true;
         }
 

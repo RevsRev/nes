@@ -23,10 +23,36 @@ pub struct PPU {
     pub ctl: ControlRegister,
     status: StatusRegister,
     oam_addr: u8,
+
+    frame_cycles: usize,
+    total_cycles: u64,
+    scanline: u16,
 }
 
 impl Tick for PPU {
-    fn tick(&mut self, cycles: u8) {}
+    fn tick(&mut self, cycles: u8) {
+        self.total_cycles += cycles as u64;
+        self.frame_cycles += cycles as usize;
+
+        if self.frame_cycles < 341 {
+            return;
+        }
+
+        self.frame_cycles = self.frame_cycles - 341;
+        self.scanline += 1;
+
+        if self.scanline == 241 {
+            if self.ctl.generate_vblank_nmi() {
+                self.status.set_vblank(true);
+                todo!("Should trigger NMI interrupt")
+            }
+        }
+
+        if self.scanline >= 262 {
+            self.scanline = 0;
+            self.status.reset_vblank_status();
+        }
+    }
 }
 
 impl PPU {
@@ -46,6 +72,10 @@ impl PPU {
             ctl: ControlRegister::new(),
             status: StatusRegister::new(),
             oam_addr: 0,
+
+            total_cycles: 0,
+            frame_cycles: 0,
+            scanline: 0,
         }
     }
 

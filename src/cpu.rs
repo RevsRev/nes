@@ -23,9 +23,9 @@ pub const NEGATIVE_FLAG: u8 = 0b1000_0000;
 const STACK: u16 = 0x0100;
 const STACK_RESET: u8 = 0xfd;
 
-const PC_INTERRUPT_RESUMUE_ADDRESS: u16 = 0xFFFA;
+const NMI_INTERRUPT_ADDRESS: u16 = 0xFFFA;
+const BRK_INTERRUPT_ADDRESS: u16 = 0xFFFE;
 const PC_START_ADDRESS: u16 = 0xFFFC;
-const INTERRUPT_ADDRESS: u16 = 0xFFFE;
 const HALT_VALUE: u16 = 0x00FF;
 
 #[derive(Debug, PartialEq, Display, Clone, Copy)]
@@ -1384,7 +1384,7 @@ impl<T: Bus> CPU<T> {
         self.stack_push_u16(self.program_counter);
         self.stack_push(self.status);
 
-        self.next_program_counter = self.mem_read_u16(INTERRUPT_ADDRESS);
+        self.next_program_counter = self.mem_read_u16(BRK_INTERRUPT_ADDRESS);
         if self.next_program_counter == HALT_VALUE {
             return true;
         }
@@ -1551,7 +1551,7 @@ impl<T: Bus> CPU<T> {
         self.status = self.status | INTERRUPT_DISABLE_FLAG;
 
         self.bus.borrow_mut().tick(2);
-        self.program_counter = self.mem_read_u16(PC_INTERRUPT_RESUMUE_ADDRESS);
+        self.program_counter = self.mem_read_u16(NMI_INTERRUPT_ADDRESS);
     }
 }
 
@@ -1573,8 +1573,8 @@ mod test {
     impl BusStub {
         pub fn new() -> Self {
             let mut mem = [0; 0x0001_0000];
-            mem[INTERRUPT_ADDRESS as usize] = (HALT_VALUE & 0xFF) as u8;
-            mem[(INTERRUPT_ADDRESS + 1) as usize] = (HALT_VALUE >> 8) as u8;
+            mem[BRK_INTERRUPT_ADDRESS as usize] = (HALT_VALUE & 0xFF) as u8;
+            mem[(BRK_INTERRUPT_ADDRESS + 1) as usize] = (HALT_VALUE >> 8) as u8;
 
             BusStub {
                 memory: mem,
@@ -2459,7 +2459,7 @@ mod test {
         cpu.debug = true;
         cpu.load_with_start_address(0x8000, vec![0x00]); //Break immediately, which will take us to 0xAABB
         cpu.reset();
-        cpu.mem_write_u16(INTERRUPT_ADDRESS, 0xAABB); //So we don't quit immediately
+        cpu.mem_write_u16(BRK_INTERRUPT_ADDRESS, 0xAABB); //So we don't quit immediately
         cpu.mem_write_u16(0x0000, HALT_VALUE); //Store the HALT value at 0x0000
         cpu.mem_write_vec(
             0xAABB,
@@ -2489,7 +2489,7 @@ mod test {
         let mut cpu = CPU::new(Rc::new(RefCell::new(bus)), Arc::new(AtomicBool::new(false)));
         cpu.load_with_start_address(0x8000, vec![0x00, 0x00]); //First 0x00 takes us to 0xAABB, second exits program
         cpu.reset();
-        cpu.mem_write_u16(INTERRUPT_ADDRESS, 0xAABB); //So we don't quit immediately
+        cpu.mem_write_u16(BRK_INTERRUPT_ADDRESS, 0xAABB); //So we don't quit immediately
         cpu.mem_write_u16(0x0000, HALT_VALUE); //Store the HALT value at 0x0000
         cpu.mem_write_vec(
             0xAABB,

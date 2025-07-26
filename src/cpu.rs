@@ -1,5 +1,6 @@
 use crate::opp::{OpCode, OpCodeBehaviour};
 use crate::traits::bus::Bus;
+use crate::traits::interrupt::InterruptType;
 use crate::traits::tick::Tick;
 use crate::{opp, traits::mem::Mem};
 use std::cell::RefCell;
@@ -22,6 +23,7 @@ pub const NEGATIVE_FLAG: u8 = 0b1000_0000;
 const STACK: u16 = 0x0100;
 const STACK_RESET: u8 = 0xfd;
 
+const PC_INTERRUPT_RESUMUE_ADDRESS: u16 = 0xFFFA;
 const PC_START_ADDRESS: u16 = 0xFFFC;
 const INTERRUPT_ADDRESS: u16 = 0xFFFE;
 const HALT_VALUE: u16 = 0x00FF;
@@ -382,6 +384,12 @@ impl<T: Bus> CPU<T> {
         let ref opcodes: HashMap<u8, &'static opp::OpCode> = *opp::OPCODES_MAP;
 
         loop {
+            let nmi = self.bus.borrow().poll(&InterruptType::Nmi);
+
+            if nmi.is_some() {
+                self.interrupt_nmi();
+            }
+
             let op = self.mem_read(self.program_counter);
 
             if self.debug {
@@ -1534,12 +1542,26 @@ impl<T: Bus> CPU<T> {
             Self::get_flag(self.register_a, NEGATIVE_FLAG),
         );
     }
+
+    fn interrupt_nmi(&mut self) {
+        self.stack_push_u16(self.program_counter);
+        let mut status = (self.status.clone() | BREAK2_FLAG) & !BREAK_FLAG;
+
+        self.stack_push(status);
+        self.status = self.status | INTERRUPT_DISABLE_FLAG;
+
+        self.bus.borrow_mut().tick(2);
+        self.program_counter = self.mem_read_u16(PC_INTERRUPT_RESUMUE_ADDRESS);
+    }
 }
 
 #[cfg(test)]
 #[allow(non_snake_case)]
 mod test {
-    use crate::traits::{interrupt::Interrupting, tick::Tick};
+    use crate::traits::{
+        interrupt::{InterruptType, Interrupting},
+        tick::Tick,
+    };
 
     use super::*;
 
@@ -1570,7 +1592,7 @@ mod test {
     }
 
     impl Interrupting for BusStub {
-        fn poll(&self, interrupt_type: &crate::traits::interrupt::InterruptType) -> Option<u8> {
+        fn poll(&self, interrupt_type: &InterruptType) -> Option<u8> {
             return Option::None;
         }
     }

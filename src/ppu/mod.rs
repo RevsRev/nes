@@ -184,7 +184,11 @@ impl PPU {
     }
 
     pub fn write_to_ctl(&mut self, value: u8) {
+        let before_nmi_status = self.ctl.generate_vblank_nmi();
         self.ctl.update(value);
+        if !before_nmi_status && self.ctl.generate_vblank_nmi() && self.status.is_vblank() {
+            self.nmi_interrupt = Some(1);
+        }
     }
 
     pub fn read_oam_data(&self) -> u8 {
@@ -197,11 +201,6 @@ impl PPU {
         self.addr.reset_latch();
         //self.scroll.reset_latch();
         data
-    }
-
-    fn write_to_ctrl(&mut self, value: u8) {
-        let before_nmi_status = self.ctl.generate_vblank_nmi();
-        self.ctl.update(value);
     }
 
     pub fn write_to_oam_addr(&mut self, value: u8) {
@@ -374,7 +373,7 @@ pub mod test {
     #[test]
     fn test_ppu_vram_mirroring() {
         let mut ppu = ppu_empty_rom(Mirroring::Horizontal);
-        ppu.write_to_ctrl(0);
+        ppu.write_to_ctl(0);
         ppu.vram[0x0305] = 0x66;
 
         ppu.write_to_ppu_addr(0x63); //0x6305 -> 0x2305

@@ -1381,8 +1381,8 @@ impl<T: Bus> CPU<T> {
     }
 
     fn brk(&mut self, _mode: &AddressingMode) -> bool {
-        self.stack_push_u16(self.program_counter);
-        self.stack_push(self.status);
+        self.stack_push_u16(self.program_counter.wrapping_add(1));
+        self.stack_push(self.status | (BREAK_FLAG & BREAK2_FLAG));
 
         self.next_program_counter = self.mem_read_u16(BRK_INTERRUPT_ADDRESS);
         if self.next_program_counter == HALT_VALUE {
@@ -1391,7 +1391,7 @@ impl<T: Bus> CPU<T> {
 
         //we do this after the return check, because it's easier to test and doesn't make a
         //difference when we exit :)
-        self.set_status_flag(BREAK_FLAG, true);
+        self.set_status_flag(INTERRUPT_DISABLE_FLAG, true);
         return false;
     }
 

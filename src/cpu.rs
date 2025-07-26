@@ -1,5 +1,6 @@
 use crate::opp::{OpCode, OpCodeBehaviour};
 use crate::traits::bus::Bus;
+use crate::traits::tick::Tick;
 use crate::{opp, traits::mem::Mem};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -238,6 +239,7 @@ pub struct CPU<T: Bus> {
     graceful_shutdown: bool,
 
     next_program_counter: u16,
+    total_cycles: u64,
     op_cycles: u8,
 }
 
@@ -275,6 +277,13 @@ impl<T: Bus> fmt::Display for CPU<T> {
     }
 }
 
+impl<T: Bus> Tick for CPU<T> {
+    fn tick(&mut self, cycles: u8) {
+        self.total_cycles += cycles as u64;
+        self.bus.borrow_mut().tick(cycles);
+    }
+}
+
 impl<T: Bus> CPU<T> {
     pub fn new(bus: Rc<RefCell<T>>, halt: Arc<AtomicBool>) -> Self {
         CPU {
@@ -290,6 +299,7 @@ impl<T: Bus> CPU<T> {
             halt: halt,
             graceful_shutdown: true,
             next_program_counter: 0,
+            total_cycles: 0,
             op_cycles: 0,
         }
     }
@@ -301,6 +311,7 @@ impl<T: Bus> CPU<T> {
         self.status = INTERRUPT_DISABLE_FLAG | BREAK2_FLAG;
         self.stack_pointer = STACK_RESET;
         self.program_counter = self.mem_read_u16(PC_START_ADDRESS);
+        self.total_cycles = 0;
     }
 
     pub fn graceful_shutdown(&self) -> bool {
@@ -544,7 +555,7 @@ impl<T: Bus> CPU<T> {
             }
 
             self.program_counter = self.next_program_counter;
-            self.bus.borrow_mut().tick(self.op_cycles);
+            self.tick(self.op_cycles);
 
             if self.halt.load(Ordering::Relaxed) {
                 self.graceful_shutdown = false;
@@ -1534,7 +1545,7 @@ mod test {
 
     struct BusStub {
         pub memory: [u8; 0x00010000],
-        pub cycles: u32,
+        pub cycles: u64,
     }
 
     impl BusStub {
@@ -1554,7 +1565,7 @@ mod test {
 
     impl Tick for BusStub {
         fn tick(&mut self, cycles: u8) {
-            self.cycles += cycles as u32;
+            self.cycles += cycles as u64;
         }
     }
 

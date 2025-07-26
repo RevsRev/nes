@@ -3,7 +3,10 @@ use registers::{mask::MaskRegister, scroll::ScrollRegister, status::StatusRegist
 use crate::{
     ppu::registers::{addr::AddrRegister, ctl::ControlRegister},
     rom::Mirroring,
-    traits::tick::Tick,
+    traits::{
+        interrupt::{InterruptType, Interrupting},
+        tick::Tick,
+    },
 };
 
 pub mod registers;
@@ -27,6 +30,7 @@ pub struct PPU {
     frame_cycles: usize,
     total_cycles: u64,
     scanline: u16,
+    nmi_interrupt: Option<u8>,
 }
 
 impl Tick for PPU {
@@ -42,15 +46,26 @@ impl Tick for PPU {
         self.scanline += 1;
 
         if self.scanline == 241 {
+            self.status.set_vblank(true);
+            self.status.set_sprite_0_hit(false);
             if self.ctl.generate_vblank_nmi() {
-                self.status.set_vblank(true);
-                todo!("Should trigger NMI interrupt")
+                self.nmi_interrupt = Some(1);
             }
         }
 
         if self.scanline >= 262 {
             self.scanline = 0;
+            self.nmi_interrupt = None;
+            self.status.set_sprite_0_hit(false);
             self.status.reset_vblank_status();
+        }
+    }
+}
+
+impl Interrupting for PPU {
+    fn poll(&self, interrupt_type: &crate::traits::interrupt::InterruptType) -> Option<u8> {
+        match (*interrupt_type) {
+            InterruptType::Nmi => self.nmi_interrupt,
         }
     }
 }
@@ -76,6 +91,7 @@ impl PPU {
             total_cycles: 0,
             frame_cycles: 0,
             scanline: 0,
+            nmi_interrupt: Option::None,
         }
     }
 

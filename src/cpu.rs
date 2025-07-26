@@ -1539,7 +1539,7 @@ impl<T: Bus> CPU<T> {
 #[cfg(test)]
 #[allow(non_snake_case)]
 mod test {
-    use crate::traits::tick::Tick;
+    use crate::traits::{interrupt::Interrupting, tick::Tick};
 
     use super::*;
 
@@ -1566,6 +1566,12 @@ mod test {
     impl Tick for BusStub {
         fn tick(&mut self, cycles: u8) {
             self.cycles += cycles as u64;
+        }
+    }
+
+    impl Interrupting for BusStub {
+        fn poll(&self, interrupt_type: &crate::traits::interrupt::InterruptType) -> Option<u8> {
+            return Option::None;
         }
     }
 

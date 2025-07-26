@@ -3,6 +3,7 @@ use core::fmt;
 use crate::ppu::PPU;
 use crate::rom::Rom;
 use crate::traits::bus::Bus;
+use crate::traits::interrupt::{InterruptType, Interrupting};
 use crate::traits::mem::Mem;
 use crate::traits::tick::Tick;
 
@@ -49,6 +50,12 @@ impl fmt::Display for BusImpl {
             "\ncpu_vram: {:?}, \nrprg_romom: {:?}",
             self.cpu_vram, self.prg_rom
         )
+    }
+}
+
+impl Interrupting for BusImpl {
+    fn poll(&self, interrupt_type: &InterruptType) -> Option<u8> {
+        return self.ppu.poll(interrupt_type);
     }
 }
 

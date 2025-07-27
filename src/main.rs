@@ -10,12 +10,14 @@ use clap::Parser;
 use cpu::CPU;
 use nes::NES;
 use rand::Rng;
+use render::show_tile;
 use rom::Rom;
 use sdl2::{
     EventPump,
     event::Event,
     keyboard::Keycode,
     pixels::{Color, PixelFormatEnum},
+    sys::{KeyCode, SDL_Keycode},
 };
 use traits::bus::Bus;
 
@@ -24,6 +26,7 @@ mod cpu;
 mod nes;
 mod opp;
 mod ppu;
+mod render;
 mod rom;
 mod traits;
 
@@ -73,7 +76,7 @@ fn main() {
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
     let window = video_subsystem
-        .window("Snake game", (32.0 * 10.0) as u32, (32.0 * 10.0) as u32)
+        .window("Tile Viewer", (256.0 * 3.0) as u32, (240.0 * 3.0) as u32)
         .position_centered()
         .build()
         .unwrap();
@@ -81,32 +84,50 @@ fn main() {
     let mut canvas = window.into_canvas().present_vsync().build().unwrap();
     let mut event_pump = sdl_context.event_pump().unwrap();
 
-    canvas.set_scale(10.0, 10.0).unwrap();
+    canvas.set_scale(3.0, 3.0).unwrap();
 
     let creator = canvas.texture_creator();
     let mut texture = creator
-        .create_texture_target(PixelFormatEnum::RGB24, 32, 32)
+        .create_texture_target(PixelFormatEnum::RGB24, 256, 240)
         .unwrap();
 
-    let halt = Arc::new(AtomicBool::new(false));
-    let mut nes = NES::new(rom, halt);
-    nes.set_debug(args.debug);
+    let tile_frame = show_tile(&rom.chr_rom, 1, 0);
+    texture.update(None, &tile_frame.data, 256 * 3);
+    canvas.copy(&texture, None, None).unwrap();
+    canvas.present();
 
-    let mut screen_state = [0 as u8; 32 * 3 * 32];
-    let mut rng = rand::thread_rng();
-
-    let _ = nes.run_with_callback(move |cpu| {
-        handle_user_input(cpu, &mut event_pump);
-        cpu.mem_write(0xFE, rng.gen_range(1, 16));
-
-        if read_screen_state(cpu, &mut screen_state) {
-            texture.update(None, &screen_state, 32 * 3).unwrap();
-            canvas.copy(&texture, None, None).unwrap();
-            canvas.present();
+    loop {
+        for event in event_pump.poll_iter() {
+            match event {
+                Event::Quit { .. }
+                | Event::KeyDown {
+                    keycode: Some(Keycode::Escape),
+                    ..
+                } => std::process::exit(0),
+                _ => {}
+            }
         }
+    }
 
-        ::std::thread::sleep(std::time::Duration::new(0, 70_000));
-    });
+    // let halt = Arc::new(AtomicBool::new(false));
+    // let mut nes = NES::new(rom, halt);
+    // nes.set_debug(args.debug);
+    //
+    // let mut screen_state = [0 as u8; 32 * 3 * 32];
+    // let mut rng = rand::thread_rng();
+    //
+    // let _ = nes.run_with_callback(move |cpu| {
+    //     handle_user_input(cpu, &mut event_pump);
+    //     cpu.mem_write(0xFE, rng.gen_range(1, 16));
+    //
+    //     if read_screen_state(cpu, &mut screen_state) {
+    //         texture.update(None, &screen_state, 32 * 3).unwrap();
+    //         canvas.copy(&texture, None, None).unwrap();
+    //         canvas.present();
+    //     }
+    //
+    //     ::std::thread::sleep(std::time::Duration::new(0, 70_000));
+    // });
 }
 
 fn handle_user_input<T: Bus>(cpu: &mut CPU<T>, event_pump: &mut EventPump) {

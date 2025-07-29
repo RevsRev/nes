@@ -10,7 +10,7 @@ use clap::Parser;
 use cpu::CPU;
 use nes::NES;
 use rand::Rng;
-use render::show_tile;
+use render::{frame::Frame, show_tile};
 use rom::Rom;
 use sdl2::{
     EventPump,
@@ -91,8 +91,20 @@ fn main() {
         .create_texture_target(PixelFormatEnum::RGB24, 256, 240)
         .unwrap();
 
-    let tile_frame = show_tile(&rom.chr_rom, 1, 0);
-    texture.update(None, &tile_frame.data, 256 * 3);
+    let mut bank_0_tile_frame = Frame::new();
+    let mut bank_1_tile_frame = Frame::new();
+
+    for i in 0..256 {
+        show_tile(&mut bank_0_tile_frame, &rom.chr_rom, 0, i);
+        show_tile(&mut bank_1_tile_frame, &rom.chr_rom, 1, i);
+    }
+
+    let mut combined_data =
+        Vec::with_capacity(bank_0_tile_frame.data.len() + bank_1_tile_frame.data.len());
+    combined_data.extend_from_slice(&bank_0_tile_frame.data[0..64 * 256 * 3].to_vec());
+    combined_data.extend_from_slice(&bank_1_tile_frame.data[0..64 * 256 * 3].to_vec());
+
+    texture.update(None, &combined_data, 256 * 3);
     canvas.copy(&texture, None, None).unwrap();
     canvas.present();
 

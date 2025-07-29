@@ -2,16 +2,18 @@ use frame::Frame;
 
 use crate::ppu::PPU;
 
-mod frame;
-mod palette;
+pub mod frame;
+pub mod palette;
 
-pub fn show_tile(chr_rom: &Vec<u8>, bank: usize, tile_n: usize) -> Frame {
+pub fn show_tile(frame: &mut Frame, chr_rom: &Vec<u8>, bank: usize, tile_n: usize) {
     assert!(bank <= 1);
 
-    let mut frame = Frame::new();
     let bank = (bank * 0x1000) as usize;
 
     let tile = &chr_rom[(bank + tile_n * 16)..=(bank + tile_n * 16 + 15)];
+
+    let col = tile_n % 32;
+    let row = tile_n / 32;
 
     for y in 0..=7 {
         let mut upper = tile[y];
@@ -29,9 +31,8 @@ pub fn show_tile(chr_rom: &Vec<u8>, bank: usize, tile_n: usize) -> Frame {
                 3 => palette::SYSTEM_PALLETE[0x30],
                 _ => panic!("Impossible!"),
             };
-            frame.set_pixel(x, y, rgb);
+            frame.set_pixel(col * 8 + x, row * 8 + y, rgb);
+            // frame.set_pixel(x, y, rgb);
         }
     }
-
-    frame
 }

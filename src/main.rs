@@ -99,7 +99,7 @@ fn main() {
     let mut nes = NES::new(rom, halt, move |ppu: &PPU| {
         render::render(&mut frame, ppu);
 
-        texture.update(None, &frame.data, 256 * 3);
+        texture.update(None, &frame.data, 256 * 3).unwrap();
         canvas.copy(&texture, None, None).unwrap();
         canvas.present();
     });

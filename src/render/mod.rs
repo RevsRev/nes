@@ -53,7 +53,7 @@ pub fn render(frame: &mut Frame, ppu: &PPU) {
             let mut upper = tile[y];
             let mut lower = tile[y + 8];
 
-            for x in 0..8 {
+            for x in (0..8).rev() {
                 let value = (1 & lower) << 1 | (1 & upper);
                 upper = upper >> 1;
                 lower = lower >> 1;

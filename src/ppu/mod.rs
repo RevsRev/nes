@@ -136,7 +136,6 @@ impl PPU {
 
     pub fn write_data(&mut self, value: u8) {
         let addr = self.addr.get();
-
         match addr {
             0x0000..=0x1FFF => {
                 panic!("Attempt to write to chr rom space {:#04X}", addr);
@@ -185,16 +184,6 @@ impl PPU {
             (Mirroring::Horizontal, 3) => vram_index - 0x800,
             _ => vram_index,
         }
-        // let mirrored_vram = addr & 0b10111111111111; // mirror down 0x3000-0x3eff to 0x2000 - 0x2eff
-        // let vram_index = mirrored_vram - 0x2000; // to vram vector
-        // let name_table = vram_index / 0x400;
-        // match (&self.mirroring, name_table) {
-        //     (Mirroring::Vertical, 2) | (Mirroring::Vertical, 3) => vram_index - 0x800,
-        //     (Mirroring::Horizontal, 2) => vram_index - 0x400,
-        //     (Mirroring::Horizontal, 1) => vram_index - 0x400,
-        //     (Mirroring::Horizontal, 3) => vram_index - 0x800,
-        //     _ => vram_index,
-        // }
     }
 
     fn mirror_pallette_addr(&self, addr: u16) -> u16 {

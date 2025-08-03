@@ -6,48 +6,58 @@ use std::sync::atomic::AtomicBool;
 
 use crate::bus::BusImpl;
 use crate::cpu::CPU;
+use crate::ppu::PPU;
 use crate::rom::Rom;
 use crate::traits;
 
-pub struct NES {
-    debug: bool,
+pub struct NES<'call> {
+    tracing: bool,
 
-    pub cpu: CPU<BusImpl>,
-    pub bus: Rc<RefCell<BusImpl>>,
+    pub cpu: CPU<BusImpl<'call>>,
+    pub bus: Rc<RefCell<BusImpl<'call>>>,
 }
 
-impl fmt::Display for NES {
+impl<'call> fmt::Display for NES<'call> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "\ncpu: {}, \nbus: {}", self.cpu, self.bus.borrow())
     }
 }
 
-impl NES {
-    pub fn new(rom: Rom, halt: Arc<AtomicBool>) -> Self {
-        let bus = Rc::new(RefCell::new(BusImpl::new(rom)));
+impl<'call> NES<'call> {
+    pub fn new<'cl, F>(rom: Rom, halt: Arc<AtomicBool>, gameloop_callback: F) -> NES<'cl>
+    where
+        F: FnMut(&PPU) + 'cl,
+    {
+        let bus = Rc::new(RefCell::new(BusImpl::new(rom, gameloop_callback)));
         let mut cpu = CPU::new(Rc::clone(&bus), halt);
         cpu.reset();
         NES {
-            debug: false,
+            tracing: false,
             cpu: cpu,
             bus: bus,
         }
     }
 
-    pub fn set_debug(&mut self, debug: bool) {
-        self.debug = debug;
-        self.cpu.debug = debug;
-        self.bus.borrow_mut().debug = debug;
+    pub fn set_tracing(&mut self, tracing: bool) {
+        self.tracing = tracing;
     }
 
-    pub fn run_with_callback<F>(&mut self, callback: F) -> Result<(), String>
+    pub fn run_with_callback<F>(&mut self, mut callback: F) -> Result<(), String>
     where
         F: FnMut(&mut CPU<BusImpl>),
     {
-        if self.debug {
-            println!("{}", self);
+        if self.tracing {
+            let combined_callback = |cpu: &mut CPU<BusImpl>| {
+                match cpu.get_trace_str() {
+                    Option::None => println!("NULL Trace"),
+                    Option::Some(s) => println!("{}", s),
+                };
+                callback(cpu);
+            };
+            self.cpu.run_with_callback(combined_callback)
+        } else {
+            self.cpu.run_with_callback(callback)
         }
-        self.cpu.run_with_callback(callback)
     }
 }
 
@@ -55,6 +65,7 @@ impl NES {
 mod test {
     use clap::error::Result;
 
+    use crate::ppu::PPU;
     use crate::rom::{self, Rom};
     use crate::traits::mem::Mem;
     use std::io::{BufRead, BufReader};
@@ -92,7 +103,7 @@ mod test {
         let rom = crate::rom::test::test_rom(program);
 
         let halt = Arc::new(AtomicBool::new(false));
-        let mut nes = NES::new(rom, Arc::clone(&halt));
+        let mut nes = NES::new(rom, Arc::clone(&halt), |ppu: &PPU| {});
         let mut result: Vec<String> = Vec::new();
 
         // nes.setDebug(true);
@@ -152,7 +163,7 @@ mod test {
         let rom = crate::rom::test::test_rom(program);
 
         let halt = Arc::new(AtomicBool::new(false));
-        let mut nes = NES::new(rom, Arc::clone(&halt));
+        let mut nes = NES::new(rom, Arc::clone(&halt), |ppu: &PPU| {});
         let mut result: Vec<String> = Vec::new();
 
         nes.bus.borrow_mut().mem_write(100, 0x11);
@@ -193,7 +204,7 @@ mod test {
     #[test]
     fn test_nestest() {
         let halt = Arc::new(AtomicBool::new(false));
-        let mut nes = NES::new(nestest_rom(), Arc::clone(&halt));
+        let mut nes = NES::new(nestest_rom(), Arc::clone(&halt), |ppu: &PPU| {});
         let mut result: Vec<String> = Vec::new();
         let nes_test_log = nestest_log();
 

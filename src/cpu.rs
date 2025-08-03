@@ -226,8 +226,6 @@ impl fmt::Display for CpuTrace {
 }
 
 pub struct CPU<T: Bus> {
-    pub debug: bool,
-
     pub register_a: u8,
     pub register_x: u8,
     pub register_y: u8,
@@ -289,7 +287,6 @@ impl<T: Bus> Tick for CPU<T> {
 impl<T: Bus> CPU<T> {
     pub fn new(bus: Rc<RefCell<T>>, halt: Arc<AtomicBool>) -> Self {
         CPU {
-            debug: false,
             register_a: 0,
             register_x: 0,
             register_y: 0,
@@ -377,24 +374,16 @@ impl<T: Bus> CPU<T> {
     where
         F: FnMut(&mut CPU<T>),
     {
-        if self.debug {
-            println!("Starting NES emulator run loop");
-        }
-
         let ref opcodes: HashMap<u8, &'static opp::OpCode> = *opp::OPCODES_MAP;
 
         loop {
-            let nmi = self.bus.borrow().poll(&InterruptType::Nmi);
+            let nmi = self.bus.borrow_mut().take(&InterruptType::Nmi);
 
             if nmi.is_some() {
                 self.interrupt_nmi();
             }
 
             let op = self.mem_read(self.program_counter);
-
-            if self.debug {
-                println!("{}", self);
-            }
 
             let opcode_result = opcodes.get(&op);
 
@@ -403,8 +392,7 @@ impl<T: Bus> CPU<T> {
                 None => return Err(format!("Opcode {:x} is not recognised", op)),
             };
 
-            self.store_trace(opcode);
-
+            // self.store_trace(opcode);
             callback(self);
             self.op_cycles = opcode.cycles;
             self.program_counter += 1;
@@ -798,7 +786,7 @@ impl<T: Bus> CPU<T> {
         self.next_program_counter = eval.0;
 
         if eval.1 {
-            self.op_cycles += 2;
+            self.op_cycles += 1;
         }
     }
 
@@ -812,7 +800,7 @@ impl<T: Bus> CPU<T> {
         self.next_program_counter = eval.0;
 
         if eval.1 {
-            self.op_cycles += 2;
+            self.op_cycles += 1;
         }
     }
 
@@ -826,7 +814,7 @@ impl<T: Bus> CPU<T> {
         self.next_program_counter = eval.0;
 
         if eval.1 {
-            self.op_cycles += 2;
+            self.op_cycles += 1;
         }
     }
 
@@ -849,7 +837,7 @@ impl<T: Bus> CPU<T> {
         self.next_program_counter = eval.0;
 
         if eval.1 {
-            self.op_cycles += 2;
+            self.op_cycles += 1;
         }
     }
 
@@ -863,7 +851,7 @@ impl<T: Bus> CPU<T> {
         self.next_program_counter = eval.0;
 
         if eval.1 {
-            self.op_cycles += 2;
+            self.op_cycles += 1;
         }
     }
 
@@ -877,7 +865,7 @@ impl<T: Bus> CPU<T> {
         self.next_program_counter = eval.0;
 
         if eval.1 {
-            self.op_cycles += 2;
+            self.op_cycles += 1;
         }
     }
 
@@ -891,7 +879,7 @@ impl<T: Bus> CPU<T> {
         self.next_program_counter = eval.0;
 
         if eval.1 {
-            self.op_cycles += 2;
+            self.op_cycles += 1;
         }
     }
 
@@ -905,7 +893,7 @@ impl<T: Bus> CPU<T> {
         self.next_program_counter = eval.0;
 
         if eval.1 {
-            self.op_cycles += 2;
+            self.op_cycles += 1;
         }
     }
 
@@ -1595,6 +1583,9 @@ mod test {
         fn poll(&self, interrupt_type: &InterruptType) -> Option<u8> {
             return Option::None;
         }
+        fn take(&mut self, interrupt_type: &InterruptType) -> Option<u8> {
+            return Option::None;
+        }
     }
 
     impl Mem for BusStub {
@@ -1744,7 +1735,6 @@ mod test {
         cpu.load_with_start_address(0x80F0, vec![0x90, 0x0E]);
         cpu.mem_write_vec(0x8100, &vec![0x85, 0xA1]);
         cpu.reset();
-        cpu.debug = true;
         cpu.register_a = 240;
         let _ = cpu.run_with_callback(|_| {});
         assert_eq!(240, cpu.mem_read(0x00A1));
@@ -2456,7 +2446,6 @@ mod test {
     fn test_brk_0x00() {
         let bus = BusStub::new();
         let mut cpu = CPU::new(Rc::new(RefCell::new(bus)), Arc::new(AtomicBool::new(false)));
-        cpu.debug = true;
         cpu.load_with_start_address(0x8000, vec![0x00]); //Break immediately, which will take us to 0xAABB
         cpu.reset();
         cpu.mem_write_u16(BRK_INTERRUPT_ADDRESS, 0xAABB); //So we don't quit immediately

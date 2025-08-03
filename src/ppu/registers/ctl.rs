@@ -22,9 +22,11 @@ impl ControlRegister {
 
     pub fn vram_addr_increment(&self) -> u8 {
         if !self.has_flag(VRAM_ADD_INCREMENT) {
-            0b0000_0001 //1
+            // 0b0000_0001 //1
+            1
         } else {
-            0b0010_0000 //32
+            // 0b0010_0000 //32
+            32
         }
     }
 
@@ -32,7 +34,14 @@ impl ControlRegister {
         self.bits = data;
     }
 
-    pub(crate) fn generate_vblank_nmi(&self) -> bool {
+    pub fn generate_vblank_nmi(&self) -> bool {
         self.bits & GENERATE_NMI != 0
+    }
+
+    pub fn bknd_pattern_addr(&self) -> u16 {
+        if self.has_flag(BACKGROUND_PATTERN_ADDR) {
+            return 0x1000;
+        }
+        0x0000
     }
 }

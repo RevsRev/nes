@@ -31,12 +31,14 @@ pub struct PPU {
     total_cycles: u64,
     scanline: u16,
     nmi_interrupt: Option<u8>,
+    pub new_frame: bool,
 }
 
 impl Tick for PPU {
     fn tick(&mut self, cycles: u8) {
         self.total_cycles += cycles as u64;
         self.frame_cycles += cycles as usize;
+        self.new_frame = false;
 
         if self.frame_cycles < 341 {
             return;
@@ -58,6 +60,7 @@ impl Tick for PPU {
             self.nmi_interrupt = None;
             self.status.set_sprite_0_hit(false);
             self.status.reset_vblank_status();
+            self.new_frame = true;
         }
     }
 }
@@ -66,6 +69,11 @@ impl Interrupting for PPU {
     fn poll(&self, interrupt_type: &crate::traits::interrupt::InterruptType) -> Option<u8> {
         match (*interrupt_type) {
             InterruptType::Nmi => self.nmi_interrupt,
+        }
+    }
+    fn take(&mut self, interrupt_type: &crate::traits::interrupt::InterruptType) -> Option<u8> {
+        match (*interrupt_type) {
+            InterruptType::Nmi => self.nmi_interrupt.take(),
         }
     }
 }
@@ -92,6 +100,7 @@ impl PPU {
             frame_cycles: 0,
             scanline: 0,
             nmi_interrupt: Option::None,
+            new_frame: false,
         }
     }
 
@@ -114,7 +123,13 @@ impl PPU {
                 "addr space 0x3000..0x3EFF is not expected to be used. Requested: {:#04X}",
                 addr
             ),
-            0x3F00..=0x3FFF => self.palette_table[self.mirror_pallette_addr(addr) as usize],
+
+            //Addresses $3F10/$3F14/$3F18/$3F1C are mirrors of $3F00/$3F04/$3F08/$3F0C
+            0x3f10 | 0x3f14 | 0x3f18 | 0x3f1c => {
+                let add_mirror = addr - 0x10;
+                self.palette_table[(add_mirror - 0x3f00) as usize]
+            }
+            // 0x3F00..=0x3FFF => self.palette_table[self.mirror_pallette_addr(addr) as usize],
             _ => panic!("Unexpected access to mirrored space {:#04X}", addr),
         }
     }
@@ -129,12 +144,21 @@ impl PPU {
             0x2000..=0x2FFF => {
                 self.vram[self.mirror_vram_addr(addr) as usize] = value;
             }
-            0x3000..=0x3EFF => panic!(
-                "addr space 0x3000..0x3EFF is not expected to be used. Requested: {:#04X}",
-                addr
-            ),
+            // 0x3000..=0x3EFF => panic!(
+            //     "addr space 0x3000..0x3EFF is not expected to be used. Requested: {:#04X}",
+            //     addr
+            // ),
+            0x3000..=0x3eff => unimplemented!("addr {} shouldn't be used in reallity", addr),
+
+            //Addresses $3F10/$3F14/$3F18/$3F1C are mirrors of $3F00/$3F04/$3F08/$3F0C
+            0x3f10 | 0x3f14 | 0x3f18 | 0x3f1c => {
+                let add_mirror = addr - 0x10;
+                self.palette_table[(add_mirror - 0x3f00) as usize] = value;
+            }
+
             0x3F00..=0x3FFF => {
-                self.palette_table[self.mirror_pallette_addr(addr) as usize] = value;
+                // self.palette_table[self.mirror_pallette_addr(addr) as usize] = value;
+                self.palette_table[(addr - 0x3f00) as usize] = value;
             }
             _ => panic!("Unexpected access to mirrored space {:#04X}", addr),
         }
@@ -161,6 +185,16 @@ impl PPU {
             (Mirroring::Horizontal, 3) => vram_index - 0x800,
             _ => vram_index,
         }
+        // let mirrored_vram = addr & 0b10111111111111; // mirror down 0x3000-0x3eff to 0x2000 - 0x2eff
+        // let vram_index = mirrored_vram - 0x2000; // to vram vector
+        // let name_table = vram_index / 0x400;
+        // match (&self.mirroring, name_table) {
+        //     (Mirroring::Vertical, 2) | (Mirroring::Vertical, 3) => vram_index - 0x800,
+        //     (Mirroring::Horizontal, 2) => vram_index - 0x400,
+        //     (Mirroring::Horizontal, 1) => vram_index - 0x400,
+        //     (Mirroring::Horizontal, 3) => vram_index - 0x800,
+        //     _ => vram_index,
+        // }
     }
 
     fn mirror_pallette_addr(&self, addr: u16) -> u16 {
@@ -224,6 +258,13 @@ impl PPU {
 
     pub fn write_to_scroll(&mut self, value: u8) {
         self.scroll.write(value);
+    }
+
+    pub(crate) fn write_to_oam_dma(&mut self, data: &[u8; 256]) {
+        for x in data.iter() {
+            self.oam_data[self.oam_addr as usize] = *x;
+            self.oam_addr = self.oam_addr.wrapping_add(1);
+        }
     }
 }
 #[cfg(test)]

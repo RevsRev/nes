@@ -9,8 +9,9 @@ use crate::traits::mem::Mem;
 use clap::Parser;
 use cpu::CPU;
 use nes::NES;
+use ppu::PPU;
 use rand::Rng;
-use render::{frame::Frame, show_tile};
+use render::frame::Frame;
 use rom::Rom;
 use sdl2::{
     EventPump,
@@ -35,6 +36,8 @@ extern crate lazy_static;
 
 #[derive(Parser, Debug)]
 struct Args {
+    #[arg(short = 't', long = "trace")]
+    trace: bool,
     #[arg(short = 'd', long = "debug")]
     debug: bool,
     #[arg(short = 'f', long = "file")]
@@ -43,7 +46,7 @@ struct Args {
 
 impl fmt::Display for Args {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "debug: {}", if self.debug { "ON" } else { "OFF" })
+        write!(f, "trace: {}, debug: {}", self.trace, self.debug)
     }
 }
 
@@ -91,24 +94,25 @@ fn main() {
         .create_texture_target(PixelFormatEnum::RGB24, 256, 240)
         .unwrap();
 
-    let mut bank_0_tile_frame = Frame::new();
-    let mut bank_1_tile_frame = Frame::new();
+    let mut frame = Frame::new();
+    let halt = Arc::new(AtomicBool::new(false));
+    let mut nes = NES::new(rom, halt, move |ppu: &PPU| {
+        render::render(&mut frame, ppu);
 
-    for i in 0..256 {
-        show_tile(&mut bank_0_tile_frame, &rom.chr_rom, 0, i);
-        show_tile(&mut bank_1_tile_frame, &rom.chr_rom, 1, i);
-    }
+        texture.update(None, &frame.data, 256 * 3);
+        canvas.copy(&texture, None, None).unwrap();
+        canvas.present();
+    });
 
-    let mut combined_data =
-        Vec::with_capacity(bank_0_tile_frame.data.len() + bank_1_tile_frame.data.len());
-    combined_data.extend_from_slice(&bank_0_tile_frame.data[0..64 * 256 * 3].to_vec());
-    combined_data.extend_from_slice(&bank_1_tile_frame.data[0..64 * 256 * 3].to_vec());
+    nes.set_tracing(args.trace);
 
-    texture.update(None, &combined_data, 256 * 3);
-    canvas.copy(&texture, None, None).unwrap();
-    canvas.present();
+    let mut screen_state = [0 as u8; 32 * 3 * 32];
+    let mut rng = rand::thread_rng();
 
-    loop {
+    let _ = nes.run_with_callback(move |cpu| {
+        // handle_user_input(cpu, &mut event_pump);
+        cpu.mem_write(0xFE, rng.gen_range(1, 16));
+
         for event in event_pump.poll_iter() {
             match event {
                 Event::Quit { .. }
@@ -116,30 +120,39 @@ fn main() {
                     keycode: Some(Keycode::Escape),
                     ..
                 } => std::process::exit(0),
-                _ => {}
+                _ => { /* do nothing */ }
             }
         }
-    }
 
-    // let halt = Arc::new(AtomicBool::new(false));
-    // let mut nes = NES::new(rom, halt);
-    // nes.set_debug(args.debug);
-    //
-    // let mut screen_state = [0 as u8; 32 * 3 * 32];
-    // let mut rng = rand::thread_rng();
-    //
-    // let _ = nes.run_with_callback(move |cpu| {
-    //     handle_user_input(cpu, &mut event_pump);
-    //     cpu.mem_write(0xFE, rng.gen_range(1, 16));
-    //
-    //     if read_screen_state(cpu, &mut screen_state) {
-    //         texture.update(None, &screen_state, 32 * 3).unwrap();
-    //         canvas.copy(&texture, None, None).unwrap();
-    //         canvas.present();
-    //     }
-    //
-    //     ::std::thread::sleep(std::time::Duration::new(0, 70_000));
-    // });
+        if args.debug {
+            for event in event_pump.wait_iter() {
+                if let Event::KeyDown {
+                    keycode: Some(Keycode::Return),
+                    ..
+                } = event
+                {
+                    return;
+                }
+
+                if let Event::Quit { .. }
+                | Event::KeyDown {
+                    keycode: Some(Keycode::Escape),
+                    ..
+                } = event
+                {
+                    std::process::exit(0)
+                }
+            }
+        }
+
+        // if read_screen_state(cpu, &mut screen_state) {
+        //     texture.update(None, &screen_state, 32 * 3).unwrap();
+        //     canvas.copy(&texture, None, None).unwrap();
+        //     canvas.present();
+        // }
+
+        // ::std::thread::sleep(std::time::Duration::new(0, 70_000));
+    });
 }
 
 fn handle_user_input<T: Bus>(cpu: &mut CPU<T>, event_pump: &mut EventPump) {

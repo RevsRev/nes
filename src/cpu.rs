@@ -333,7 +333,7 @@ impl<T: Bus> CPU<T> {
         let mut param_1 = Option::None;
         let mut param_2 = Option::None;
 
-        let absolute_address = match (&op.mode) {
+        let absolute_address = match &op.mode {
             AddressingMode::Accumulator => Option::None,
             a => Option::Some(
                 self.evaluate_operand_at_address(a, self.program_counter + 1)
@@ -1533,7 +1533,7 @@ impl<T: Bus> CPU<T> {
 
     fn interrupt_nmi(&mut self) {
         self.stack_push_u16(self.program_counter);
-        let mut status = (self.status.clone() | BREAK2_FLAG) & !BREAK_FLAG;
+        let status = (self.status.clone() | BREAK2_FLAG) & !BREAK_FLAG;
 
         self.stack_push(status);
         self.status = self.status | INTERRUPT_DISABLE_FLAG;
@@ -1580,10 +1580,10 @@ mod test {
     }
 
     impl Interrupting for BusStub {
-        fn poll(&self, interrupt_type: &InterruptType) -> Option<u8> {
+        fn poll(&self, _interrupt_type: &InterruptType) -> Option<u8> {
             return Option::None;
         }
-        fn take(&mut self, interrupt_type: &InterruptType) -> Option<u8> {
+        fn take(&mut self, _interrupt_type: &InterruptType) -> Option<u8> {
             return Option::None;
         }
     }

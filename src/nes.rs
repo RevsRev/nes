@@ -8,7 +8,6 @@ use crate::bus::BusImpl;
 use crate::cpu::CPU;
 use crate::ppu::PPU;
 use crate::rom::Rom;
-use crate::traits;
 
 pub struct NES<'call> {
     tracing: bool,
@@ -103,7 +102,7 @@ mod test {
         let rom = crate::rom::test::test_rom(program);
 
         let halt = Arc::new(AtomicBool::new(false));
-        let mut nes = NES::new(rom, Arc::clone(&halt), |ppu: &PPU| {});
+        let mut nes = NES::new(rom, Arc::clone(&halt), |_ppu: &PPU| {});
         let mut result: Vec<String> = Vec::new();
 
         // nes.setDebug(true);
@@ -163,7 +162,7 @@ mod test {
         let rom = crate::rom::test::test_rom(program);
 
         let halt = Arc::new(AtomicBool::new(false));
-        let mut nes = NES::new(rom, Arc::clone(&halt), |ppu: &PPU| {});
+        let mut nes = NES::new(rom, Arc::clone(&halt), |_ppu: &PPU| {});
         let mut result: Vec<String> = Vec::new();
 
         nes.bus.borrow_mut().mem_write(100, 0x11);
@@ -204,7 +203,7 @@ mod test {
     #[test]
     fn test_nestest() {
         let halt = Arc::new(AtomicBool::new(false));
-        let mut nes = NES::new(nestest_rom(), Arc::clone(&halt), |ppu: &PPU| {});
+        let mut nes = NES::new(nestest_rom(), Arc::clone(&halt), |_ppu: &PPU| {});
         let mut result: Vec<String> = Vec::new();
         let nes_test_log = nestest_log();
 

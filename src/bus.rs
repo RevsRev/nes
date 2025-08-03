@@ -9,7 +9,6 @@ use crate::traits::tick::Tick;
 
 const RAM: u16 = 0x0000;
 const RAM_MIRRORS_END: u16 = 0x1FFF;
-const PPU_REGISTERS: u16 = 0x2000;
 const PPU_REGISTERS_MIRRORS_END: u16 = 0x3FFF;
 const ROM_START: u16 = 0x8000;
 const ROM_END: u16 = 0xFFFF;
@@ -171,9 +170,9 @@ impl<'a> Mem for BusImpl<'a> {
 
 impl<'call> Tick for BusImpl<'call> {
     fn tick(&mut self, cycles: u8) {
-        let nmi_before = self.ppu.poll(&InterruptType::Nmi).is_some();
+        // let nmi_before = self.ppu.poll(&InterruptType::Nmi).is_some();
         self.ppu.tick(3 * cycles);
-        let nmi_after = self.ppu.poll(&InterruptType::Nmi).is_some();
+        // let nmi_after = self.ppu.poll(&InterruptType::Nmi).is_some();
 
         if self.ppu.new_frame {
             (self.gameloop_callback)(&self.ppu)

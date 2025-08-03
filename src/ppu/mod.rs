@@ -67,12 +67,12 @@ impl Tick for PPU {
 
 impl Interrupting for PPU {
     fn poll(&self, interrupt_type: &crate::traits::interrupt::InterruptType) -> Option<u8> {
-        match (*interrupt_type) {
+        match *interrupt_type {
             InterruptType::Nmi => self.nmi_interrupt,
         }
     }
     fn take(&mut self, interrupt_type: &crate::traits::interrupt::InterruptType) -> Option<u8> {
-        match (*interrupt_type) {
+        match *interrupt_type {
             InterruptType::Nmi => self.nmi_interrupt.take(),
         }
     }
@@ -119,17 +119,10 @@ impl PPU {
                 self.internal_data_buf = self.vram[self.mirror_vram_addr(addr) as usize];
                 result
             }
-            0x3000..=0x3EFF => panic!(
-                "addr space 0x3000..0x3EFF is not expected to be used. Requested: {:#04X}",
-                addr
-            ),
 
-            //Addresses $3F10/$3F14/$3F18/$3F1C are mirrors of $3F00/$3F04/$3F08/$3F0C
-            0x3f10 | 0x3f14 | 0x3f18 | 0x3f1c => {
-                let add_mirror = addr - 0x10;
-                self.palette_table[(add_mirror - 0x3f00) as usize]
+            0x3F00..=0x3FFF => {
+                self.palette_table[(self.mirror_pallette_addr(addr) - 0x3F00) as usize]
             }
-            // 0x3F00..=0x3FFF => self.palette_table[self.mirror_pallette_addr(addr) as usize],
             _ => panic!("Unexpected access to mirrored space {:#04X}", addr),
         }
     }
@@ -143,21 +136,9 @@ impl PPU {
             0x2000..=0x2FFF => {
                 self.vram[self.mirror_vram_addr(addr) as usize] = value;
             }
-            // 0x3000..=0x3EFF => panic!(
-            //     "addr space 0x3000..0x3EFF is not expected to be used. Requested: {:#04X}",
-            //     addr
-            // ),
-            0x3000..=0x3eff => unimplemented!("addr {} shouldn't be used in reallity", addr),
-
-            //Addresses $3F10/$3F14/$3F18/$3F1C are mirrors of $3F00/$3F04/$3F08/$3F0C
-            0x3f10 | 0x3f14 | 0x3f18 | 0x3f1c => {
-                let add_mirror = addr - 0x10;
-                self.palette_table[(add_mirror - 0x3f00) as usize] = value;
-            }
 
             0x3F00..=0x3FFF => {
-                // self.palette_table[self.mirror_pallette_addr(addr) as usize] = value;
-                self.palette_table[(addr - 0x3f00) as usize] = value;
+                self.palette_table[(self.mirror_pallette_addr(addr) - 0x3F00) as usize] = value;
             }
             _ => panic!("Unexpected access to mirrored space {:#04X}", addr),
         }

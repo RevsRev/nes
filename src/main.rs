@@ -94,15 +94,6 @@ fn main() {
         texture.update(None, &frame.data, 256 * 3).unwrap();
         canvas.copy(&texture, None, None).unwrap();
         canvas.present();
-    });
-
-    nes.set_tracing(args.trace);
-
-    let mut rng = rand::thread_rng();
-
-    let _ = nes.run_with_callback(move |cpu| {
-        // handle_user_input(cpu, &mut event_pump);
-        cpu.mem_write(0xFE, rng.gen_range(1, 16));
 
         for event in event_pump.poll_iter() {
             match event {
@@ -114,27 +105,36 @@ fn main() {
                 _ => { /* do nothing */ }
             }
         }
+    });
 
-        if args.debug {
-            for event in event_pump.wait_iter() {
-                if let Event::KeyDown {
-                    keycode: Some(Keycode::Return),
-                    ..
-                } = event
-                {
-                    return;
-                }
+    nes.set_tracing(args.trace);
 
-                if let Event::Quit { .. }
-                | Event::KeyDown {
-                    keycode: Some(Keycode::Escape),
-                    ..
-                } = event
-                {
-                    std::process::exit(0)
-                }
-            }
-        }
+    let mut rng = rand::thread_rng();
+
+    let _ = nes.run_with_callback(move |cpu| {
+        // handle_user_input(cpu, &mut event_pump);
+        cpu.mem_write(0xFE, rng.gen_range(1, 16));
+
+        // if args.debug {
+        //     for event in event_pump.wait_iter() {
+        //         if let Event::KeyDown {
+        //             keycode: Some(Keycode::Return),
+        //             ..
+        //         } = event
+        //         {
+        //             return;
+        //         }
+        //
+        //         if let Event::Quit { .. }
+        //         | Event::KeyDown {
+        //             keycode: Some(Keycode::Escape),
+        //             ..
+        //         } = event
+        //         {
+        //             std::process::exit(0)
+        //         }
+        //     }
+        // }
 
         // if read_screen_state(cpu, &mut screen_state) {
         //     texture.update(None, &screen_state, 32 * 3).unwrap();

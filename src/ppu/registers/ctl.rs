@@ -44,4 +44,11 @@ impl ControlRegister {
         }
         0x0000
     }
+
+    pub fn sprite_pattern_addr(&self) -> u16 {
+        if self.has_flag(SPRITE_PATTERN_ADDR) {
+            return 0x1000;
+        }
+        0x0000
+    }
 }

@@ -7,6 +7,11 @@ pub mod frame;
 pub mod palette;
 
 pub fn render(frame: &mut Frame, ppu: &PPU) {
+    render_background(frame, ppu);
+    render_sprites(frame, ppu);
+}
+
+fn render_background(frame: &mut Frame, ppu: &PPU) {
     let bank = ppu.ctl.bknd_pattern_addr();
 
     //960 tiles make up the screen
@@ -37,6 +42,60 @@ pub fn render(frame: &mut Frame, ppu: &PPU) {
             }
         }
     }
+}
+
+fn render_sprites(frame: &mut Frame, ppu: &PPU) {
+    for i in (0..ppu.oam_data.len()).step_by(4).rev() {
+        let tile_idx = ppu.oam_data[i + 1] as u16;
+        let tile_x = ppu.oam_data[i + 3] as usize;
+        let tile_y = ppu.oam_data[i] as usize;
+
+        //load "settings" from the third byte
+        let flip_vertical = (ppu.oam_data[i + 2] >> 7) & 1 == 1;
+        let flip_horizontal = (ppu.oam_data[i + 2] >> 6) & 1 == 1;
+        let pallette_idx = ppu.oam_data[i + 2] & 0b11;
+
+        let sprite_pallette = sprite_pallette(ppu, pallette_idx);
+
+        let bank = ppu.ctl.sprite_pattern_addr();
+
+        let tile =
+            &ppu.chr_rom[(bank + tile_idx * 16) as usize..=(bank + tile_idx * 16 + 15) as usize];
+
+        for y in 0..8 {
+            let mut upper = tile[y];
+            let mut lower = tile[y + 8];
+
+            for x in (0..8).rev() {
+                let value = (1 & lower) << 1 | (1 & upper);
+                upper = upper >> 1;
+                lower = lower >> 1;
+                let rgb = match value {
+                    0 => continue,
+                    1 => SYSTEM_PALLETE[sprite_pallette[1] as usize],
+                    2 => SYSTEM_PALLETE[sprite_pallette[2] as usize],
+                    3 => SYSTEM_PALLETE[sprite_pallette[3] as usize],
+                    _ => panic!("Impossible!"),
+                };
+                match (flip_horizontal, flip_vertical) {
+                    (false, false) => frame.set_pixel(tile_x + x, tile_y + y, rgb),
+                    (true, false) => frame.set_pixel(tile_x + 7 - x, tile_y + y, rgb),
+                    (false, true) => frame.set_pixel(tile_x + x, tile_y + 7 - y, rgb),
+                    (true, true) => frame.set_pixel(tile_x + 7 - x, tile_y + 7 - y, rgb),
+                }
+            }
+        }
+    }
+}
+
+fn sprite_pallette(ppu: &PPU, pallette_idx: u8) -> [u8; 4] {
+    let start = 0x11 + (pallette_idx * 4) as usize;
+    [
+        0,
+        ppu.palette_table[start],
+        ppu.palette_table[start + 1],
+        ppu.palette_table[start + 2],
+    ]
 }
 
 fn background_pallette(ppu: &PPU, tile_column: usize, tile_row: usize) -> [u8; 4] {

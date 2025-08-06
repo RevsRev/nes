@@ -7,19 +7,19 @@ use std::{
 
 use crate::traits::mem::Mem;
 use clap::Parser;
+use io::render::frame::Frame;
 use nes::NES;
 use ppu::PPU;
 use rand::Rng;
-use render::frame::Frame;
 use rom::Rom;
 use sdl2::{event::Event, keyboard::Keycode, pixels::PixelFormatEnum};
 
 mod bus;
 mod cpu;
+mod io;
 mod nes;
 mod opp;
 mod ppu;
-mod render;
 mod rom;
 mod traits;
 
@@ -89,7 +89,7 @@ fn main() {
     let mut frame = Frame::new();
     let halt = Arc::new(AtomicBool::new(false));
     let mut nes = NES::new(rom, halt, move |ppu: &PPU| {
-        render::render(&mut frame, ppu);
+        io::render::render(&mut frame, ppu);
 
         texture.update(None, &frame.data, 256 * 3).unwrap();
         canvas.copy(&texture, None, None).unwrap();

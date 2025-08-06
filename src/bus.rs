@@ -1,5 +1,6 @@
 use core::fmt;
 
+use crate::io::joypad::Joypad;
 use crate::ppu::PPU;
 use crate::rom::Rom;
 use crate::traits::bus::Bus;
@@ -17,20 +18,23 @@ pub struct BusImpl<'call> {
     cpu_vram: [u8; 2048],
     prg_rom: Vec<u8>,
     pub ppu: PPU,
-    gameloop_callback: Box<dyn FnMut(&PPU) + 'call>,
+    pub joypad: Joypad,
+    gameloop_callback: Box<dyn FnMut(&PPU, &mut Joypad) + 'call>,
 }
 
 impl<'a> BusImpl<'a> {
     pub fn new<'call, F>(rom: Rom, gameloop_callback: F) -> BusImpl<'call>
     where
-        F: FnMut(&PPU) + 'call,
+        F: FnMut(&PPU, &mut Joypad) + 'call,
     {
         let ppu = PPU::new(rom.chr_rom, rom.screen_mirroring);
+        let joypad = Joypad::new();
 
         BusImpl {
             cpu_vram: [0; 2048],
             prg_rom: rom.prg_rom,
             ppu: ppu,
+            joypad,
             gameloop_callback: Box::from(gameloop_callback),
         }
     }
@@ -91,10 +95,7 @@ impl<'a> Mem for BusImpl<'a> {
                 0
             }
 
-            0x4016 => {
-                // ignore joypad 1;
-                0
-            }
+            0x4016 => self.joypad.read(),
 
             0x4017 => {
                 // ignore joypad 2
@@ -136,7 +137,7 @@ impl<'a> Mem for BusImpl<'a> {
             }
 
             0x4016 => {
-                // ignore joypad 1;
+                self.joypad.write(data);
             }
 
             0x4017 => {
@@ -175,7 +176,7 @@ impl<'call> Tick for BusImpl<'call> {
         // let nmi_after = self.ppu.poll(&InterruptType::Nmi).is_some();
 
         if self.ppu.new_frame {
-            (self.gameloop_callback)(&self.ppu)
+            (self.gameloop_callback)(&self.ppu, &mut self.joypad)
         }
 
         // if !nmi_before && nmi_after {

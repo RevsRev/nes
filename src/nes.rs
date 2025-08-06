@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 
 use crate::bus::BusImpl;
 use crate::cpu::CPU;
+use crate::io::joypad::Joypad;
 use crate::ppu::PPU;
 use crate::rom::Rom;
 
@@ -25,7 +26,7 @@ impl<'call> fmt::Display for NES<'call> {
 impl<'call> NES<'call> {
     pub fn new<'cl, F>(rom: Rom, halt: Arc<AtomicBool>, gameloop_callback: F) -> NES<'cl>
     where
-        F: FnMut(&PPU) + 'cl,
+        F: FnMut(&PPU, &mut Joypad) + 'cl,
     {
         let bus = Rc::new(RefCell::new(BusImpl::new(rom, gameloop_callback)));
         let mut cpu = CPU::new(Rc::clone(&bus), halt);

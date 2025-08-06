@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fmt,
     fs::File,
     io::Read,
@@ -7,7 +8,10 @@ use std::{
 
 use crate::traits::mem::Mem;
 use clap::Parser;
-use io::render::frame::Frame;
+use io::{
+    joypad::{BUTTON_A, BUTTON_B, DOWN, Joypad, LEFT, RIGHT, SELECT, START, UP},
+    render::frame::Frame,
+};
 use nes::NES;
 use ppu::PPU;
 use rand::Rng;
@@ -88,7 +92,7 @@ fn main() {
 
     let mut frame = Frame::new();
     let halt = Arc::new(AtomicBool::new(false));
-    let mut nes = NES::new(rom, halt, move |ppu: &PPU| {
+    let mut nes = NES::new(rom, halt, move |ppu: &PPU, joypad: &mut Joypad| {
         io::render::render(&mut frame, ppu);
 
         texture.update(None, &frame.data, 256 * 3).unwrap();
@@ -102,6 +106,16 @@ fn main() {
                     keycode: Some(Keycode::Escape),
                     ..
                 } => std::process::exit(0),
+                Event::KeyDown { keycode, .. } => {
+                    if let Some(key) = KEY_MAP.get(&keycode.unwrap_or(Keycode::Ampersand)) {
+                        joypad.set_button_pressed_status(*key, true);
+                    }
+                }
+                Event::KeyUp { keycode, .. } => {
+                    if let Some(key) = KEY_MAP.get(&keycode.unwrap_or(Keycode::Ampersand)) {
+                        joypad.set_button_pressed_status(*key, false);
+                    }
+                }
                 _ => { /* do nothing */ }
             }
         }
@@ -144,4 +158,19 @@ fn main() {
 
         // ::std::thread::sleep(std::time::Duration::new(0, 70_000));
     });
+}
+
+lazy_static! {
+    pub static ref KEY_MAP: HashMap<Keycode, u8> = {
+        let mut map = HashMap::new();
+        map.insert(Keycode::Down, DOWN);
+        map.insert(Keycode::Up, UP);
+        map.insert(Keycode::Right, RIGHT);
+        map.insert(Keycode::Left, LEFT);
+        map.insert(Keycode::Space, SELECT);
+        map.insert(Keycode::Return, START);
+        map.insert(Keycode::A, BUTTON_A);
+        map.insert(Keycode::S, BUTTON_B);
+        map
+    };
 }

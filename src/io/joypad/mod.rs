@@ -22,11 +22,12 @@ impl Joypad {
         }
     }
 
-    pub fn write(&mut self, data: u8) {
+    pub fn write(&mut self, data: u8) -> u8 {
         self.strobe = data & 1 == 1;
         if self.strobe {
             self.button_index = 0;
         }
+        0
     }
 
     pub fn read(&mut self) -> u8 {

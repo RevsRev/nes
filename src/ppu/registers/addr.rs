@@ -16,10 +16,13 @@ impl AddrRegister {
         self.value.1 = (data & 0xFF) as u8;
     }
 
-    pub fn update(&mut self, data: u8) {
+    pub fn update(&mut self, data: u8) -> u8 {
+        let retval: u8;
         if self.hi_ptr {
+            retval = self.value.0;
             self.value.0 = data;
         } else {
+            retval = self.value.1;
             self.value.1 = data;
         }
 
@@ -27,6 +30,7 @@ impl AddrRegister {
             self.set(self.get() & 0b111111_11111111);
         }
         self.hi_ptr = !self.hi_ptr;
+        retval
     }
 
     pub fn increment(&mut self, inc: u8) {

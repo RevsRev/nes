@@ -1,6 +1,6 @@
 pub trait Mem {
     fn mem_read(&mut self, addr: u16) -> u8;
-    fn mem_write(&mut self, addr: u16, data: u8);
+    fn mem_write(&mut self, addr: u16, data: u8) -> u8;
 
     fn mem_read_u16(&mut self, addr: u16) -> u16 {
         let lo = self.mem_read(addr) as u16;
@@ -8,10 +8,11 @@ pub trait Mem {
         return (hi << 8) | lo;
     }
 
-    fn mem_write_u16(&mut self, addr: u16, data: u16) {
-        let hi = (data >> 8) as u8;
-        let lo = (data & 0xFF) as u8;
-        self.mem_write(addr, lo);
-        self.mem_write(addr + 1, hi);
+    fn mem_write_u16(&mut self, addr: u16, data: u16) -> u16 {
+        let mut hi = (data >> 8) as u8;
+        let mut lo = (data & 0xFF) as u8;
+        lo = self.mem_write(addr, lo);
+        hi = self.mem_write(addr + 1, hi);
+        ((hi as u16) << 8) | (lo as u16)
     }
 }

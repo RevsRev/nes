@@ -112,11 +112,13 @@ impl<'a> Mem for BusImpl<'a> {
         value
     }
 
-    fn mem_write(&mut self, addr: u16, data: u8) {
-        match addr {
+    fn mem_write(&mut self, addr: u16, data: u8) -> u8 {
+        return match addr {
             RAM..=RAM_MIRRORS_END => {
                 let mirror_down_addr = addr & 0b0000111_11111111;
+                let retval = self.cpu_vram[mirror_down_addr as usize];
                 self.cpu_vram[mirror_down_addr as usize] = data;
+                retval
             }
             0x2000 => self.ppu.write_to_ctl(data),
             0x2001 => self.ppu.write_to_mask(data),
@@ -129,18 +131,18 @@ impl<'a> Mem for BusImpl<'a> {
 
             0x2008..=PPU_REGISTERS_MIRRORS_END => {
                 let mirror_down_addr = addr & 0b0010_0000_0000_0111;
-                self.mem_write(mirror_down_addr, data);
+                self.mem_write(mirror_down_addr, data)
             }
 
             0x4000..=0x4013 | 0x4015 => {
                 //ignore APU
+                0
             }
 
-            0x4016 => {
-                self.joypad.write(data);
-            }
+            0x4016 => self.joypad.write(data),
 
             0x4017 => {
+                0
                 // ignore joypad 2
             }
 
@@ -152,7 +154,7 @@ impl<'a> Mem for BusImpl<'a> {
                     buffer[i as usize] = self.mem_read(hi + i);
                 }
 
-                self.ppu.write_to_oam_dma(&buffer);
+                self.ppu.write_to_oam_dma(&buffer)
 
                 // todo: handle this eventually
                 // let add_cycles: u16 = if self.cycles % 2 == 1 { 514 } else { 513 };
@@ -164,8 +166,9 @@ impl<'a> Mem for BusImpl<'a> {
             }
             _ => {
                 println!("Ignoring mem write-access at {:#04x}", addr);
+                0
             }
-        }
+        };
     }
 }
 

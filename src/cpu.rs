@@ -234,7 +234,18 @@ pub struct CPU<T: Bus> {
     pub stack_pointer: u8,
     pub bus: Rc<RefCell<T>>,
 
+    //tracing info
     trace: Option<CpuTrace>,
+    trace_pc: u16,
+    trace_reg_a: u8,
+    trace_reg_x: u8,
+    trace_reg_y: u8,
+    trace_sp: u8,
+    trace_status: u8,
+    operand_address: Option<u16>,
+    reads: Vec<(u16, u8)>,
+    writes: Vec<(u16, u8)>,
+
     halt: Arc<AtomicBool>,
     graceful_shutdown: bool,
 
@@ -245,19 +256,29 @@ pub struct CPU<T: Bus> {
 
 impl<T: Bus> Mem for CPU<T> {
     fn mem_read(&mut self, addr: u16) -> u8 {
-        self.bus.borrow_mut().mem_read(addr)
+        let read = self.bus.borrow_mut().mem_read(addr);
+        self.reads.push((addr, read));
+        read
     }
 
-    fn mem_write(&mut self, addr: u16, data: u8) {
-        self.bus.borrow_mut().mem_write(addr, data);
+    fn mem_write(&mut self, addr: u16, data: u8) -> u8 {
+        let retval = self.bus.borrow_mut().mem_write(addr, data);
+        self.writes.push((addr, retval));
+        retval
     }
 
     fn mem_read_u16(&mut self, addr: u16) -> u16 {
-        self.bus.borrow_mut().mem_read_u16(addr)
+        let lo = self.mem_read(addr) as u16;
+        let hi = self.mem_read(addr + 1) as u16;
+        return (hi << 8) | lo;
     }
 
-    fn mem_write_u16(&mut self, addr: u16, data: u16) {
-        self.bus.borrow_mut().mem_write_u16(addr, data);
+    fn mem_write_u16(&mut self, addr: u16, data: u16) -> u16 {
+        let mut hi = (data >> 8) as u8;
+        let mut lo = (data & 0xFF) as u8;
+        lo = self.mem_write(addr, lo);
+        hi = self.mem_write(addr + 1, hi);
+        ((hi as u16) << 8) | (lo as u16)
     }
 }
 
@@ -295,6 +316,15 @@ impl<T: Bus> CPU<T> {
             stack_pointer: STACK_RESET,
             bus: bus,
             trace: Option::None,
+            trace_pc: 0,
+            trace_sp: 0,
+            trace_status: 0,
+            trace_reg_a: 0,
+            trace_reg_x: 0,
+            trace_reg_y: 0,
+            reads: Vec::new(),
+            writes: Vec::new(),
+            operand_address: Option::None,
             halt: halt,
             graceful_shutdown: true,
             next_program_counter: 0,
@@ -333,41 +363,53 @@ impl<T: Bus> CPU<T> {
         let mut param_1 = Option::None;
         let mut param_2 = Option::None;
 
-        let absolute_address = match &op.mode {
-            AddressingMode::Accumulator => Option::None,
-            a => Option::Some(
-                self.evaluate_operand_at_address(a, self.program_counter + 1)
-                    .0,
-            ),
-        };
-
-        let mem_value = match absolute_address {
-            Some(addr) => Option::Some(self.mem_read(addr)),
-            None => Option::None,
-        };
-
+        let mut read_index = 0;
         match &op.len {
-            2 => param_1 = Option::Some(self.mem_read(self.program_counter + 1)),
+            2 => {
+                param_1 = Option::Some(self.reads[read_index].1);
+                read_index += 1;
+            }
             3 => {
-                param_1 = Option::Some(self.mem_read(self.program_counter + 1));
-                param_2 = Option::Some(self.mem_read(self.program_counter + 2));
+                param_1 = Option::Some(self.reads[read_index].1);
+                param_2 = Option::Some(self.reads[read_index + 1].1);
+                read_index += 2;
             }
             _ => {}
         }
 
+        let mem_value = if self.reads.len() == read_index {
+            if self.writes.len() > 0 {
+                Option::Some(self.writes[0].1)
+            } else {
+                Option::None
+            }
+        } else {
+            Option::Some(self.reads[read_index].1)
+        };
+
         self.trace = Option::Some(CpuTrace {
-            pc: self.program_counter,
+            pc: self.trace_pc,
             op_code: (*op).to_owned(),
             param_1: param_1,
             param_2: param_2,
-            absolute_address: absolute_address,
+            absolute_address: self.operand_address,
             mem_value: mem_value,
-            register_a: self.register_a,
-            register_x: self.register_x,
-            register_y: self.register_y,
-            status: self.status,
-            stack: self.stack_pointer,
+            register_a: self.trace_reg_a,
+            register_x: self.trace_reg_x,
+            register_y: self.trace_reg_y,
+            status: self.trace_status,
+            stack: self.trace_sp,
         });
+
+        self.operand_address = Option::None;
+        self.reads.clear();
+        self.writes.clear();
+        self.trace_sp = 0;
+        self.trace_pc = 0;
+        self.trace_status = 0;
+        self.trace_reg_a = 0;
+        self.trace_reg_x = 0;
+        self.trace_reg_y = 0;
     }
 
     pub fn run_with_callback<F>(&mut self, mut callback: F) -> Result<(), String>
@@ -392,8 +434,17 @@ impl<T: Bus> CPU<T> {
                 None => return Err(format!("Opcode {:x} is not recognised", op)),
             };
 
-            // self.store_trace(opcode);
-            callback(self);
+            println!("OP: {:#04X}", &opcode.code);
+
+            self.reads.clear();
+            self.writes.clear();
+            self.trace_pc = self.program_counter;
+            self.trace_sp = self.stack_pointer;
+            self.trace_status = self.status;
+            self.trace_reg_a = self.register_a;
+            self.trace_reg_x = self.register_x;
+            self.trace_reg_y = self.register_y;
+
             self.op_cycles = opcode.cycles;
             self.program_counter += 1;
             self.next_program_counter = self.program_counter + (opcode.len - 1) as u16;
@@ -550,6 +601,9 @@ impl<T: Bus> CPU<T> {
                 _ => todo!(),
             }
 
+            self.store_trace(&opcode);
+            callback(self);
+
             self.program_counter = self.next_program_counter;
             self.tick(self.op_cycles);
 
@@ -616,7 +670,7 @@ impl<T: Bus> CPU<T> {
     }
 
     fn evaluate_operand_at_address(&mut self, mode: &AddressingMode, begin: u16) -> (u16, bool) {
-        match mode {
+        let result = match mode {
             AddressingMode::Immediate | AddressingMode::Implied => (begin, false),
             AddressingMode::Relative => {
                 let value = self.mem_read(begin) as i8;
@@ -662,7 +716,7 @@ impl<T: Bus> CPU<T> {
                 )
             }
             AddressingMode::Indirect => {
-                let target_addr = self.bus.borrow_mut().mem_read_u16(begin);
+                let target_addr = self.mem_read_u16(begin);
 
                 //Nasty bug for indirect reads on a page boundary!
                 //If we are at a page boundry e.g. 0x02FF, then we read the lo from 0x02FF and the hi
@@ -673,14 +727,16 @@ impl<T: Bus> CPU<T> {
                 let first = ((page as u16) << 8) + (index as u16);
                 let second = ((page as u16) << 8) + (index.wrapping_add(1) as u16);
 
-                let lo = self.bus.borrow_mut().mem_read(first) as u16;
-                let hi = self.bus.borrow_mut().mem_read(second) as u16;
+                let lo = self.mem_read(first) as u16;
+                let hi = self.mem_read(second) as u16;
 
                 // let target_addr = self.mem_read_u16(begin);
                 ((hi << 8) | lo, false)
             }
             AddressingMode::Accumulator => panic!("Unsupported op code 'Accumulator'"),
-        }
+        };
+        self.operand_address = Option::Some(result.0);
+        result
     }
 
     fn page_boundary_crossed(old_address: u16, new_address: u16) -> bool {
@@ -1593,8 +1649,9 @@ mod test {
             self.memory[addr as usize]
         }
 
-        fn mem_write(&mut self, addr: u16, data: u8) {
+        fn mem_write(&mut self, addr: u16, data: u8) -> u8 {
             self.memory[addr as usize] = data;
+            0
         }
     }
 

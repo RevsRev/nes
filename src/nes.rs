@@ -65,6 +65,7 @@ impl<'call> NES<'call> {
 mod test {
     use clap::error::Result;
 
+    use crate::io::joypad::Joypad;
     use crate::ppu::PPU;
     use crate::rom::{self, Rom};
     use crate::traits::mem::Mem;
@@ -103,7 +104,11 @@ mod test {
         let rom = crate::rom::test::test_rom(program);
 
         let halt = Arc::new(AtomicBool::new(false));
-        let mut nes = NES::new(rom, Arc::clone(&halt), |_ppu: &PPU| {});
+        let mut nes = NES::new(
+            rom,
+            Arc::clone(&halt),
+            |_ppu: &PPU, _joypad: &mut Joypad| {},
+        );
         let mut result: Vec<String> = Vec::new();
 
         // nes.setDebug(true);
@@ -163,7 +168,11 @@ mod test {
         let rom = crate::rom::test::test_rom(program);
 
         let halt = Arc::new(AtomicBool::new(false));
-        let mut nes = NES::new(rom, Arc::clone(&halt), |_ppu: &PPU| {});
+        let mut nes = NES::new(
+            rom,
+            Arc::clone(&halt),
+            |_ppu: &PPU, _joypad: &mut Joypad| {},
+        );
         let mut result: Vec<String> = Vec::new();
 
         nes.bus.borrow_mut().mem_write(100, 0x11);
@@ -204,7 +213,11 @@ mod test {
     #[test]
     fn test_nestest() {
         let halt = Arc::new(AtomicBool::new(false));
-        let mut nes = NES::new(nestest_rom(), Arc::clone(&halt), |_ppu: &PPU| {});
+        let mut nes = NES::new(
+            nestest_rom(),
+            Arc::clone(&halt),
+            |_ppu: &PPU, _joypad: &mut Joypad| {},
+        );
         let mut result: Vec<String> = Vec::new();
         let nes_test_log = nestest_log();
 

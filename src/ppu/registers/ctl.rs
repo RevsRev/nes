@@ -30,8 +30,10 @@ impl ControlRegister {
         }
     }
 
-    pub fn update(&mut self, data: u8) {
+    pub fn update(&mut self, data: u8) -> u8 {
+        let retval = self.bits;
         self.bits = data;
+        retval
     }
 
     pub fn generate_vblank_nmi(&self) -> bool {

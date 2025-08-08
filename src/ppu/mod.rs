@@ -127,23 +127,27 @@ impl PPU {
         }
     }
 
-    pub fn write_data(&mut self, value: u8) {
+    pub fn write_data(&mut self, value: u8) -> u8 {
+        let retval: u8;
         let addr = self.addr.get();
         match addr {
             0x0000..=0x1FFF => {
                 panic!("Attempt to write to chr rom space {:#04X}", addr);
             }
             0x2000..=0x2FFF => {
+                retval = self.vram[self.mirror_vram_addr(addr) as usize];
                 self.vram[self.mirror_vram_addr(addr) as usize] = value;
             }
 
             0x3F00..=0x3FFF => {
+                retval = self.palette_table[(self.mirror_pallette_addr(addr) - 0x3F00) as usize];
                 self.palette_table[(self.mirror_pallette_addr(addr) - 0x3F00) as usize] = value;
             }
             _ => panic!("Unexpected access to mirrored space {:#04X}", addr),
         }
 
         self.increment_vram_addr();
+        retval
     }
 
     fn mirror_vram_addr(&self, addr: u16) -> u16 {
@@ -183,16 +187,17 @@ impl PPU {
         self.addr.increment(self.ctl.vram_addr_increment());
     }
 
-    pub fn write_to_ppu_addr(&mut self, value: u8) {
-        self.addr.update(value);
+    pub fn write_to_ppu_addr(&mut self, value: u8) -> u8 {
+        self.addr.update(value)
     }
 
-    pub fn write_to_ctl(&mut self, value: u8) {
+    pub fn write_to_ctl(&mut self, value: u8) -> u8 {
         let before_nmi_status = self.ctl.generate_vblank_nmi();
-        self.ctl.update(value);
+        let retval = self.ctl.update(value);
         if !before_nmi_status && self.ctl.generate_vblank_nmi() && self.status.is_vblank() {
             self.nmi_interrupt = Some(1);
         }
+        retval
     }
 
     pub fn read_oam_data(&self) -> u8 {
@@ -207,34 +212,40 @@ impl PPU {
         data
     }
 
-    pub fn write_to_oam_addr(&mut self, value: u8) {
+    pub fn write_to_oam_addr(&mut self, value: u8) -> u8 {
+        let retval = self.oam_addr;
         self.oam_addr = value;
+        retval
     }
 
-    pub fn write_to_oam_data(&mut self, value: u8) {
+    pub fn write_to_oam_data(&mut self, value: u8) -> u8 {
+        let retval = self.oam_data[self.oam_addr as usize];
         self.oam_data[self.oam_addr as usize] = value;
         self.oam_addr = self.oam_addr.wrapping_add(1);
+        retval
     }
 
-    fn write_oam_dma(&mut self, data: &[u8; 256]) {
+    fn write_oam_dma(&mut self, data: &[u8; 256]) -> u8 {
         for d in data.iter() {
             self.write_to_oam_data(*d);
         }
+        0
     }
 
-    pub fn write_to_mask(&mut self, value: u8) {
-        self.mask.write(value);
+    pub fn write_to_mask(&mut self, value: u8) -> u8 {
+        self.mask.write(value)
     }
 
-    pub fn write_to_scroll(&mut self, value: u8) {
-        self.scroll.write(value);
+    pub fn write_to_scroll(&mut self, value: u8) -> u8 {
+        self.scroll.write(value)
     }
 
-    pub(crate) fn write_to_oam_dma(&mut self, data: &[u8; 256]) {
+    pub(crate) fn write_to_oam_dma(&mut self, data: &[u8; 256]) -> u8 {
         for x in data.iter() {
             self.oam_data[self.oam_addr as usize] = *x;
             self.oam_addr = self.oam_addr.wrapping_add(1);
         }
+        0
     }
 }
 #[cfg(test)]

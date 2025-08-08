@@ -49,179 +49,262 @@ pub enum AddressingMode {
 struct CpuTrace {
     pub pc: u16,
     pub op_code: OpCode,
-    pub param_1: Option<u8>,
-    pub param_2: Option<u8>,
     pub absolute_address: Option<u16>,
-    pub mem_value: Option<u8>,
     pub register_a: u8,
     pub register_x: u8,
     pub register_y: u8,
     pub status: u8,
     pub stack: u8,
+    pub reads: Vec<(u16, u8)>,
+    pub writes: Vec<(u16, u8)>,
 }
 
 impl fmt::Display for CpuTrace {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut raw_text = String::new();
+        let registers_and_pointers = format!(
+            "A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}",
+            self.register_a, self.register_x, self.register_y, self.status, self.stack
+        );
 
-        let mut addr = String::new();
+        match self.op_code.mode {
+            AddressingMode::Absolute => {
+                let first_read = self.reads[0].1;
+                let second_read = self.reads[1].1;
 
-        if let Some(ref p2) = self.param_2 {
-            raw_text.push_str(&format!(" {:02X}", p2));
-            addr.push_str(&format!("{:02X}", p2));
+                let overwritten_value = match (self.op_code.behaviour) {
+                    OpCodeBehaviour::MemoryWrite => format!(" = {:02X}", self.writes[0].1),
+                    OpCodeBehaviour::MemoryRead => format!(" = {:02X}", self.reads[2].1),
+                    _ => format!(""),
+                };
+
+                write!(
+                    f,
+                    "{:04X}  {:02X} {:02X} {:02X} {:>4} ${:02X}{:02X}{:<10}{:>38}",
+                    self.pc,
+                    self.op_code.code,
+                    first_read,
+                    second_read,
+                    self.op_code.mnemonic,
+                    second_read,
+                    first_read,
+                    overwritten_value,
+                    registers_and_pointers
+                )
+            }
+            AddressingMode::Absolute_X => {
+                let first_read = self.reads[0].1;
+                let second_read = self.reads[1].1;
+
+                let overwritten_value = match (self.op_code.behaviour) {
+                    OpCodeBehaviour::MemoryWrite => format!(" = {:02X}", self.writes[0].1),
+                    OpCodeBehaviour::MemoryRead => format!(" = {:02X}", self.reads[2].1),
+                    _ => format!(""),
+                };
+
+                write!(
+                    f,
+                    "{:04X}  {:02X} {:02X} {:02X} {:>4} ${:02X}{:02X},X @ {:04X}{}{:>34}",
+                    self.pc,
+                    self.op_code.code,
+                    first_read,
+                    second_read,
+                    self.op_code.mnemonic,
+                    second_read,
+                    first_read,
+                    self.absolute_address.unwrap_or_default(),
+                    overwritten_value,
+                    registers_and_pointers
+                )
+            }
+            AddressingMode::Absolute_Y => {
+                let first_read = self.reads[0].1;
+                let second_read = self.reads[1].1;
+
+                let overwritten_value = match (self.op_code.behaviour) {
+                    OpCodeBehaviour::MemoryWrite => format!(" = {:02X}", self.writes[0].1),
+                    OpCodeBehaviour::MemoryRead => format!(" = {:02X}", self.reads[2].1),
+                    _ => format!(""),
+                };
+
+                write!(
+                    f,
+                    "{:04X}  {:02X} {:02X} {:02X} {:>4} ${:02X}{:02X},Y @ {:04X}{}{:>34}",
+                    self.pc,
+                    self.op_code.code,
+                    first_read,
+                    second_read,
+                    self.op_code.mnemonic,
+                    second_read,
+                    first_read,
+                    self.absolute_address.unwrap_or_default(),
+                    overwritten_value,
+                    registers_and_pointers
+                )
+            }
+            AddressingMode::Immediate => {
+                let first_read = self.reads[0].1;
+                write!(
+                    f,
+                    "{:04X}  {:02X} {:02X}    {:>4} #${:02X}{:>49}",
+                    self.pc,
+                    self.op_code.code,
+                    first_read,
+                    self.op_code.mnemonic,
+                    first_read,
+                    registers_and_pointers
+                )
+            }
+            AddressingMode::ZeroPage => {
+                let first_read = self.reads[0].1;
+                let param = match self.op_code.behaviour {
+                    OpCodeBehaviour::MemoryRead => self.reads[1].1,
+                    OpCodeBehaviour::MemoryWrite => self.writes[0].1,
+                    _ => 0,
+                };
+                write!(
+                    f,
+                    "{:04X}  {:02X} {:02X}    {:>4} ${:02X} = {:02X}{:>45}",
+                    self.pc,
+                    self.op_code.code,
+                    first_read,
+                    self.op_code.mnemonic,
+                    first_read,
+                    param,
+                    registers_and_pointers
+                )
+            }
+            AddressingMode::ZeroPage_X => {
+                let first_read = self.reads[0].1;
+                let param = match self.op_code.behaviour {
+                    OpCodeBehaviour::MemoryRead => self.reads[1].1,
+                    OpCodeBehaviour::MemoryWrite => self.writes[0].1,
+                    _ => 0,
+                };
+                write!(
+                    f,
+                    "{:04X}  {:02X} {:02X}    {:>4} ${:02X},X @ {:02X} = {:02X}{:>38}",
+                    self.pc,
+                    self.op_code.code,
+                    first_read,
+                    self.op_code.mnemonic,
+                    first_read,
+                    first_read.wrapping_add(self.register_x),
+                    param,
+                    registers_and_pointers
+                )
+            }
+            AddressingMode::ZeroPage_Y => {
+                let first_read = self.reads[0].1;
+                let param = match self.op_code.behaviour {
+                    OpCodeBehaviour::MemoryRead => self.reads[1].1,
+                    OpCodeBehaviour::MemoryWrite => self.writes[0].1,
+                    _ => 0,
+                };
+                write!(
+                    f,
+                    "{:04X}  {:02X} {:02X}    {:>4} ${:02X},Y @ {:02X} = {:02X}{:>38}",
+                    self.pc,
+                    self.op_code.code,
+                    first_read,
+                    self.op_code.mnemonic,
+                    first_read,
+                    first_read.wrapping_add(self.register_y),
+                    param,
+                    registers_and_pointers
+                )
+            }
+            AddressingMode::Implied => {
+                write!(
+                    f,
+                    "{:04X}  {:02X}       {:>4}{:>54}",
+                    self.pc, self.op_code.code, self.op_code.mnemonic, registers_and_pointers
+                )
+            }
+            AddressingMode::Relative => {
+                let first_read = self.reads[0].1;
+                write!(
+                    f,
+                    "{:04X}  {:02X} {:02X}     {} ${:02X}{:>48}",
+                    self.pc,
+                    self.op_code.code,
+                    first_read,
+                    self.op_code.mnemonic,
+                    self.absolute_address.unwrap_or_default(),
+                    registers_and_pointers
+                )
+            }
+            AddressingMode::Accumulator => {
+                write!(
+                    f,
+                    "{:04X}  {:02X}        {} A{:>52}",
+                    self.pc, self.op_code.code, self.op_code.mnemonic, registers_and_pointers
+                )
+            }
+            AddressingMode::Indirect_X => {
+                let first_read = self.reads[0].1;
+                let read_value = match self.op_code.behaviour {
+                    OpCodeBehaviour::MemoryWrite => self.writes[0].1,
+                    OpCodeBehaviour::MemoryRead => self.reads[3].1,
+                    _ => 0,
+                };
+                write!(
+                    f,
+                    "{:04X}  {:02X} {:02X}    {:>4} (${:02X},X) @ {:02X} = {:04X} = {:02X}    {}",
+                    self.pc,
+                    self.op_code.code,
+                    first_read,
+                    self.op_code.mnemonic,
+                    first_read,
+                    first_read.wrapping_add(self.register_x),
+                    self.absolute_address.unwrap_or_default(),
+                    read_value,
+                    registers_and_pointers
+                )
+            }
+            AddressingMode::Indirect_Y => {
+                let first_read = self.reads[0].1;
+                let read_value = match self.op_code.behaviour {
+                    OpCodeBehaviour::MemoryWrite => self.writes[0].1,
+                    OpCodeBehaviour::MemoryRead => self.reads[3].1,
+                    _ => 0,
+                };
+                write!(
+                    f,
+                    "{:04X}  {:02X} {:02X}    {:>4} (${:02X}),Y = {:04X} @ {:04X} = {:02X}  {}",
+                    self.pc,
+                    self.op_code.code,
+                    first_read,
+                    self.op_code.mnemonic,
+                    first_read,
+                    self.absolute_address
+                        .unwrap_or_default()
+                        .wrapping_sub(self.register_y as u16),
+                    self.absolute_address.unwrap_or_default(),
+                    read_value,
+                    registers_and_pointers
+                )
+            }
+            AddressingMode::Indirect => {
+                let first_read = self.reads[0].1;
+                let second_read = self.reads[1].1;
+                write!(
+                    f,
+                    "{:04X}  {:02X} {:02X} {:02X}  {} (${:02X}{:02X}) = {:04X}  {:>37}",
+                    self.pc,
+                    self.op_code.code,
+                    first_read,
+                    second_read,
+                    self.op_code.mnemonic,
+                    second_read,
+                    first_read,
+                    self.absolute_address.unwrap_or_default(),
+                    registers_and_pointers
+                )
+            }
+            _ => {
+                write!(f, "bla")
+            }
         }
-
-        if let Some(ref p1) = self.param_1 {
-            raw_text = format!(" {:02X}{}", p1, raw_text);
-            // raw_text.push_str(&format!(" {:02X}", p1));
-            addr.push_str(&format!("{:02X}", p1));
-        }
-
-        raw_text = format!("{:02X}{}", self.op_code.code, raw_text);
-
-        let mut assembly_text = String::new();
-        assembly_text.push_str(&format!("{:>4} ", self.op_code.mnemonic));
-
-        match (self.op_code.mode, self.op_code.behaviour) {
-            (AddressingMode::Immediate, _) => {
-                assembly_text.push_str(&format!("#${}", addr));
-            }
-            (AddressingMode::Accumulator, _) => {
-                assembly_text.push_str(&format!("A"));
-            }
-            (AddressingMode::Indirect_Y, _) => {
-                let mem_value = match self.mem_value {
-                    Some(v) => format!("{:02X}", v),
-                    None => format!("NULL"),
-                };
-                let address = match self.absolute_address {
-                    Some(a) => a,
-                    None => 0,
-                };
-                let resolved_addr = address.wrapping_sub(self.register_y as u16);
-
-                assembly_text.push_str(&format!(
-                    "(${}),Y = {:04X} @ {:04X} = {}",
-                    addr, resolved_addr, address, mem_value
-                ));
-            }
-            (AddressingMode::Absolute_Y, _) => {
-                let mem_value = match self.mem_value {
-                    Some(v) => format!("{:02X}", v),
-                    None => format!("NULL"),
-                };
-                let address = match self.absolute_address {
-                    Some(a) => a,
-                    None => 0,
-                };
-                assembly_text.push_str(&format!("${},Y @ {:04X} = {}", addr, address, mem_value));
-            }
-            (AddressingMode::Indirect_X, _) => {
-                let zero_page_addr = match self.param_1 {
-                    Some(p) => p,
-                    None => 0,
-                };
-                let resolved_addr = zero_page_addr.wrapping_add(self.register_x);
-                let mem_value = match self.mem_value {
-                    Some(v) => format!("{:02X}", v),
-                    None => format!("NULL"),
-                };
-                let address = match self.absolute_address {
-                    Some(a) => format!("{:04X}", a),
-                    None => format!("NULL"),
-                };
-
-                assembly_text.push_str(&format!(
-                    "(${},X) @ {:02X} = {} = {}",
-                    addr, resolved_addr, address, mem_value
-                ));
-            }
-            (AddressingMode::Absolute_X, _) => {
-                let mem_value = match self.mem_value {
-                    Some(v) => format!("{:02X}", v),
-                    None => format!("NULL"),
-                };
-                let address = match self.absolute_address {
-                    Some(a) => a,
-                    None => 0,
-                };
-                assembly_text.push_str(&format!("${},X @ {:04X} = {}", addr, address, mem_value));
-            }
-            (AddressingMode::Indirect, _) => {
-                let address = match self.absolute_address {
-                    Some(a) => format!("{:04X}", a),
-                    None => format!("NULL"),
-                };
-                assembly_text.push_str(&format!("(${}) = {}", addr, address));
-            }
-            (AddressingMode::ZeroPage, _) => {
-                let mem_value = match self.mem_value {
-                    Some(v) => format!("{:02X}", v),
-                    None => format!("NULL"),
-                };
-                assembly_text.push_str(&format!("${} = {}", addr, mem_value));
-            }
-            (AddressingMode::ZeroPage_X, _) => {
-                let mem_value = match self.mem_value {
-                    Some(v) => format!("{:02X}", v),
-                    None => format!("NULL"),
-                };
-                let address = match self.absolute_address {
-                    Some(a) => a,
-                    None => 0,
-                };
-                assembly_text.push_str(&format!("${},X @ {:02X} = {}", addr, address, mem_value));
-            }
-            (AddressingMode::ZeroPage_Y, _) => {
-                let mem_value = match self.mem_value {
-                    Some(v) => format!("{:02X}", v),
-                    None => format!("NULL"),
-                };
-                let address = match self.absolute_address {
-                    Some(a) => a,
-                    None => 0,
-                };
-                assembly_text.push_str(&format!("${},Y @ {:02X} = {}", addr, address, mem_value));
-            }
-            (AddressingMode::Relative, _) => {
-                let address = match self.absolute_address {
-                    Some(a) => format!("{:04X}", a),
-                    None => format!("NULL"),
-                };
-                assembly_text.push_str(&format!("${}", address));
-            }
-            (_, OpCodeBehaviour::MemoryWrite) | (_, OpCodeBehaviour::MemoryRead) => {
-                let mem_value = match self.mem_value {
-                    Some(v) => format!("{:02X}", v),
-                    None => format!("NULL"),
-                };
-                assembly_text.push_str(&format!("${} = {}", addr, mem_value));
-            }
-            (_, OpCodeBehaviour::ControlFlow) => {
-                assembly_text.push_str(&format!("${}", addr));
-            }
-            (AddressingMode::Absolute, _) => {
-                let mem_value = match self.mem_value {
-                    Some(v) => format!("{:02X}", v),
-                    None => format!("NULL"),
-                };
-                assembly_text.push_str(&format!("${} = {}", addr, mem_value));
-            }
-            _ => {}
-        };
-
-        write!(
-            f,
-            "{:04X}  {:<9}{:<33}A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}",
-            self.pc,
-            raw_text,
-            assembly_text,
-            self.register_a,
-            self.register_x,
-            self.register_y,
-            self.status,
-            self.stack
-        )
     }
 }
 
@@ -360,45 +443,17 @@ impl<T: Bus> CPU<T> {
     }
 
     fn store_trace(&mut self, op: &OpCode) {
-        let mut param_1 = Option::None;
-        let mut param_2 = Option::None;
-
-        let mut read_index = 0;
-        match &op.len {
-            2 => {
-                param_1 = Option::Some(self.reads[read_index].1);
-                read_index += 1;
-            }
-            3 => {
-                param_1 = Option::Some(self.reads[read_index].1);
-                param_2 = Option::Some(self.reads[read_index + 1].1);
-                read_index += 2;
-            }
-            _ => {}
-        }
-
-        let mem_value = if self.reads.len() == read_index {
-            if self.writes.len() > 0 {
-                Option::Some(self.writes[0].1)
-            } else {
-                Option::None
-            }
-        } else {
-            Option::Some(self.reads[read_index].1)
-        };
-
         self.trace = Option::Some(CpuTrace {
             pc: self.trace_pc,
             op_code: (*op).to_owned(),
-            param_1: param_1,
-            param_2: param_2,
             absolute_address: self.operand_address,
-            mem_value: mem_value,
             register_a: self.trace_reg_a,
             register_x: self.trace_reg_x,
             register_y: self.trace_reg_y,
             status: self.trace_status,
             stack: self.trace_sp,
+            reads: self.reads.clone(),
+            writes: self.writes.clone(),
         });
 
         self.operand_address = Option::None;
@@ -433,8 +488,6 @@ impl<T: Bus> CPU<T> {
                 Some(o) => o,
                 None => return Err(format!("Opcode {:x} is not recognised", op)),
             };
-
-            println!("OP: {:#04X}", &opcode.code);
 
             self.reads.clear();
             self.writes.clear();
@@ -833,45 +886,45 @@ impl<T: Bus> CPU<T> {
     }
 
     fn bcc(&mut self, mode: &AddressingMode) {
+        let eval = self.evaluate_operand(mode);
+        if eval.1 {
+            self.op_cycles += 1;
+        }
+
         if Self::get_flag(self.status, CARRY_FLAG) {
             return;
         }
 
-        let eval = self.evaluate_operand(mode);
         self.op_cycles += 1;
         self.next_program_counter = eval.0;
-
-        if eval.1 {
-            self.op_cycles += 1;
-        }
     }
 
     fn bcs(&mut self, mode: &AddressingMode) {
+        let eval = self.evaluate_operand(mode);
+        if eval.1 {
+            self.op_cycles += 1;
+        }
+
         if !Self::get_flag(self.status, CARRY_FLAG) {
             return;
         }
 
-        let eval = self.evaluate_operand(mode);
         self.op_cycles += 1;
         self.next_program_counter = eval.0;
-
-        if eval.1 {
-            self.op_cycles += 1;
-        }
     }
 
     fn beq(&mut self, mode: &AddressingMode) {
+        let eval = self.evaluate_operand(mode);
+        if eval.1 {
+            self.op_cycles += 1;
+        }
+
         if !Self::get_flag(self.status, ZERO_FLAG) {
             return;
         }
 
-        let eval = self.evaluate_operand(mode);
         self.op_cycles += 1;
         self.next_program_counter = eval.0;
-
-        if eval.1 {
-            self.op_cycles += 1;
-        }
     }
 
     fn bit(&mut self, mode: &AddressingMode) {
@@ -884,73 +937,73 @@ impl<T: Bus> CPU<T> {
     }
 
     fn bmi(&mut self, mode: &AddressingMode) {
+        let eval = self.evaluate_operand(mode);
+        if eval.1 {
+            self.op_cycles += 1;
+        }
+
         if !Self::get_flag(self.status, NEGATIVE_FLAG) {
             return;
         }
 
-        let eval = self.evaluate_operand(mode);
         self.op_cycles += 1;
         self.next_program_counter = eval.0;
-
-        if eval.1 {
-            self.op_cycles += 1;
-        }
     }
 
     fn bne(&mut self, mode: &AddressingMode) {
+        let eval = self.evaluate_operand(mode);
+        if eval.1 {
+            self.op_cycles += 1;
+        }
+
         if Self::get_flag(self.status, ZERO_FLAG) {
             return;
         }
 
-        let eval = self.evaluate_operand(mode);
         self.op_cycles += 1;
         self.next_program_counter = eval.0;
-
-        if eval.1 {
-            self.op_cycles += 1;
-        }
     }
 
     fn bpl(&mut self, mode: &AddressingMode) {
+        let eval = self.evaluate_operand(mode);
+        if eval.1 {
+            self.op_cycles += 1;
+        }
+
         if Self::get_flag(self.status, NEGATIVE_FLAG) {
             return;
         }
 
-        let eval = self.evaluate_operand(mode);
         self.op_cycles += 1;
         self.next_program_counter = eval.0;
-
-        if eval.1 {
-            self.op_cycles += 1;
-        }
     }
 
     fn bvc(&mut self, mode: &AddressingMode) {
+        let eval = self.evaluate_operand(mode);
+        if eval.1 {
+            self.op_cycles += 1;
+        }
+
         if Self::get_flag(self.status, OVERFLOW_FLAG) {
             return;
         }
 
-        let eval = self.evaluate_operand(mode);
         self.op_cycles += 1;
         self.next_program_counter = eval.0;
-
-        if eval.1 {
-            self.op_cycles += 1;
-        }
     }
 
     fn bvs(&mut self, mode: &AddressingMode) {
+        let eval = self.evaluate_operand(mode);
+        if eval.1 {
+            self.op_cycles += 1;
+        }
+
         if !Self::get_flag(self.status, OVERFLOW_FLAG) {
             return;
         }
 
-        let eval = self.evaluate_operand(mode);
         self.op_cycles += 1;
         self.next_program_counter = eval.0;
-
-        if eval.1 {
-            self.op_cycles += 1;
-        }
     }
 
     fn clc(&mut self, _mode: &AddressingMode) {
@@ -1240,13 +1293,20 @@ impl<T: Bus> CPU<T> {
         self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG));
     }
 
-    fn nop(&mut self, _mode: &AddressingMode) {}
+    fn nop(&mut self, mode: &AddressingMode) {
+        let addr = self.evaluate_operand(mode).0;
+        self.mem_read(addr);
+    }
 
-    fn dop(&mut self, _mode: &AddressingMode) {}
+    fn dop(&mut self, mode: &AddressingMode) {
+        let addr = self.evaluate_operand(mode).0;
+        self.mem_read(addr);
+    }
 
     fn top(&mut self, mode: &AddressingMode) {
-        let cross_page = self.evaluate_operand(mode).1;
-        if cross_page {
+        let addr = self.evaluate_operand(mode);
+        self.mem_read(addr.0);
+        if addr.1 {
             self.op_cycles += 1
         }
     }

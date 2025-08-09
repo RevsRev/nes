@@ -125,7 +125,7 @@ fn main() {
 
     let mut rng = rand::thread_rng();
 
-    let _ = nes.run_with_callback(move |cpu| {
+    let result = nes.run_with_callback(move |cpu| {
         // handle_user_input(cpu, &mut event_pump);
         cpu.mem_write(0xFE, rng.gen_range(1, 16));
 
@@ -158,6 +158,11 @@ fn main() {
 
         // ::std::thread::sleep(std::time::Duration::new(0, 70_000));
     });
+
+    match result {
+        Ok(_) => {}
+        Err(s) => println!("{}", s),
+    }
 }
 
 lazy_static! {

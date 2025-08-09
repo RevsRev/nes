@@ -9,3 +9,4 @@ sdl2 = "0.34.0"
 rand = "=0.7.3"
 strum_macros = "0.25"
 clap = { version = "4.4", features = ["derive"] }
+indoc = "2"

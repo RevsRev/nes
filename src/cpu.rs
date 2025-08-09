@@ -3,6 +3,7 @@ use crate::traits::bus::Bus;
 use crate::traits::interrupt::InterruptType;
 use crate::traits::tick::Tick;
 use crate::{opp, traits::mem::Mem};
+use indoc::indoc;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -643,6 +644,47 @@ impl<T: Bus> CPU<T> {
                 _ => todo!(),
             };
 
+            match execution_result {
+                Ok(_) => {}
+                Err(s) => {
+                    let registers_and_pointers = format!(
+                        "A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}",
+                        self.register_a,
+                        self.register_x,
+                        self.register_y,
+                        self.status,
+                        self.stack_pointer
+                    );
+                    let last_cpu_trace = match &self.trace {
+                        Some(t) => format!("{}", t),
+                        None => format!("NULL"),
+                    };
+                    return Err(format!(
+                        indoc! {"
+                            A fatal error occurred during CPU execution
+
+                            Error was:
+                            {}
+
+                            Last successful trace:
+                            {}
+
+                            Current execution:
+                            {:04X}  {:02X} {:>60}
+                            Reads {:?}:
+                            Writes {:?}:
+                        "},
+                        s,
+                        last_cpu_trace,
+                        self.program_counter,
+                        opcode.code,
+                        registers_and_pointers,
+                        self.reads,
+                        self.writes
+                    ));
+                }
+            }
+
             self.store_trace(&opcode);
             callback(self);
 
@@ -667,16 +709,18 @@ impl<T: Bus> CPU<T> {
         Result::Ok(hi << 8 | lo)
     }
 
-    fn stack_push(&mut self, data: u8) {
-        self.mem_write((STACK as u16) + (self.stack_pointer as u16), data);
+    fn stack_push(&mut self, data: u8) -> Result<(), String> {
+        self.mem_write((STACK as u16) + (self.stack_pointer as u16), data)?;
         self.stack_pointer = self.stack_pointer.wrapping_sub(1);
+        Result::Ok(())
     }
 
-    fn stack_push_u16(&mut self, data: u16) {
+    fn stack_push_u16(&mut self, data: u16) -> Result<(), String> {
         let hi = (data >> 8) as u8;
         let lo = (data & 0xFF) as u8;
-        self.stack_push(hi);
-        self.stack_push(lo);
+        self.stack_push(hi)?;
+        self.stack_push(lo)?;
+        Result::Ok(())
     }
 
     fn mem_write_vec(&mut self, addr: u16, program: &Vec<u8>) {
@@ -867,7 +911,7 @@ impl<T: Bus> CPU<T> {
 
         let value = old << 1;
 
-        self.mem_write(addr, value);
+        self.mem_write(addr, value)?;
 
         self.set_status_flag(ZERO_FLAG, value == 0);
         self.copy_bit_to_status(old, NEGATIVE_FLAG, CARRY_FLAG);
@@ -877,7 +921,7 @@ impl<T: Bus> CPU<T> {
 
     fn sta(&mut self, mode: &AddressingMode) -> Result<(), String> {
         let addr = self.evaluate_operand(mode)?.0;
-        self.mem_write(addr, self.register_a);
+        self.mem_write(addr, self.register_a)?;
         Result::Ok(())
     }
 
@@ -1078,7 +1122,7 @@ impl<T: Bus> CPU<T> {
 
         let sub = value.wrapping_sub(1);
 
-        self.mem_write(address, sub);
+        self.mem_write(address, sub)?;
 
         self.set_status_flag(ZERO_FLAG, sub == 0);
         self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(sub, NEGATIVE_FLAG));
@@ -1091,7 +1135,7 @@ impl<T: Bus> CPU<T> {
 
         let sub = value.wrapping_sub(1);
 
-        self.mem_write(address, sub);
+        self.mem_write(address, sub)?;
 
         let diff = self.register_a.wrapping_sub(sub);
 
@@ -1145,7 +1189,7 @@ impl<T: Bus> CPU<T> {
     fn inc(&mut self, mode: &AddressingMode) -> Result<(), String> {
         let address = self.evaluate_operand(mode)?.0;
         let value = self.mem_read(address)?.wrapping_add(1);
-        self.mem_write(address, value);
+        self.mem_write(address, value)?;
 
         self.set_status_flag(ZERO_FLAG, value == 0);
         self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG));
@@ -1175,7 +1219,7 @@ impl<T: Bus> CPU<T> {
     fn isb(&mut self, mode: &AddressingMode) -> Result<(), String> {
         let address = self.evaluate_operand(mode)?.0;
         let value = self.mem_read(address)?.wrapping_add(1);
-        self.mem_write(address, value);
+        self.mem_write(address, value)?;
 
         let c = match Self::get_flag(self.status, CARRY_FLAG) {
             true => 1,
@@ -1215,7 +1259,7 @@ impl<T: Bus> CPU<T> {
     fn jsr(&mut self, mode: &AddressingMode) -> Result<(), String> {
         let pc_jump = self.evaluate_operand(mode)?.0;
 
-        self.stack_push_u16(self.program_counter + 2 - 1);
+        self.stack_push_u16(self.program_counter + 2 - 1)?;
 
         self.next_program_counter = pc_jump;
         Result::Ok(())
@@ -1313,7 +1357,7 @@ impl<T: Bus> CPU<T> {
 
         let value = old >> 1;
 
-        self.mem_write(addr, value);
+        self.mem_write(addr, value)?;
 
         self.set_status_flag(ZERO_FLAG, value == 0);
         self.copy_bit_to_status(old, CARRY_FLAG, CARRY_FLAG);
@@ -1362,12 +1406,12 @@ impl<T: Bus> CPU<T> {
     }
 
     fn pha(&mut self, _mode: &AddressingMode) -> Result<(), String> {
-        self.stack_push(self.register_a);
+        self.stack_push(self.register_a)?;
         Result::Ok(())
     }
 
     fn php(&mut self, _mode: &AddressingMode) -> Result<(), String> {
-        self.stack_push(self.status | BREAK_FLAG | BREAK2_FLAG);
+        self.stack_push(self.status | BREAK_FLAG | BREAK2_FLAG)?;
         Result::Ok(())
     }
 
@@ -1414,7 +1458,7 @@ impl<T: Bus> CPU<T> {
             false => old_value << 1,
         };
 
-        self.mem_write(address, value);
+        self.mem_write(address, value)?;
 
         self.copy_bit_to_status(old_value, NEGATIVE_FLAG, CARRY_FLAG);
         self.set_status_flag(ZERO_FLAG, value == 0);
@@ -1450,7 +1494,7 @@ impl<T: Bus> CPU<T> {
             false => old_value >> 1,
         };
 
-        self.mem_write(address, value);
+        self.mem_write(address, value)?;
 
         self.copy_bit_to_status(old_value, CARRY_FLAG, CARRY_FLAG);
         self.set_status_flag(ZERO_FLAG, value == 0);
@@ -1463,7 +1507,7 @@ impl<T: Bus> CPU<T> {
         let orig_value = self.mem_read(address)?;
         let value = (orig_value << 1) | (self.status & CARRY_FLAG);
 
-        self.mem_write(address, value);
+        self.mem_write(address, value)?;
         self.register_a = self.register_a & value;
 
         self.copy_bit_to_status(orig_value, NEGATIVE_FLAG, CARRY_FLAG);
@@ -1482,7 +1526,7 @@ impl<T: Bus> CPU<T> {
         let should_carry = Self::get_flag(orig_value, CARRY_FLAG);
 
         let value = orig_value >> 1 | ((self.status & CARRY_FLAG) << 7);
-        self.mem_write(address, value);
+        self.mem_write(address, value)?;
 
         let mut result = self.register_a;
         let mut carry = match result.checked_add(value) {
@@ -1527,8 +1571,8 @@ impl<T: Bus> CPU<T> {
     }
 
     fn brk(&mut self, _mode: &AddressingMode) -> Result<bool, String> {
-        self.stack_push_u16(self.program_counter.wrapping_add(1));
-        self.stack_push(self.status | (BREAK_FLAG & BREAK2_FLAG));
+        self.stack_push_u16(self.program_counter.wrapping_add(1))?;
+        self.stack_push(self.status | (BREAK_FLAG & BREAK2_FLAG))?;
 
         self.next_program_counter = self.mem_read_u16(BRK_INTERRUPT_ADDRESS)?;
         if self.next_program_counter == HALT_VALUE {
@@ -1545,7 +1589,7 @@ impl<T: Bus> CPU<T> {
         let address = self.evaluate_operand(mode)?.0;
         let value = self.register_x & self.register_a;
 
-        self.mem_write(address, value);
+        self.mem_write(address, value)?;
 
         //Even though these flags are documented, they don't get updated (the docs are wrong)
         // self.set_status_flag(ZERO_FLAG, value == 0);
@@ -1609,7 +1653,7 @@ impl<T: Bus> CPU<T> {
         let address = self.evaluate_operand(mode)?.0;
         let original = self.mem_read(address)?;
         let value = original << 1;
-        self.mem_write(address, value);
+        self.mem_write(address, value)?;
 
         let result = self.register_a | value;
 
@@ -1626,7 +1670,7 @@ impl<T: Bus> CPU<T> {
         let original = self.mem_read(address)?;
         let value = original >> 1;
 
-        self.mem_write(address, value);
+        self.mem_write(address, value)?;
         let result = self.register_a ^ value;
 
         self.register_a = result;
@@ -1639,13 +1683,13 @@ impl<T: Bus> CPU<T> {
 
     fn stx(&mut self, mode: &AddressingMode) -> Result<(), String> {
         let address = self.evaluate_operand(mode)?.0;
-        self.mem_write(address, self.register_x);
+        self.mem_write(address, self.register_x)?;
         Result::Ok(())
     }
 
     fn sty(&mut self, mode: &AddressingMode) -> Result<(), String> {
         let address = self.evaluate_operand(mode)?.0;
-        self.mem_write(address, self.register_y);
+        self.mem_write(address, self.register_y)?;
         Result::Ok(())
     }
 
@@ -1705,10 +1749,10 @@ impl<T: Bus> CPU<T> {
     }
 
     fn interrupt_nmi(&mut self) -> Result<(), String> {
-        self.stack_push_u16(self.program_counter);
+        self.stack_push_u16(self.program_counter)?;
         let status = (self.status.clone() | BREAK2_FLAG) & !BREAK_FLAG;
 
-        self.stack_push(status);
+        self.stack_push(status)?;
         self.status = self.status | INTERRUPT_DISABLE_FLAG;
 
         self.bus.borrow_mut().tick(2);

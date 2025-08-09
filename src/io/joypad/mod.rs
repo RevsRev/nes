@@ -37,7 +37,7 @@ impl Joypad {
 
         let response = (self.button_status & (1 << self.button_index)) >> self.button_index;
 
-        if !self.strobe && self.button_index <= 7 {
+        if !self.strobe && self.button_index < 7 {
             self.button_index += 1;
         }
         response
@@ -48,6 +48,49 @@ impl Joypad {
             self.button_status = self.button_status | button;
         } else {
             self.button_status = self.button_status & !button;
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_strobe_mode() {
+        let mut joypad = Joypad::new();
+        joypad.write(1);
+        joypad.set_button_pressed_status(BUTTON_A, true);
+        for _x in 0..10 {
+            assert_eq!(joypad.read(), 1);
+        }
+    }
+
+    #[test]
+    fn test_strobe_mode_on_off() {
+        let mut joypad = Joypad::new();
+
+        joypad.write(0);
+        joypad.set_button_pressed_status(RIGHT, true);
+        joypad.set_button_pressed_status(LEFT, true);
+        joypad.set_button_pressed_status(SELECT, true);
+        joypad.set_button_pressed_status(BUTTON_B, true);
+
+        for _ in 0..=1 {
+            assert_eq!(joypad.read(), 0);
+            assert_eq!(joypad.read(), 1);
+            assert_eq!(joypad.read(), 1);
+            assert_eq!(joypad.read(), 0);
+            assert_eq!(joypad.read(), 0);
+            assert_eq!(joypad.read(), 0);
+            assert_eq!(joypad.read(), 1);
+            assert_eq!(joypad.read(), 1);
+
+            for _x in 0..10 {
+                assert_eq!(joypad.read(), 1);
+            }
+            joypad.write(1);
+            joypad.write(0);
         }
     }
 }

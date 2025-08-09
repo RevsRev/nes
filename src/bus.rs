@@ -70,19 +70,19 @@ impl<'a> Interrupting for BusImpl<'a> {
 impl<'a> Bus for BusImpl<'a> {}
 
 impl<'a> Mem for BusImpl<'a> {
-    fn mem_read(&mut self, addr: u16) -> u8 {
+    fn mem_read(&mut self, addr: u16) -> Result<u8, String> {
         let value = match addr {
             RAM..=RAM_MIRRORS_END => {
                 let mirror_down_addr = addr & 0b0000111_11111111;
-                self.cpu_vram[mirror_down_addr as usize]
+                Result::Ok(self.cpu_vram[mirror_down_addr as usize])
             }
             0x2000 | 0x2001 | 0x2003 | 0x2005 | 0x2006 | 0x4014 => {
                 // panic!("Attempt to read from write-only PPU address {:#04X}", addr);
-                0
+                Result::Ok(0)
             }
 
-            0x2002 => self.ppu.read_status(),
-            0x2004 => self.ppu.read_oam_data(),
+            0x2002 => Result::Ok(self.ppu.read_status()),
+            0x2004 => Result::Ok(self.ppu.read_oam_data()),
             0x2007 => self.ppu.read_data(),
 
             0x2008..=PPU_REGISTERS_MIRRORS_END => {
@@ -92,57 +92,60 @@ impl<'a> Mem for BusImpl<'a> {
 
             0x4000..=0x4015 => {
                 //ignore APU
-                0
+                Result::Ok(0)
             }
 
-            0x4016 => self.joypad.read(),
+            0x4016 => Result::Ok(self.joypad.read()),
 
             0x4017 => {
                 // ignore joypad 2
-                0
+                Result::Ok(0)
             }
 
-            ROM_START..=ROM_END => self.read_prg_rom(addr),
+            ROM_START..=ROM_END => Result::Ok(self.read_prg_rom(addr)),
             _ => {
                 println!("Ignoring mem read-access at {:#04X}", addr);
-                0
+                Result::Ok(0)
             }
         };
 
         value
     }
 
-    fn mem_write(&mut self, addr: u16, data: u8) -> u8 {
+    fn mem_write(&mut self, addr: u16, data: u8) -> Result<u8, std::string::String> {
         return match addr {
             RAM..=RAM_MIRRORS_END => {
                 let mirror_down_addr = addr & 0b0000111_11111111;
                 let retval = self.cpu_vram[mirror_down_addr as usize];
                 self.cpu_vram[mirror_down_addr as usize] = data;
-                retval
+                Result::Ok(retval)
             }
-            0x2000 => self.ppu.write_to_ctl(data),
-            0x2001 => self.ppu.write_to_mask(data),
-            0x2002 => panic!("attempt to write to PPU status register"),
-            0x2003 => self.ppu.write_to_oam_addr(data),
-            0x2004 => self.ppu.write_to_oam_data(data),
-            0x2005 => self.ppu.write_to_scroll(data),
-            0x2006 => self.ppu.write_to_ppu_addr(data),
+            0x2000 => Result::Ok(self.ppu.write_to_ctl(data)),
+            0x2001 => Result::Ok(self.ppu.write_to_mask(data)),
+            0x2002 => Result::Err(format!(
+                "Attempt to write to PPU status register at addr: {:#04X}",
+                addr
+            )),
+            0x2003 => Result::Ok(self.ppu.write_to_oam_addr(data)),
+            0x2004 => Result::Ok(self.ppu.write_to_oam_data(data)),
+            0x2005 => Result::Ok(self.ppu.write_to_scroll(data)),
+            0x2006 => Result::Ok(self.ppu.write_to_ppu_addr(data)),
             0x2007 => self.ppu.write_data(data),
 
             0x2008..=PPU_REGISTERS_MIRRORS_END => {
                 let mirror_down_addr = addr & 0b0010_0000_0000_0111;
-                self.mem_write(mirror_down_addr, data)
+                Result::Ok(self.mem_write(mirror_down_addr, data)?)
             }
 
             0x4000..=0x4013 | 0x4015 => {
                 //ignore APU
-                0
+                Result::Ok(0)
             }
 
-            0x4016 => self.joypad.write(data),
+            0x4016 => Result::Ok(self.joypad.write(data)),
 
             0x4017 => {
-                0
+                Result::Ok(0)
                 // ignore joypad 2
             }
 
@@ -151,22 +154,23 @@ impl<'a> Mem for BusImpl<'a> {
                 let mut buffer: [u8; 256] = [0; 256];
                 let hi: u16 = (data as u16) << 8;
                 for i in 0..256u16 {
-                    buffer[i as usize] = self.mem_read(hi + i);
+                    buffer[i as usize] = self.mem_read(hi + i)?;
                 }
 
-                self.ppu.write_to_oam_dma(&buffer)
+                Result::Ok(self.ppu.write_to_oam_dma(&buffer))
 
                 // todo: handle this eventually
                 // let add_cycles: u16 = if self.cycles % 2 == 1 { 514 } else { 513 };
                 // self.tick(add_cycles); //todo this will cause weird effects as PPU will have 513/514 * 3 ticks
             }
 
-            ROM_START..=ROM_END => {
-                panic!("Attempt to write to Cartridge in ROM space");
-            }
+            ROM_START..=ROM_END => Result::Err(format!(
+                "Attempt to write to Cartridge in ROM space at addr: {:#04X}",
+                addr
+            )),
             _ => {
                 println!("Ignoring mem write-access at {:#04x}", addr);
-                0
+                Result::Ok(0)
             }
         };
     }

@@ -330,7 +330,6 @@ pub struct CPU<T: Bus> {
     writes: Vec<(u16, u8)>,
 
     halt: Arc<AtomicBool>,
-    graceful_shutdown: bool,
 
     next_program_counter: u16,
     total_cycles: u64,
@@ -338,30 +337,30 @@ pub struct CPU<T: Bus> {
 }
 
 impl<T: Bus> Mem for CPU<T> {
-    fn mem_read(&mut self, addr: u16) -> u8 {
-        let read = self.bus.borrow_mut().mem_read(addr);
+    fn mem_read(&mut self, addr: u16) -> Result<u8, std::string::String> {
+        let read = self.bus.borrow_mut().mem_read(addr)?;
         self.reads.push((addr, read));
-        read
+        Result::Ok(read)
     }
 
-    fn mem_write(&mut self, addr: u16, data: u8) -> u8 {
-        let retval = self.bus.borrow_mut().mem_write(addr, data);
+    fn mem_write(&mut self, addr: u16, data: u8) -> Result<u8, std::string::String> {
+        let retval = self.bus.borrow_mut().mem_write(addr, data)?;
         self.writes.push((addr, retval));
-        retval
+        Result::Ok(retval)
     }
 
-    fn mem_read_u16(&mut self, addr: u16) -> u16 {
-        let lo = self.mem_read(addr) as u16;
-        let hi = self.mem_read(addr + 1) as u16;
-        return (hi << 8) | lo;
+    fn mem_read_u16(&mut self, addr: u16) -> Result<u16, std::string::String> {
+        let lo = self.mem_read(addr)? as u16;
+        let hi = self.mem_read(addr + 1)? as u16;
+        Result::Ok((hi << 8) | lo)
     }
 
-    fn mem_write_u16(&mut self, addr: u16, data: u16) -> u16 {
+    fn mem_write_u16(&mut self, addr: u16, data: u16) -> Result<u16, std::string::String> {
         let mut hi = (data >> 8) as u8;
         let mut lo = (data & 0xFF) as u8;
-        lo = self.mem_write(addr, lo);
-        hi = self.mem_write(addr + 1, hi);
-        ((hi as u16) << 8) | (lo as u16)
+        lo = self.mem_write(addr, lo)?;
+        hi = self.mem_write(addr + 1, hi)?;
+        Result::Ok(((hi as u16) << 8) | (lo as u16))
     }
 }
 
@@ -409,7 +408,6 @@ impl<T: Bus> CPU<T> {
             writes: Vec::new(),
             operand_address: Option::None,
             halt: halt,
-            graceful_shutdown: true,
             next_program_counter: 0,
             total_cycles: 0,
             op_cycles: 0,
@@ -422,12 +420,8 @@ impl<T: Bus> CPU<T> {
         self.register_y = 0;
         self.status = INTERRUPT_DISABLE_FLAG | BREAK2_FLAG;
         self.stack_pointer = STACK_RESET;
-        self.program_counter = self.mem_read_u16(PC_START_ADDRESS);
+        self.program_counter = self.mem_read_u16(PC_START_ADDRESS).unwrap();
         self.total_cycles = 0;
-    }
-
-    pub fn graceful_shutdown(&self) -> bool {
-        self.graceful_shutdown
     }
 
     pub fn load_with_start_address(&mut self, start_address: u16, program: Vec<u8>) {
@@ -482,12 +476,13 @@ impl<T: Bus> CPU<T> {
 
             let op = self.mem_read(self.program_counter);
 
-            let opcode_result = opcodes.get(&op);
-
-            let opcode = match opcode_result {
-                Some(o) => o,
-                None => return Err(format!("Opcode {:x} is not recognised", op)),
-            };
+            let opcode = op.and_then(|o| {
+                let option = opcodes.get(&o);
+                match option {
+                    Some(o) => Result::Ok(o),
+                    None => Result::Err(format!("Opcode {:x} is not recognised", o)),
+                }
+            })?;
 
             self.reads.clear();
             self.writes.clear();
@@ -502,18 +497,12 @@ impl<T: Bus> CPU<T> {
             self.program_counter += 1;
             self.next_program_counter = self.program_counter + (opcode.len - 1) as u16;
 
-            match op {
-                0x69 | 0x65 | 0x75 | 0x6D | 0x7D | 0x79 | 0x61 | 0x71 => {
-                    self.adc(&opcode.mode);
-                }
+            let execution_result: Result<(), String> = match opcode.code {
+                0x69 | 0x65 | 0x75 | 0x6D | 0x7D | 0x79 | 0x61 | 0x71 => self.adc(&opcode.mode),
 
-                0x29 | 0x25 | 0x35 | 0x2D | 0x3D | 0x39 | 0x21 | 0x31 => {
-                    self.and(&opcode.mode);
-                }
+                0x29 | 0x25 | 0x35 | 0x2D | 0x3D | 0x39 | 0x21 | 0x31 => self.and(&opcode.mode),
 
-                0x0A | 0x06 | 0x16 | 0x0E | 0x1E => {
-                    self.asl(&opcode.mode);
-                }
+                0x0A | 0x06 | 0x16 | 0x0E | 0x1E => self.asl(&opcode.mode),
 
                 0x90 => self.bcc(&opcode.mode),
 
@@ -569,9 +558,7 @@ impl<T: Bus> CPU<T> {
 
                 0x20 => self.jsr(&opcode.mode),
 
-                0xa9 | 0xa5 | 0xb5 | 0xad | 0xbd | 0xb9 | 0xa1 | 0xb1 => {
-                    self.lda(&opcode.mode);
-                }
+                0xa9 | 0xa5 | 0xb5 | 0xad | 0xbd | 0xb9 | 0xa1 | 0xb1 => self.lda(&opcode.mode),
 
                 0xA2 | 0xA6 | 0xB6 | 0xAE | 0xBE => self.ldx(&opcode.mode),
 
@@ -626,9 +613,7 @@ impl<T: Bus> CPU<T> {
 
                 0x47 | 0x57 | 0x4F | 0x5F | 0x5B | 0x43 | 0x53 => self.sre(&opcode.mode),
 
-                0x85 | 0x95 | 0x8d | 0x9d | 0x99 | 0x81 | 0x91 => {
-                    self.sta(&opcode.mode);
-                }
+                0x85 | 0x95 | 0x8d | 0x9d | 0x99 | 0x81 | 0x91 => self.sta(&opcode.mode),
 
                 0x86 | 0x96 | 0x8E => self.stx(&opcode.mode),
 
@@ -647,36 +632,39 @@ impl<T: Bus> CPU<T> {
                 0x98 => self.tya(),
 
                 0x00 => {
-                    if self.brk(&opcode.mode) {
-                        return Result::Ok(());
-                    }
+                    let break_result = self.brk(&opcode.mode);
+                    break_result.map(|v| {
+                        if v {
+                            self.halt.store(true, Ordering::Relaxed);
+                        }
+                        ()
+                    })
                 }
                 _ => todo!(),
-            }
+            };
 
             self.store_trace(&opcode);
             callback(self);
 
-            self.program_counter = self.next_program_counter;
-            self.tick(self.op_cycles);
-
             if self.halt.load(Ordering::Relaxed) {
-                self.graceful_shutdown = false;
                 break;
             }
+
+            self.program_counter = self.next_program_counter;
+            self.tick(self.op_cycles);
         }
         Result::Ok(())
     }
 
-    fn stack_pop(&mut self) -> u8 {
+    fn stack_pop(&mut self) -> Result<u8, String> {
         self.stack_pointer = self.stack_pointer.wrapping_add(1);
-        return self.mem_read((STACK as u16) + (self.stack_pointer as u16));
+        self.mem_read((STACK as u16) + (self.stack_pointer as u16))
     }
 
-    fn stack_pop_u16(&mut self) -> u16 {
-        let lo = self.stack_pop() as u16;
-        let hi = self.stack_pop() as u16;
-        return hi << 8 | lo;
+    fn stack_pop_u16(&mut self) -> Result<u16, String> {
+        let lo = self.stack_pop()? as u16;
+        let hi = self.stack_pop()? as u16;
+        Result::Ok(hi << 8 | lo)
     }
 
     fn stack_push(&mut self, data: u8) {
@@ -718,58 +706,62 @@ impl<T: Bus> CPU<T> {
         return register & flag == flag;
     }
 
-    fn evaluate_operand(&mut self, mode: &AddressingMode) -> (u16, bool) {
+    fn evaluate_operand(&mut self, mode: &AddressingMode) -> Result<(u16, bool), String> {
         self.evaluate_operand_at_address(mode, self.program_counter)
     }
 
-    fn evaluate_operand_at_address(&mut self, mode: &AddressingMode, begin: u16) -> (u16, bool) {
+    fn evaluate_operand_at_address(
+        &mut self,
+        mode: &AddressingMode,
+        begin: u16,
+    ) -> Result<(u16, bool), String> {
         let result = match mode {
             AddressingMode::Immediate | AddressingMode::Implied => (begin, false),
             AddressingMode::Relative => {
-                let value = self.mem_read(begin) as i8;
+                let value = self.mem_read(begin)? as i8;
                 let addr = begin.wrapping_add(1).wrapping_add(value as u16);
                 (addr, Self::page_boundary_crossed(begin, addr))
             }
-            AddressingMode::ZeroPage => (self.mem_read(begin) as u16, false),
-            AddressingMode::Absolute => (self.mem_read_u16(begin), false),
+            AddressingMode::ZeroPage => (self.mem_read(begin)? as u16, false),
+            AddressingMode::Absolute => (self.mem_read_u16(begin)?, false),
             AddressingMode::ZeroPage_X => {
-                let pos = self.mem_read(begin);
+                let pos = self.mem_read(begin)?;
                 let addr = pos.wrapping_add(self.register_x) as u16;
                 (addr, false)
             }
             AddressingMode::ZeroPage_Y => {
-                let pos = self.mem_read(begin);
+                let pos = self.mem_read(begin)?;
                 let addr = pos.wrapping_add(self.register_y) as u16;
                 (addr, false)
             }
             AddressingMode::Absolute_X => {
-                let base = self.mem_read_u16(begin);
+                let base = self.mem_read_u16(begin)?;
                 let addr = base.wrapping_add(self.register_x as u16);
                 (addr, Self::page_boundary_crossed(base, addr))
             }
             AddressingMode::Absolute_Y => {
-                let base = self.mem_read_u16(begin);
+                let base = self.mem_read_u16(begin)?;
                 let addr = base.wrapping_add(self.register_y as u16);
                 (addr, Self::page_boundary_crossed(base, addr))
             }
             AddressingMode::Indirect_X => {
-                let base = self.mem_read(begin);
+                let base = self.mem_read(begin)?;
                 let ptr: u8 = base.wrapping_add(self.register_x);
-                let lo = self.mem_read(ptr as u16);
-                let hi = self.mem_read(ptr.wrapping_add(1) as u16);
+                let lo = self.mem_read(ptr as u16)?;
+                let hi = self.mem_read(ptr.wrapping_add(1) as u16)?;
                 ((hi as u16) << 8 | (lo as u16), false)
             }
             AddressingMode::Indirect_Y => {
-                let base = self.mem_read(begin);
-                let lo = self.mem_read(base as u16);
-                let hi = self.mem_read(base.wrapping_add(1) as u16);
+                let base = self.mem_read(begin)?;
+                let lo = self.mem_read(base as u16)?;
+                let hi = self.mem_read(base.wrapping_add(1) as u16)?;
                 (
                     ((hi as u16) << 8 | (lo as u16)).wrapping_add(self.register_y as u16),
                     false,
                 )
             }
             AddressingMode::Indirect => {
-                let target_addr = self.mem_read_u16(begin);
+                let target_addr = self.mem_read_u16(begin)?;
 
                 //Nasty bug for indirect reads on a page boundary!
                 //If we are at a page boundry e.g. 0x02FF, then we read the lo from 0x02FF and the hi
@@ -780,8 +772,8 @@ impl<T: Bus> CPU<T> {
                 let first = ((page as u16) << 8) + (index as u16);
                 let second = ((page as u16) << 8) + (index.wrapping_add(1) as u16);
 
-                let lo = self.mem_read(first) as u16;
-                let hi = self.mem_read(second) as u16;
+                let lo = self.mem_read(first)? as u16;
+                let hi = self.mem_read(second)? as u16;
 
                 // let target_addr = self.mem_read_u16(begin);
                 ((hi << 8) | lo, false)
@@ -789,7 +781,7 @@ impl<T: Bus> CPU<T> {
             AddressingMode::Accumulator => panic!("Unsupported op code 'Accumulator'"),
         };
         self.operand_address = Option::Some(result.0);
-        result
+        Result::Ok(result)
     }
 
     fn page_boundary_crossed(old_address: u16, new_address: u16) -> bool {
@@ -798,10 +790,10 @@ impl<T: Bus> CPU<T> {
         old_high != new_high
     }
 
-    fn adc(&mut self, mode: &AddressingMode) {
-        let eval = self.evaluate_operand(mode);
+    fn adc(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let eval = self.evaluate_operand(mode)?;
         let addr = eval.0;
-        let value = self.mem_read(addr);
+        let value = self.mem_read(addr)?;
 
         if eval.1 {
             self.op_cycles += 1;
@@ -835,12 +827,13 @@ impl<T: Bus> CPU<T> {
             NEGATIVE_FLAG,
             Self::get_flag(self.register_a, NEGATIVE_FLAG),
         );
+        Result::Ok(())
     }
 
-    fn and(&mut self, mode: &AddressingMode) {
-        let eval = self.evaluate_operand(mode);
+    fn and(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let eval = self.evaluate_operand(mode)?;
         let addr = eval.0;
-        let value = self.mem_read(addr);
+        let value = self.mem_read(addr)?;
 
         if eval.1 {
             self.op_cycles += 1;
@@ -852,9 +845,10 @@ impl<T: Bus> CPU<T> {
             NEGATIVE_FLAG,
             Self::get_flag(self.register_a, NEGATIVE_FLAG),
         );
+        Result::Ok(())
     }
 
-    fn asl(&mut self, mode: &AddressingMode) {
+    fn asl(&mut self, mode: &AddressingMode) -> Result<(), String> {
         if *mode == AddressingMode::Accumulator {
             let old = self.register_a;
             self.register_a = self.register_a << 1;
@@ -865,11 +859,11 @@ impl<T: Bus> CPU<T> {
                 NEGATIVE_FLAG,
                 Self::get_flag(self.register_a, NEGATIVE_FLAG),
             );
-            return;
+            return Result::Ok(());
         }
 
-        let addr = self.evaluate_operand(mode).0;
-        let old = self.mem_read(addr);
+        let addr = self.evaluate_operand(mode)?.0;
+        let old = self.mem_read(addr)?;
 
         let value = old << 1;
 
@@ -878,154 +872,169 @@ impl<T: Bus> CPU<T> {
         self.set_status_flag(ZERO_FLAG, value == 0);
         self.copy_bit_to_status(old, NEGATIVE_FLAG, CARRY_FLAG);
         self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG));
+        Result::Ok(())
     }
 
-    fn sta(&mut self, mode: &AddressingMode) {
-        let addr = self.evaluate_operand(mode).0;
+    fn sta(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let addr = self.evaluate_operand(mode)?.0;
         self.mem_write(addr, self.register_a);
+        Result::Ok(())
     }
 
-    fn bcc(&mut self, mode: &AddressingMode) {
-        let eval = self.evaluate_operand(mode);
+    fn bcc(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let eval = self.evaluate_operand(mode)?;
         if eval.1 {
             self.op_cycles += 1;
         }
 
         if Self::get_flag(self.status, CARRY_FLAG) {
-            return;
+            return Result::Ok(());
         }
 
         self.op_cycles += 1;
         self.next_program_counter = eval.0;
+        Result::Ok(())
     }
 
-    fn bcs(&mut self, mode: &AddressingMode) {
-        let eval = self.evaluate_operand(mode);
+    fn bcs(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let eval = self.evaluate_operand(mode)?;
         if eval.1 {
             self.op_cycles += 1;
         }
 
         if !Self::get_flag(self.status, CARRY_FLAG) {
-            return;
+            return Result::Ok(());
         }
 
         self.op_cycles += 1;
         self.next_program_counter = eval.0;
+        Result::Ok(())
     }
 
-    fn beq(&mut self, mode: &AddressingMode) {
-        let eval = self.evaluate_operand(mode);
+    fn beq(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let eval = self.evaluate_operand(mode)?;
         if eval.1 {
             self.op_cycles += 1;
         }
 
         if !Self::get_flag(self.status, ZERO_FLAG) {
-            return;
+            return Result::Ok(());
         }
 
         self.op_cycles += 1;
         self.next_program_counter = eval.0;
+        Result::Ok(())
     }
 
-    fn bit(&mut self, mode: &AddressingMode) {
-        let addr = self.evaluate_operand(mode).0;
-        let value = self.mem_read(addr);
+    fn bit(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let addr = self.evaluate_operand(mode)?.0;
+        let value = self.mem_read(addr)?;
 
         self.set_status_flag(ZERO_FLAG, value & self.register_a == 0);
         self.copy_bit_to_status(value, OVERFLOW_FLAG, OVERFLOW_FLAG);
         self.copy_bit_to_status(value, NEGATIVE_FLAG, NEGATIVE_FLAG);
+        Result::Ok(())
     }
 
-    fn bmi(&mut self, mode: &AddressingMode) {
-        let eval = self.evaluate_operand(mode);
+    fn bmi(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let eval = self.evaluate_operand(mode)?;
         if eval.1 {
             self.op_cycles += 1;
         }
 
         if !Self::get_flag(self.status, NEGATIVE_FLAG) {
-            return;
+            return Result::Ok(());
         }
 
         self.op_cycles += 1;
         self.next_program_counter = eval.0;
+        Result::Ok(())
     }
 
-    fn bne(&mut self, mode: &AddressingMode) {
-        let eval = self.evaluate_operand(mode);
+    fn bne(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let eval = self.evaluate_operand(mode)?;
         if eval.1 {
             self.op_cycles += 1;
         }
 
         if Self::get_flag(self.status, ZERO_FLAG) {
-            return;
+            return Result::Ok(());
         }
 
         self.op_cycles += 1;
         self.next_program_counter = eval.0;
+        Result::Ok(())
     }
 
-    fn bpl(&mut self, mode: &AddressingMode) {
-        let eval = self.evaluate_operand(mode);
+    fn bpl(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let eval = self.evaluate_operand(mode)?;
         if eval.1 {
             self.op_cycles += 1;
         }
 
         if Self::get_flag(self.status, NEGATIVE_FLAG) {
-            return;
+            return Result::Ok(());
         }
 
         self.op_cycles += 1;
         self.next_program_counter = eval.0;
+        Result::Ok(())
     }
 
-    fn bvc(&mut self, mode: &AddressingMode) {
-        let eval = self.evaluate_operand(mode);
+    fn bvc(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let eval = self.evaluate_operand(mode)?;
         if eval.1 {
             self.op_cycles += 1;
         }
 
         if Self::get_flag(self.status, OVERFLOW_FLAG) {
-            return;
+            return Result::Ok(());
         }
 
         self.op_cycles += 1;
         self.next_program_counter = eval.0;
+        Result::Ok(())
     }
 
-    fn bvs(&mut self, mode: &AddressingMode) {
-        let eval = self.evaluate_operand(mode);
+    fn bvs(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let eval = self.evaluate_operand(mode)?;
         if eval.1 {
             self.op_cycles += 1;
         }
 
         if !Self::get_flag(self.status, OVERFLOW_FLAG) {
-            return;
+            return Result::Ok(());
         }
 
         self.op_cycles += 1;
         self.next_program_counter = eval.0;
+        Result::Ok(())
     }
 
-    fn clc(&mut self, _mode: &AddressingMode) {
+    fn clc(&mut self, _mode: &AddressingMode) -> Result<(), String> {
         self.set_status_flag(CARRY_FLAG, false);
+        Result::Ok(())
     }
 
-    fn cld(&mut self, _mode: &AddressingMode) {
+    fn cld(&mut self, _mode: &AddressingMode) -> Result<(), String> {
         self.set_status_flag(DECIMAL_MODE_FLAG, false);
+        Result::Ok(())
     }
 
-    fn cli(&mut self, _mode: &AddressingMode) {
+    fn cli(&mut self, _mode: &AddressingMode) -> Result<(), String> {
         self.set_status_flag(INTERRUPT_DISABLE_FLAG, false);
+        Result::Ok(())
     }
 
-    fn clv(&mut self, _mode: &AddressingMode) {
+    fn clv(&mut self, _mode: &AddressingMode) -> Result<(), String> {
         self.set_status_flag(OVERFLOW_FLAG, false);
+        Result::Ok(())
     }
 
-    fn cmp(&mut self, mode: &AddressingMode) {
-        let eval = self.evaluate_operand(mode);
+    fn cmp(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let eval = self.evaluate_operand(mode)?;
         let addr = eval.0;
-        let value = self.mem_read(addr);
+        let value = self.mem_read(addr)?;
 
         if eval.1 {
             self.op_cycles += 1;
@@ -1036,33 +1045,36 @@ impl<T: Bus> CPU<T> {
         self.set_status_flag(CARRY_FLAG, self.register_a >= value);
         self.set_status_flag(ZERO_FLAG, self.register_a == value);
         self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(sub, NEGATIVE_FLAG));
+        Result::Ok(())
     }
 
-    fn cpx(&mut self, mode: &AddressingMode) {
-        let address = self.evaluate_operand(mode).0;
-        let value = self.mem_read(address);
+    fn cpx(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let address = self.evaluate_operand(mode)?.0;
+        let value = self.mem_read(address)?;
 
         let sub = self.register_x.wrapping_sub(value);
 
         self.set_status_flag(CARRY_FLAG, self.register_x >= value);
         self.set_status_flag(ZERO_FLAG, self.register_x == value);
         self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(sub, NEGATIVE_FLAG));
+        Result::Ok(())
     }
 
-    fn cpy(&mut self, mode: &AddressingMode) {
-        let address = self.evaluate_operand(mode).0;
-        let value = self.mem_read(address);
+    fn cpy(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let address = self.evaluate_operand(mode)?.0;
+        let value = self.mem_read(address)?;
 
         let sub = self.register_y.wrapping_sub(value);
 
         self.set_status_flag(CARRY_FLAG, self.register_y >= value);
         self.set_status_flag(ZERO_FLAG, self.register_y == value);
         self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(sub, NEGATIVE_FLAG));
+        Result::Ok(())
     }
 
-    fn dec(&mut self, mode: &AddressingMode) {
-        let address = self.evaluate_operand(mode).0;
-        let value = self.mem_read(address);
+    fn dec(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let address = self.evaluate_operand(mode)?.0;
+        let value = self.mem_read(address)?;
 
         let sub = value.wrapping_sub(1);
 
@@ -1070,11 +1082,12 @@ impl<T: Bus> CPU<T> {
 
         self.set_status_flag(ZERO_FLAG, sub == 0);
         self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(sub, NEGATIVE_FLAG));
+        Result::Ok(())
     }
 
-    fn dcp(&mut self, mode: &AddressingMode) {
-        let address = self.evaluate_operand(mode).0;
-        let value = self.mem_read(address);
+    fn dcp(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let address = self.evaluate_operand(mode)?.0;
+        let value = self.mem_read(address)?;
 
         let sub = value.wrapping_sub(1);
 
@@ -1085,9 +1098,10 @@ impl<T: Bus> CPU<T> {
         self.set_status_flag(CARRY_FLAG, self.register_a >= sub);
         self.set_status_flag(ZERO_FLAG, self.register_a == sub);
         self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(diff, NEGATIVE_FLAG));
+        Result::Ok(())
     }
 
-    fn dex(&mut self, _mode: &AddressingMode) {
+    fn dex(&mut self, _mode: &AddressingMode) -> Result<(), String> {
         self.register_x = self.register_x.wrapping_sub(1);
 
         self.set_status_flag(ZERO_FLAG, self.register_x == 0);
@@ -1095,9 +1109,10 @@ impl<T: Bus> CPU<T> {
             NEGATIVE_FLAG,
             Self::get_flag(self.register_x, NEGATIVE_FLAG),
         );
+        Result::Ok(())
     }
 
-    fn dey(&mut self, _mode: &AddressingMode) {
+    fn dey(&mut self, _mode: &AddressingMode) -> Result<(), String> {
         self.register_y = self.register_y.wrapping_sub(1);
 
         self.set_status_flag(ZERO_FLAG, self.register_y == 0);
@@ -1105,12 +1120,13 @@ impl<T: Bus> CPU<T> {
             NEGATIVE_FLAG,
             Self::get_flag(self.register_y, NEGATIVE_FLAG),
         );
+        Result::Ok(())
     }
 
-    fn eor(&mut self, mode: &AddressingMode) {
-        let eval = self.evaluate_operand(mode);
+    fn eor(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let eval = self.evaluate_operand(mode)?;
         let addr = eval.0;
-        let value = self.mem_read(addr);
+        let value = self.mem_read(addr)?;
 
         if eval.1 {
             self.op_cycles += 1;
@@ -1123,38 +1139,42 @@ impl<T: Bus> CPU<T> {
             NEGATIVE_FLAG,
             Self::get_flag(self.register_a, NEGATIVE_FLAG),
         );
+        Result::Ok(())
     }
 
-    fn inc(&mut self, mode: &AddressingMode) {
-        let address = self.evaluate_operand(mode).0;
-        let value = self.mem_read(address).wrapping_add(1);
+    fn inc(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let address = self.evaluate_operand(mode)?.0;
+        let value = self.mem_read(address)?.wrapping_add(1);
         self.mem_write(address, value);
 
         self.set_status_flag(ZERO_FLAG, value == 0);
         self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG));
+        Result::Ok(())
     }
 
-    fn inx(&mut self) {
+    fn inx(&mut self) -> Result<(), String> {
         self.register_x = self.register_x.wrapping_add(1);
         self.set_status_flag(ZERO_FLAG, self.register_x == 0);
         self.set_status_flag(
             NEGATIVE_FLAG,
             Self::get_flag(self.register_x, NEGATIVE_FLAG),
         );
+        Result::Ok(())
     }
 
-    fn iny(&mut self, _mode: &AddressingMode) {
+    fn iny(&mut self, _mode: &AddressingMode) -> Result<(), String> {
         self.register_y = self.register_y.wrapping_add(1);
         self.set_status_flag(ZERO_FLAG, self.register_y == 0);
         self.set_status_flag(
             NEGATIVE_FLAG,
             Self::get_flag(self.register_y, NEGATIVE_FLAG),
         );
+        Result::Ok(())
     }
 
-    fn isb(&mut self, mode: &AddressingMode) {
-        let address = self.evaluate_operand(mode).0;
-        let value = self.mem_read(address).wrapping_add(1);
+    fn isb(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let address = self.evaluate_operand(mode)?.0;
+        let value = self.mem_read(address)?.wrapping_add(1);
         self.mem_write(address, value);
 
         let c = match Self::get_flag(self.status, CARRY_FLAG) {
@@ -1183,25 +1203,28 @@ impl<T: Bus> CPU<T> {
             NEGATIVE_FLAG,
             Self::get_flag(self.register_a, NEGATIVE_FLAG),
         );
+        Result::Ok(())
     }
 
-    fn jmp(&mut self, mode: &AddressingMode) {
-        let pc_jump = self.evaluate_operand(mode).0;
+    fn jmp(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let pc_jump = self.evaluate_operand(mode)?.0;
         self.next_program_counter = pc_jump;
+        Result::Ok(())
     }
 
-    fn jsr(&mut self, mode: &AddressingMode) {
-        let pc_jump = self.evaluate_operand(mode).0;
+    fn jsr(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let pc_jump = self.evaluate_operand(mode)?.0;
 
         self.stack_push_u16(self.program_counter + 2 - 1);
 
         self.next_program_counter = pc_jump;
+        Result::Ok(())
     }
 
-    fn lda(&mut self, mode: &AddressingMode) {
-        let eval = self.evaluate_operand(mode);
+    fn lda(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let eval = self.evaluate_operand(mode)?;
         let addr = eval.0;
-        let value = self.mem_read(addr);
+        let value = self.mem_read(addr)?;
 
         if eval.1 {
             self.op_cycles += 1;
@@ -1213,12 +1236,13 @@ impl<T: Bus> CPU<T> {
             NEGATIVE_FLAG,
             Self::get_flag(self.register_a, NEGATIVE_FLAG),
         );
+        Result::Ok(())
     }
 
-    fn ldx(&mut self, mode: &AddressingMode) {
-        let eval = self.evaluate_operand(mode);
+    fn ldx(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let eval = self.evaluate_operand(mode)?;
         let addr = eval.0;
-        let value = self.mem_read(addr);
+        let value = self.mem_read(addr)?;
 
         if eval.1 {
             self.op_cycles += 1;
@@ -1231,12 +1255,13 @@ impl<T: Bus> CPU<T> {
             NEGATIVE_FLAG,
             Self::get_flag(self.register_x, NEGATIVE_FLAG),
         );
+        Result::Ok(())
     }
 
-    fn lax(&mut self, mode: &AddressingMode) {
-        let eval = self.evaluate_operand(mode);
+    fn lax(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let eval = self.evaluate_operand(mode)?;
         let addr = eval.0;
-        let value = self.mem_read(addr);
+        let value = self.mem_read(addr)?;
 
         if eval.1 {
             self.op_cycles += 1;
@@ -1247,12 +1272,13 @@ impl<T: Bus> CPU<T> {
 
         self.set_status_flag(ZERO_FLAG, value == 0);
         self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG));
+        Result::Ok(())
     }
 
-    fn ldy(&mut self, mode: &AddressingMode) {
-        let eval = self.evaluate_operand(mode);
+    fn ldy(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let eval = self.evaluate_operand(mode)?;
         let addr = eval.0;
-        let value = self.mem_read(addr);
+        let value = self.mem_read(addr)?;
 
         if eval.1 {
             self.op_cycles += 1;
@@ -1265,9 +1291,10 @@ impl<T: Bus> CPU<T> {
             NEGATIVE_FLAG,
             Self::get_flag(self.register_y, NEGATIVE_FLAG),
         );
+        Result::Ok(())
     }
 
-    fn lsr(&mut self, mode: &AddressingMode) {
+    fn lsr(&mut self, mode: &AddressingMode) -> Result<(), String> {
         if *mode == AddressingMode::Accumulator {
             let old = self.register_a;
             self.register_a = self.register_a >> 1;
@@ -1278,11 +1305,11 @@ impl<T: Bus> CPU<T> {
                 NEGATIVE_FLAG,
                 Self::get_flag(self.register_a, NEGATIVE_FLAG),
             );
-            return;
+            return Result::Ok(());
         }
 
-        let addr = self.evaluate_operand(mode).0;
-        let old = self.mem_read(addr);
+        let addr = self.evaluate_operand(mode)?.0;
+        let old = self.mem_read(addr)?;
 
         let value = old >> 1;
 
@@ -1291,30 +1318,34 @@ impl<T: Bus> CPU<T> {
         self.set_status_flag(ZERO_FLAG, value == 0);
         self.copy_bit_to_status(old, CARRY_FLAG, CARRY_FLAG);
         self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG));
+        Result::Ok(())
     }
 
-    fn nop(&mut self, mode: &AddressingMode) {
-        let addr = self.evaluate_operand(mode).0;
-        self.mem_read(addr);
+    fn nop(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let addr = self.evaluate_operand(mode)?.0;
+        self.mem_read(addr)?;
+        Result::Ok(())
     }
 
-    fn dop(&mut self, mode: &AddressingMode) {
-        let addr = self.evaluate_operand(mode).0;
-        self.mem_read(addr);
+    fn dop(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let addr = self.evaluate_operand(mode)?.0;
+        self.mem_read(addr)?;
+        Result::Ok(())
     }
 
-    fn top(&mut self, mode: &AddressingMode) {
-        let addr = self.evaluate_operand(mode);
-        self.mem_read(addr.0);
+    fn top(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let addr = self.evaluate_operand(mode)?;
+        self.mem_read(addr.0)?;
         if addr.1 {
             self.op_cycles += 1
         }
+        Result::Ok(())
     }
 
-    fn ora(&mut self, mode: &AddressingMode) {
-        let eval = self.evaluate_operand(mode);
+    fn ora(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let eval = self.evaluate_operand(mode)?;
         let addr = eval.0;
-        let value = self.mem_read(addr);
+        let value = self.mem_read(addr)?;
 
         if eval.1 {
             self.op_cycles += 1;
@@ -1327,30 +1358,35 @@ impl<T: Bus> CPU<T> {
             NEGATIVE_FLAG,
             Self::get_flag(self.register_a, NEGATIVE_FLAG),
         );
+        Result::Ok(())
     }
 
-    fn pha(&mut self, _mode: &AddressingMode) {
+    fn pha(&mut self, _mode: &AddressingMode) -> Result<(), String> {
         self.stack_push(self.register_a);
+        Result::Ok(())
     }
 
-    fn php(&mut self, _mode: &AddressingMode) {
+    fn php(&mut self, _mode: &AddressingMode) -> Result<(), String> {
         self.stack_push(self.status | BREAK_FLAG | BREAK2_FLAG);
+        Result::Ok(())
     }
 
-    fn pla(&mut self, _mode: &AddressingMode) {
-        self.register_a = self.stack_pop();
+    fn pla(&mut self, _mode: &AddressingMode) -> Result<(), String> {
+        self.register_a = self.stack_pop()?;
         self.set_status_flag(ZERO_FLAG, self.register_a == 0);
         self.set_status_flag(
             NEGATIVE_FLAG,
             Self::get_flag(self.register_a, NEGATIVE_FLAG),
         );
+        Result::Ok(())
     }
 
-    fn plp(&mut self, _mode: &AddressingMode) {
-        self.status = self.stack_pop() & !(BREAK_FLAG) | BREAK2_FLAG;
+    fn plp(&mut self, _mode: &AddressingMode) -> Result<(), String> {
+        self.status = self.stack_pop()? & !(BREAK_FLAG) | BREAK2_FLAG;
+        Result::Ok(())
     }
 
-    fn rol(&mut self, mode: &AddressingMode) {
+    fn rol(&mut self, mode: &AddressingMode) -> Result<(), String> {
         if mode == &AddressingMode::Accumulator {
             let old_value = self.register_a;
             let carry = Self::get_flag(self.status, CARRY_FLAG);
@@ -1366,11 +1402,11 @@ impl<T: Bus> CPU<T> {
             self.set_status_flag(ZERO_FLAG, value == 0);
             self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG));
 
-            return;
+            return Result::Ok(());
         }
 
-        let address = self.evaluate_operand(mode).0;
-        let old_value = self.mem_read(address);
+        let address = self.evaluate_operand(mode)?.0;
+        let old_value = self.mem_read(address)?;
         let carry = Self::get_flag(self.status, CARRY_FLAG);
 
         let value = match carry {
@@ -1383,9 +1419,10 @@ impl<T: Bus> CPU<T> {
         self.copy_bit_to_status(old_value, NEGATIVE_FLAG, CARRY_FLAG);
         self.set_status_flag(ZERO_FLAG, value == 0);
         self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG));
+        Result::Ok(())
     }
 
-    fn ror(&mut self, mode: &AddressingMode) {
+    fn ror(&mut self, mode: &AddressingMode) -> Result<(), String> {
         if mode == &AddressingMode::Accumulator {
             let old_value = self.register_a;
             let carry = Self::get_flag(self.status, CARRY_FLAG);
@@ -1401,11 +1438,11 @@ impl<T: Bus> CPU<T> {
             self.set_status_flag(ZERO_FLAG, value == 0);
             self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG));
 
-            return;
+            return Result::Ok(());
         }
 
-        let address = self.evaluate_operand(mode).0;
-        let old_value = self.mem_read(address);
+        let address = self.evaluate_operand(mode)?.0;
+        let old_value = self.mem_read(address)?;
         let carry = Self::get_flag(self.status, CARRY_FLAG);
 
         let value = match carry {
@@ -1418,11 +1455,12 @@ impl<T: Bus> CPU<T> {
         self.copy_bit_to_status(old_value, CARRY_FLAG, CARRY_FLAG);
         self.set_status_flag(ZERO_FLAG, value == 0);
         self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG));
+        Result::Ok(())
     }
 
-    fn rla(&mut self, mode: &AddressingMode) {
-        let address = self.evaluate_operand(mode).0;
-        let orig_value = self.mem_read(address);
+    fn rla(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let address = self.evaluate_operand(mode)?.0;
+        let orig_value = self.mem_read(address)?;
         let value = (orig_value << 1) | (self.status & CARRY_FLAG);
 
         self.mem_write(address, value);
@@ -1434,11 +1472,12 @@ impl<T: Bus> CPU<T> {
             NEGATIVE_FLAG,
             Self::get_flag(self.register_a, NEGATIVE_FLAG),
         );
+        Result::Ok(())
     }
 
-    fn rra(&mut self, mode: &AddressingMode) {
-        let address = self.evaluate_operand(mode).0;
-        let orig_value = self.mem_read(address);
+    fn rra(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let address = self.evaluate_operand(mode)?.0;
+        let orig_value = self.mem_read(address)?;
 
         let should_carry = Self::get_flag(orig_value, CARRY_FLAG);
 
@@ -1473,34 +1512,37 @@ impl<T: Bus> CPU<T> {
             NEGATIVE_FLAG,
             Self::get_flag(self.register_a, NEGATIVE_FLAG),
         );
+        Result::Ok(())
     }
 
-    fn rti(&mut self, _mode: &AddressingMode) {
-        self.status = self.stack_pop() | BREAK2_FLAG;
-        self.next_program_counter = self.stack_pop_u16();
+    fn rti(&mut self, _mode: &AddressingMode) -> Result<(), String> {
+        self.status = self.stack_pop()? | BREAK2_FLAG;
+        self.next_program_counter = self.stack_pop_u16()?;
+        Result::Ok(())
     }
 
-    fn rts(&mut self, _mode: &AddressingMode) {
-        self.next_program_counter = self.stack_pop_u16() + 1;
+    fn rts(&mut self, _mode: &AddressingMode) -> Result<(), String> {
+        self.next_program_counter = self.stack_pop_u16()? + 1;
+        Result::Ok(())
     }
 
-    fn brk(&mut self, _mode: &AddressingMode) -> bool {
+    fn brk(&mut self, _mode: &AddressingMode) -> Result<bool, String> {
         self.stack_push_u16(self.program_counter.wrapping_add(1));
         self.stack_push(self.status | (BREAK_FLAG & BREAK2_FLAG));
 
-        self.next_program_counter = self.mem_read_u16(BRK_INTERRUPT_ADDRESS);
+        self.next_program_counter = self.mem_read_u16(BRK_INTERRUPT_ADDRESS)?;
         if self.next_program_counter == HALT_VALUE {
-            return true;
+            return Result::Ok(true);
         }
 
         //we do this after the return check, because it's easier to test and doesn't make a
         //difference when we exit :)
         self.set_status_flag(INTERRUPT_DISABLE_FLAG, true);
-        return false;
+        Result::Ok(false)
     }
 
-    fn sax(&mut self, mode: &AddressingMode) {
-        let address = self.evaluate_operand(mode).0;
+    fn sax(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let address = self.evaluate_operand(mode)?.0;
         let value = self.register_x & self.register_a;
 
         self.mem_write(address, value);
@@ -1508,18 +1550,19 @@ impl<T: Bus> CPU<T> {
         //Even though these flags are documented, they don't get updated (the docs are wrong)
         // self.set_status_flag(ZERO_FLAG, value == 0);
         // self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG));
+        Result::Ok(())
     }
 
-    fn sbc(&mut self, mode: &AddressingMode) {
+    fn sbc(&mut self, mode: &AddressingMode) -> Result<(), String> {
         let c = match Self::get_flag(self.status, CARRY_FLAG) {
             true => 1,
             false => 0,
         };
 
         let a = self.register_a;
-        let eval = self.evaluate_operand(mode);
+        let eval = self.evaluate_operand(mode)?;
         let address = eval.0;
-        let value = self.mem_read(address);
+        let value = self.mem_read(address)?;
 
         if eval.1 {
             self.op_cycles += 1;
@@ -1544,23 +1587,27 @@ impl<T: Bus> CPU<T> {
             NEGATIVE_FLAG,
             Self::get_flag(self.register_a, NEGATIVE_FLAG),
         );
+        Result::Ok(())
     }
 
-    fn sec(&mut self, _mode: &AddressingMode) {
+    fn sec(&mut self, _mode: &AddressingMode) -> Result<(), String> {
         self.status = self.status | CARRY_FLAG;
+        Result::Ok(())
     }
 
-    fn sed(&mut self, _mode: &AddressingMode) {
+    fn sed(&mut self, _mode: &AddressingMode) -> Result<(), String> {
         self.status = self.status | DECIMAL_MODE_FLAG;
+        Result::Ok(())
     }
 
-    fn sei(&mut self, _mode: &AddressingMode) {
+    fn sei(&mut self, _mode: &AddressingMode) -> Result<(), String> {
         self.status = self.status | INTERRUPT_DISABLE_FLAG;
+        Result::Ok(())
     }
 
-    fn slo(&mut self, mode: &AddressingMode) {
-        let address = self.evaluate_operand(mode).0;
-        let original = self.mem_read(address);
+    fn slo(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let address = self.evaluate_operand(mode)?.0;
+        let original = self.mem_read(address)?;
         let value = original << 1;
         self.mem_write(address, value);
 
@@ -1571,11 +1618,12 @@ impl<T: Bus> CPU<T> {
         self.copy_bit_to_status(original, NEGATIVE_FLAG, CARRY_FLAG);
         self.set_status_flag(ZERO_FLAG, result == 0);
         self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(result, NEGATIVE_FLAG));
+        Result::Ok(())
     }
 
-    fn sre(&mut self, mode: &AddressingMode) {
-        let address = self.evaluate_operand(mode).0;
-        let original = self.mem_read(address);
+    fn sre(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let address = self.evaluate_operand(mode)?.0;
+        let original = self.mem_read(address)?;
         let value = original >> 1;
 
         self.mem_write(address, value);
@@ -1586,68 +1634,77 @@ impl<T: Bus> CPU<T> {
         self.copy_bit_to_status(original, CARRY_FLAG, CARRY_FLAG);
         self.set_status_flag(ZERO_FLAG, result == 0);
         self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(result, NEGATIVE_FLAG));
+        Result::Ok(())
     }
 
-    fn stx(&mut self, mode: &AddressingMode) {
-        let address = self.evaluate_operand(mode).0;
+    fn stx(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let address = self.evaluate_operand(mode)?.0;
         self.mem_write(address, self.register_x);
+        Result::Ok(())
     }
 
-    fn sty(&mut self, mode: &AddressingMode) {
-        let address = self.evaluate_operand(mode).0;
+    fn sty(&mut self, mode: &AddressingMode) -> Result<(), String> {
+        let address = self.evaluate_operand(mode)?.0;
         self.mem_write(address, self.register_y);
+        Result::Ok(())
     }
 
-    fn tax(&mut self) {
+    fn tax(&mut self) -> Result<(), String> {
         self.register_x = self.register_a;
         self.set_status_flag(ZERO_FLAG, self.register_x == 0);
         self.set_status_flag(
             NEGATIVE_FLAG,
             Self::get_flag(self.register_x, NEGATIVE_FLAG),
         );
+        Result::Ok(())
     }
 
-    fn tay(&mut self) {
+    fn tay(&mut self) -> Result<(), String> {
         self.register_y = self.register_a;
         self.set_status_flag(ZERO_FLAG, self.register_y == 0);
         self.set_status_flag(
             NEGATIVE_FLAG,
             Self::get_flag(self.register_y, NEGATIVE_FLAG),
         );
+        Result::Ok(())
     }
 
-    fn tsx(&mut self) {
+    fn tsx(&mut self) -> Result<(), String> {
         self.register_x = self.stack_pointer;
         self.set_status_flag(ZERO_FLAG, self.register_x == 0);
         self.set_status_flag(
             NEGATIVE_FLAG,
             Self::get_flag(self.register_x, NEGATIVE_FLAG),
         );
+        Result::Ok(())
     }
 
-    fn txa(&mut self) {
+    fn txa(&mut self) -> Result<(), String> {
         self.register_a = self.register_x;
         self.set_status_flag(ZERO_FLAG, self.register_a == 0);
         self.set_status_flag(
             NEGATIVE_FLAG,
             Self::get_flag(self.register_a, NEGATIVE_FLAG),
         );
+        Result::Ok(())
     }
 
-    fn txs(&mut self) {
+    fn txs(&mut self) -> Result<(), String> {
         self.stack_pointer = self.register_x;
+        Result::Ok(())
     }
 
-    fn tya(&mut self) {
+    fn tya(&mut self) -> Result<(), String> {
         self.register_a = self.register_y;
         self.set_status_flag(ZERO_FLAG, self.register_a == 0);
         self.set_status_flag(
             NEGATIVE_FLAG,
             Self::get_flag(self.register_a, NEGATIVE_FLAG),
         );
+        Result::Ok(())
     }
 
-    fn interrupt_nmi(&mut self) {
+    fn interrupt_nmi(&mut self) -> Result<(), String> {
         self.stack_push_u16(self.program_counter);
         let status = (self.status.clone() | BREAK2_FLAG) & !BREAK_FLAG;
 
@@ -1655,7 +1712,8 @@ impl<T: Bus> CPU<T> {
         self.status = self.status | INTERRUPT_DISABLE_FLAG;
 
         self.bus.borrow_mut().tick(2);
-        self.program_counter = self.mem_read_u16(NMI_INTERRUPT_ADDRESS);
+        self.program_counter = self.mem_read_u16(NMI_INTERRUPT_ADDRESS)?;
+        Result::Ok(())
     }
 }
 
@@ -1705,13 +1763,13 @@ mod test {
     }
 
     impl Mem for BusStub {
-        fn mem_read(&mut self, addr: u16) -> u8 {
-            self.memory[addr as usize]
+        fn mem_read(&mut self, addr: u16) -> Result<u8, String> {
+            Result::Ok(self.memory[addr as usize])
         }
 
-        fn mem_write(&mut self, addr: u16, data: u8) -> u8 {
+        fn mem_write(&mut self, addr: u16, data: u8) -> Result<u8, String> {
             self.memory[addr as usize] = data;
-            0
+            Result::Ok(0)
         }
     }
 
@@ -1838,7 +1896,7 @@ mod test {
         cpu.reset();
         cpu.mem_write_u16(0xA2F1, 0x43);
         let _ = cpu.run_with_callback(|_| {});
-        assert_eq!(0x86, cpu.mem_read_u16(0xA2F1));
+        assert_eq!(0x86, cpu.mem_read_u16(0xA2F1).unwrap());
         assert!(NEGATIVE_FLAG & cpu.status == NEGATIVE_FLAG);
         assert!(ZERO_FLAG & cpu.status == 0);
         assert!(CARRY_FLAG & cpu.status == 0);
@@ -1854,8 +1912,8 @@ mod test {
         cpu.reset();
         cpu.register_a = 240;
         let _ = cpu.run_with_callback(|_| {});
-        assert_eq!(240, cpu.mem_read(0x00A1));
-        assert_eq!(8, cpu.bus.borrow().cycles);
+        assert_eq!(240, cpu.mem_read(0x00A1).unwrap());
+        assert_eq!(7, cpu.bus.borrow().cycles);
     }
 
     #[test]
@@ -1867,7 +1925,7 @@ mod test {
         cpu.status = cpu.status | CARRY_FLAG;
         cpu.register_a = 240;
         let _ = cpu.run_with_callback(|_| {});
-        assert_eq!(0, cpu.mem_read(0x00A1));
+        assert_eq!(0, cpu.mem_read(0x00A1).unwrap());
         assert_eq!(2, cpu.bus.borrow().cycles);
     }
 
@@ -1880,7 +1938,7 @@ mod test {
         cpu.reset();
         cpu.register_a = 240;
         let _ = cpu.run_with_callback(|_| {});
-        assert_eq!(0, cpu.mem_read(0x00A1));
+        assert_eq!(0, cpu.mem_read(0x00A1).unwrap());
     }
 
     #[test]
@@ -1893,7 +1951,7 @@ mod test {
         cpu.status = cpu.status | CARRY_FLAG;
         cpu.register_a = 240;
         let _ = cpu.run_with_callback(|_| {});
-        assert_eq!(240, cpu.mem_read(0x00A1));
+        assert_eq!(240, cpu.mem_read(0x00A1).unwrap());
     }
 
     #[test]
@@ -1905,7 +1963,7 @@ mod test {
         cpu.reset();
         cpu.register_a = 240;
         let _ = cpu.run_with_callback(|_| {});
-        assert_eq!(0, cpu.mem_read(0x00A1));
+        assert_eq!(0, cpu.mem_read(0x00A1).unwrap());
     }
 
     #[test]
@@ -1918,7 +1976,7 @@ mod test {
         cpu.status = cpu.status | ZERO_FLAG;
         cpu.register_a = 240;
         let _ = cpu.run_with_callback(|_| {});
-        assert_eq!(240, cpu.mem_read(0x00A1));
+        assert_eq!(240, cpu.mem_read(0x00A1).unwrap());
     }
 
     #[test]
@@ -1960,7 +2018,7 @@ mod test {
         cpu.reset();
         cpu.register_a = 240;
         let _ = cpu.run_with_callback(|_| {});
-        assert_eq!(0, cpu.mem_read(0x00A1));
+        assert_eq!(0, cpu.mem_read(0x00A1).unwrap());
     }
 
     #[test]
@@ -1973,7 +2031,7 @@ mod test {
         cpu.status = cpu.status | NEGATIVE_FLAG;
         cpu.register_a = 240;
         let _ = cpu.run_with_callback(|_| {});
-        assert_eq!(240, cpu.mem_read(0x00A1));
+        assert_eq!(240, cpu.mem_read(0x00A1).unwrap());
     }
 
     #[test]
@@ -1985,7 +2043,7 @@ mod test {
         cpu.reset();
         cpu.register_a = 240;
         let _ = cpu.run_with_callback(|_| {});
-        assert_eq!(240, cpu.mem_read(0x00A1));
+        assert_eq!(240, cpu.mem_read(0x00A1).unwrap());
     }
 
     #[test]
@@ -1998,7 +2056,7 @@ mod test {
         cpu.status = cpu.status | ZERO_FLAG;
         cpu.register_a = 240;
         let _ = cpu.run_with_callback(|_| {});
-        assert_eq!(0, cpu.mem_read(0x00A1));
+        assert_eq!(0, cpu.mem_read(0x00A1).unwrap());
     }
 
     #[test]
@@ -2010,7 +2068,7 @@ mod test {
         cpu.reset();
         cpu.register_a = 240;
         let _ = cpu.run_with_callback(|_| {});
-        assert_eq!(240, cpu.mem_read(0x00A1));
+        assert_eq!(240, cpu.mem_read(0x00A1).unwrap());
     }
 
     #[test]
@@ -2023,7 +2081,7 @@ mod test {
         cpu.status = cpu.status | NEGATIVE_FLAG;
         cpu.register_a = 240;
         let _ = cpu.run_with_callback(|_| {});
-        assert_eq!(0, cpu.mem_read(0x00A1));
+        assert_eq!(0, cpu.mem_read(0x00A1).unwrap());
     }
 
     #[test]
@@ -2036,7 +2094,7 @@ mod test {
         cpu.status = cpu.status | OVERFLOW_FLAG;
         cpu.register_a = 240;
         let _ = cpu.run_with_callback(|_| {});
-        assert_eq!(0, cpu.mem_read(0x00A1));
+        assert_eq!(0, cpu.mem_read(0x00A1).unwrap());
     }
 
     #[test]
@@ -2048,7 +2106,7 @@ mod test {
         cpu.reset();
         cpu.register_a = 240;
         let _ = cpu.run_with_callback(|_| {});
-        assert_eq!(240, cpu.mem_read(0x00A1));
+        assert_eq!(240, cpu.mem_read(0x00A1).unwrap());
     }
 
     #[test]
@@ -2061,7 +2119,7 @@ mod test {
         cpu.status = cpu.status | OVERFLOW_FLAG;
         cpu.register_a = 240;
         let _ = cpu.run_with_callback(|_| {});
-        assert_eq!(240, cpu.mem_read(0x00A1));
+        assert_eq!(240, cpu.mem_read(0x00A1).unwrap());
     }
 
     #[test]
@@ -2073,7 +2131,7 @@ mod test {
         cpu.reset();
         cpu.register_a = 240;
         let _ = cpu.run_with_callback(|_| {});
-        assert_eq!(0, cpu.mem_read(0x00A1));
+        assert_eq!(0, cpu.mem_read(0x00A1).unwrap());
     }
 
     #[test]
@@ -2211,7 +2269,7 @@ mod test {
         cpu.mem_write(0xAAAA, 0);
         cpu.reset();
         let _ = cpu.run_with_callback(|_| {});
-        assert_eq!(cpu.mem_read(0xAAAA), 0xFF);
+        assert_eq!(cpu.mem_read(0xAAAA).unwrap(), 0xFF);
         assert!(cpu.status & ZERO_FLAG == 0);
         assert!(cpu.status & NEGATIVE_FLAG == NEGATIVE_FLAG);
     }
@@ -2281,7 +2339,7 @@ mod test {
         cpu.mem_write(0xBAA4, 250);
         let _ = cpu.run_with_callback(|_| {});
 
-        let value = cpu.mem_read(0xBAA4);
+        let value = cpu.mem_read(0xBAA4).unwrap();
 
         assert!(value & NEGATIVE_FLAG == NEGATIVE_FLAG);
         assert!(cpu.status & ZERO_FLAG == 0);
@@ -2360,7 +2418,10 @@ mod test {
         let _ = cpu.run_with_callback(|_| {});
 
         assert_eq!(STACK_RESET.wrapping_sub(5) as u8, cpu.stack_pointer); // 2 (jsr) + 3 (brk)
-        assert_eq!(0x8002, cpu.mem_read_u16((STACK_RESET as u16) + STACK - 1));
+        assert_eq!(
+            0x8002,
+            cpu.mem_read_u16((STACK_RESET as u16) + STACK - 1).unwrap()
+        );
         assert_eq!(2, cpu.register_x);
     }
 
@@ -2408,7 +2469,7 @@ mod test {
         cpu.reset();
         cpu.mem_write_u16(0xA2F1, 0x43);
         let _ = cpu.run_with_callback(|_| {});
-        assert_eq!(0x21, cpu.mem_read_u16(0xA2F1));
+        assert_eq!(0x21, cpu.mem_read_u16(0xA2F1).unwrap());
         assert!(NEGATIVE_FLAG & cpu.status == 0);
         assert!(ZERO_FLAG & cpu.status == 0);
         assert!(CARRY_FLAG & cpu.status == CARRY_FLAG);
@@ -2436,7 +2497,7 @@ mod test {
         cpu.reset();
         cpu.register_a = 0xAA;
         let _ = cpu.run_with_callback(|_| {});
-        assert_eq!(0xAA, cpu.mem_read((STACK_RESET as u16) + STACK));
+        assert_eq!(0xAA, cpu.mem_read((STACK_RESET as u16) + STACK).unwrap());
     }
 
     #[test]
@@ -2449,7 +2510,7 @@ mod test {
         let _ = cpu.run_with_callback(|_| {});
         assert_eq!(
             0xAC | BREAK_FLAG | BREAK2_FLAG,
-            cpu.mem_read((STACK_RESET as u16) + STACK)
+            cpu.mem_read((STACK_RESET as u16) + STACK).unwrap()
         );
     }
 
@@ -2524,7 +2585,7 @@ mod test {
         cpu.reset();
         cpu.mem_write_u16(0xAAAA, 0b0001_0010);
         let _ = cpu.run_with_callback(|_| {});
-        assert_eq!(0b0010_0100, cpu.mem_read_u16(0xAAAA));
+        assert_eq!(0b0010_0100, cpu.mem_read_u16(0xAAAA).unwrap());
         assert!(cpu.status & CARRY_FLAG == 0);
         assert!(cpu.status & NEGATIVE_FLAG == 0);
         assert!(cpu.status & ZERO_FLAG == 0);
@@ -2553,7 +2614,7 @@ mod test {
         cpu.reset();
         cpu.mem_write_u16(0xAAAA, 0b1001_0011);
         let _ = cpu.run_with_callback(|_| {});
-        assert_eq!(0b0100_1001, cpu.mem_read_u16(0xAAAA));
+        assert_eq!(0b0100_1001, cpu.mem_read_u16(0xAAAA).unwrap());
         assert!(cpu.status & CARRY_FLAG == CARRY_FLAG);
         assert!(cpu.status & NEGATIVE_FLAG == 0);
         assert!(cpu.status & ZERO_FLAG == 0);
@@ -2584,7 +2645,7 @@ mod test {
         assert_eq!(0x00, cpu.register_a); //hi bytes
         assert_eq!(
             BREAK_FLAG,
-            BREAK_FLAG & cpu.mem_read((STACK_RESET as u16) + STACK - 3)
+            BREAK_FLAG & cpu.mem_read((STACK_RESET as u16) + STACK - 3).unwrap()
         );
     }
 
@@ -2747,7 +2808,7 @@ mod test {
         cpu.reset();
         cpu.register_a = 240;
         let _ = cpu.run_with_callback(|_| {});
-        assert!(cpu.mem_read(0x00a1) == 240);
+        assert!(cpu.mem_read(0x00a1).unwrap() == 240);
     }
 
     #[test]
@@ -2759,7 +2820,7 @@ mod test {
         cpu.register_a = 240;
         cpu.register_x = 2;
         let _ = cpu.run_with_callback(|_| {});
-        assert!(cpu.mem_read(0x00a1) == 240);
+        assert!(cpu.mem_read(0x00a1).unwrap() == 240);
     }
 
     #[test]
@@ -2770,7 +2831,7 @@ mod test {
         cpu.reset();
         cpu.register_a = 0xf0;
         let _ = cpu.run_with_callback(|_| {});
-        assert!(cpu.mem_read(0xdda1) == 0xf0);
+        assert!(cpu.mem_read(0xdda1).unwrap() == 0xf0);
     }
 
     #[test]
@@ -2782,7 +2843,7 @@ mod test {
         cpu.register_a = 0xf0;
         cpu.register_x = 0x11;
         let _ = cpu.run_with_callback(|_| {});
-        assert!(cpu.mem_read(0xdda1) == 0xf0);
+        assert!(cpu.mem_read(0xdda1).unwrap() == 0xf0);
     }
 
     #[test]
@@ -2794,7 +2855,7 @@ mod test {
         cpu.register_a = 0xf0;
         cpu.register_y = 0x11;
         let _ = cpu.run_with_callback(|_| {});
-        assert!(cpu.mem_read(0xdda1) == 0xf0);
+        assert!(cpu.mem_read(0xdda1).unwrap() == 0xf0);
     }
 
     #[test]
@@ -2808,7 +2869,7 @@ mod test {
         cpu.register_x = 0x04;
         cpu.register_a = 0xf0;
         let _ = cpu.run_with_callback(|_| {});
-        assert!(cpu.mem_read(0xdda1) == 0xf0);
+        assert!(cpu.mem_read(0xdda1).unwrap() == 0xf0);
     }
 
     #[test]
@@ -2822,7 +2883,7 @@ mod test {
         cpu.register_y = 0x04;
         cpu.register_a = 0xf0;
         let _ = cpu.run_with_callback(|_| {});
-        assert_eq!(0xf0, cpu.mem_read(0xDDA5));
+        assert_eq!(0xf0, cpu.mem_read(0xDDA5).unwrap());
     }
 
     #[test]
@@ -2833,7 +2894,7 @@ mod test {
         cpu.reset();
         cpu.register_x = 0x05;
         let _ = cpu.run_with_callback(|_| {});
-        assert_eq!(cpu.mem_read(0xBBAA), 0x05);
+        assert_eq!(cpu.mem_read(0xBBAA).unwrap(), 0x05);
     }
 
     #[test]
@@ -2844,7 +2905,7 @@ mod test {
         cpu.reset();
         cpu.register_y = 0x05;
         let _ = cpu.run_with_callback(|_| {});
-        assert_eq!(cpu.mem_read(0xBBAA), 0x05);
+        assert_eq!(cpu.mem_read(0xBBAA).unwrap(), 0x05);
     }
 
     #[test]
@@ -2955,7 +3016,7 @@ mod test {
         cpu.reset();
         cpu.register_x = 0xFF;
         let _ = cpu.run_with_callback(|_| {});
-        assert_eq!(0x01, cpu.mem_read(0xAAAA));
+        assert_eq!(0x01, cpu.mem_read(0xAAAA).unwrap());
         assert_eq!(0xFF, cpu.register_x)
     }
 

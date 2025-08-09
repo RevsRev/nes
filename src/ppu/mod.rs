@@ -104,7 +104,7 @@ impl PPU {
         }
     }
 
-    pub fn read_data(&mut self) -> u8 {
+    pub fn read_data(&mut self) -> Result<u8, String> {
         let addr = self.addr.get();
         self.increment_vram_addr();
 
@@ -112,38 +112,40 @@ impl PPU {
             0x0000..=0x1FFF => {
                 let result = self.internal_data_buf;
                 self.internal_data_buf = self.chr_rom[addr as usize];
-                result
+                Result::Ok(result)
             }
             0x2000..=0x2FFF => {
                 let result = self.internal_data_buf;
                 self.internal_data_buf = self.vram[self.mirror_vram_addr(addr) as usize];
-                result
+                Result::Ok(result)
             }
 
             0x3F00..=0x3FFF => {
-                self.palette_table[(self.mirror_pallette_addr(addr) - 0x3F00) as usize]
+                Result::Ok(self.palette_table[(self.mirror_pallette_addr(addr) - 0x3F00) as usize])
             }
-            _ => panic!("Unexpected access to mirrored space {:#04X}", addr),
+            _ => Result::Err(format!("Unexpected access to mirrored space {:#04X}", addr)),
         }
     }
 
-    pub fn write_data(&mut self, value: u8) -> u8 {
-        let retval: u8;
+    pub fn write_data(&mut self, value: u8) -> Result<u8, String> {
+        let retval: Result<u8, String>;
         let addr = self.addr.get();
         match addr {
             0x0000..=0x1FFF => {
-                panic!("Attempt to write to chr rom space {:#04X}", addr);
+                retval = Result::Err(format!("Attempt to write to chr rom space {:#04X}", addr));
             }
             0x2000..=0x2FFF => {
-                retval = self.vram[self.mirror_vram_addr(addr) as usize];
+                retval = Result::Ok(self.vram[self.mirror_vram_addr(addr) as usize]);
                 self.vram[self.mirror_vram_addr(addr) as usize] = value;
             }
 
             0x3F00..=0x3FFF => {
-                retval = self.palette_table[(self.mirror_pallette_addr(addr) - 0x3F00) as usize];
+                retval = Result::Ok(
+                    self.palette_table[(self.mirror_pallette_addr(addr) - 0x3F00) as usize],
+                );
                 self.palette_table[(self.mirror_pallette_addr(addr) - 0x3F00) as usize] = value;
             }
-            _ => panic!("Unexpected access to mirrored space {:#04X}", addr),
+            _ => retval = Result::Err(format!("Unexpected access to mirrored space {:#04X}", addr)),
         }
 
         self.increment_vram_addr();
@@ -275,9 +277,9 @@ pub mod test {
         ppu.write_to_ppu_addr(0x23);
         ppu.write_to_ppu_addr(0x05);
 
-        ppu.read_data(); //load_into_buffer
+        ppu.read_data().unwrap(); //load_into_buffer
         assert_eq!(ppu.addr.get(), 0x2306);
-        assert_eq!(ppu.read_data(), 0x66);
+        assert_eq!(ppu.read_data().unwrap(), 0x66);
     }
 
     #[test]
@@ -290,9 +292,9 @@ pub mod test {
         ppu.write_to_ppu_addr(0x21);
         ppu.write_to_ppu_addr(0xff);
 
-        ppu.read_data(); //load_into_buffer
-        assert_eq!(ppu.read_data(), 0x66);
-        assert_eq!(ppu.read_data(), 0x77);
+        ppu.read_data().unwrap(); //load_into_buffer
+        assert_eq!(ppu.read_data().unwrap(), 0x66);
+        assert_eq!(ppu.read_data().unwrap(), 0x77);
     }
 
     #[test]
@@ -306,10 +308,10 @@ pub mod test {
         ppu.write_to_ppu_addr(0x21);
         ppu.write_to_ppu_addr(0xff);
 
-        ppu.read_data(); //load_into_buffer
-        assert_eq!(ppu.read_data(), 0x66);
-        assert_eq!(ppu.read_data(), 0x77);
-        assert_eq!(ppu.read_data(), 0x88);
+        ppu.read_data().unwrap(); //load_into_buffer
+        assert_eq!(ppu.read_data().unwrap(), 0x66);
+        assert_eq!(ppu.read_data().unwrap(), 0x77);
+        assert_eq!(ppu.read_data().unwrap(), 0x88);
     }
 
     // Horizontal: https://wiki.nesdev.com/w/index.php/Mirroring
@@ -331,14 +333,14 @@ pub mod test {
         ppu.write_to_ppu_addr(0x20);
         ppu.write_to_ppu_addr(0x05);
 
-        ppu.read_data(); //load into buffer
-        assert_eq!(ppu.read_data(), 0x66); //read from A
+        ppu.read_data().unwrap(); //load into buffer
+        assert_eq!(ppu.read_data().unwrap(), 0x66); //read from A
 
         ppu.write_to_ppu_addr(0x2C);
         ppu.write_to_ppu_addr(0x05);
 
-        ppu.read_data(); //load into buffer
-        assert_eq!(ppu.read_data(), 0x77); //read from b
+        ppu.read_data().unwrap(); //load into buffer
+        assert_eq!(ppu.read_data().unwrap(), 0x77); //read from b
     }
 
     // Vertical: https://wiki.nesdev.com/w/index.php/Mirroring
@@ -361,14 +363,14 @@ pub mod test {
         ppu.write_to_ppu_addr(0x28);
         ppu.write_to_ppu_addr(0x05);
 
-        ppu.read_data(); //load into buffer
-        assert_eq!(ppu.read_data(), 0x66); //read from a
+        ppu.read_data().unwrap(); //load into buffer
+        assert_eq!(ppu.read_data().unwrap(), 0x66); //read from a
 
         ppu.write_to_ppu_addr(0x24);
         ppu.write_to_ppu_addr(0x05);
 
-        ppu.read_data(); //load into buffer
-        assert_eq!(ppu.read_data(), 0x77); //read from B
+        ppu.read_data().unwrap(); //load into buffer
+        assert_eq!(ppu.read_data().unwrap(), 0x77); //read from B
     }
 
     #[test]
@@ -380,16 +382,16 @@ pub mod test {
         ppu.write_to_ppu_addr(0x23);
         ppu.write_to_ppu_addr(0x05);
 
-        ppu.read_data(); //load_into_buffer
-        assert_ne!(ppu.read_data(), 0x66);
+        ppu.read_data().unwrap(); //load_into_buffer
+        assert_ne!(ppu.read_data().unwrap(), 0x66);
 
         ppu.read_status();
 
         ppu.write_to_ppu_addr(0x23);
         ppu.write_to_ppu_addr(0x05);
 
-        ppu.read_data(); //load_into_buffer
-        assert_eq!(ppu.read_data(), 0x66);
+        ppu.read_data().unwrap(); //load_into_buffer
+        assert_eq!(ppu.read_data().unwrap(), 0x66);
     }
 
     #[test]
@@ -401,8 +403,8 @@ pub mod test {
         ppu.write_to_ppu_addr(0x63); //0x6305 -> 0x2305
         ppu.write_to_ppu_addr(0x05);
 
-        ppu.read_data(); //load into_buffer
-        assert_eq!(ppu.read_data(), 0x66);
+        ppu.read_data().unwrap(); //load into_buffer
+        assert_eq!(ppu.read_data().unwrap(), 0x66);
         // assert_eq!(ppu.addr.read(), 0x0306)
     }
 

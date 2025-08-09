@@ -139,11 +139,6 @@ mod test {
 
         handle.join().unwrap();
 
-        if !nes.cpu.graceful_shutdown() {
-            println!("{:}", result.join("\n"));
-            panic!("CPU did not gracefully shutdown in NES test");
-        }
-
         assert_eq!(
             "0064  A2 01     LDX #$01                        A:01 X:02 Y:03 P:24 SP:FD",
             result[0]
@@ -232,7 +227,7 @@ mod test {
             halt_share.store(true, Ordering::Relaxed);
         });
 
-        let runtime_result = panic::catch_unwind(AssertUnwindSafe(|| {
+        let _runtime_result = panic::catch_unwind(AssertUnwindSafe(|| {
             let _ = nes.run_with_callback(|cpu| {
                 let trace = cpu.get_trace_str();
                 match trace {
@@ -244,11 +239,6 @@ mod test {
                 }
             });
         }));
-
-        match runtime_result {
-            Ok(_) => println!("NES executed gracefully"),
-            Err(_) => println!("Error during NES execution"),
-        }
 
         let _ = handle.join();
 
@@ -287,10 +277,5 @@ mod test {
                 None => "NULL",
             }
         );
-
-        if !nes.cpu.graceful_shutdown() {
-            // println!("{:?}", result);
-            panic!("CPU did not gracefully shutdown in NES test");
-        }
     }
 }

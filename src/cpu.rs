@@ -799,10 +799,9 @@ impl<T: Bus> CPU<T> {
                 let base = self.mem_read(begin)?;
                 let lo = self.mem_read(base as u16)?;
                 let hi = self.mem_read(base.wrapping_add(1) as u16)?;
-                (
-                    ((hi as u16) << 8 | (lo as u16)).wrapping_add(self.register_y as u16),
-                    false,
-                )
+                let deref_base = (hi as u16) << 8 | (lo as u16);
+                let deref = deref_base.wrapping_add(self.register_y as u16);
+                (deref, Self::page_boundary_crossed(deref, deref_base))
             }
             AddressingMode::Indirect => {
                 let target_addr = self.mem_read_u16(begin)?;

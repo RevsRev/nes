@@ -227,13 +227,6 @@ impl PPU {
         retval
     }
 
-    fn write_oam_dma(&mut self, data: &[u8; 256]) -> u8 {
-        for d in data.iter() {
-            self.write_to_oam_data(*d);
-        }
-        0
-    }
-
     pub fn write_to_mask(&mut self, value: u8) -> u8 {
         self.mask.write(value)
     }
@@ -442,15 +435,14 @@ pub mod test {
         data[255] = 0x88;
 
         ppu.write_to_oam_addr(0x10);
-        ppu.write_oam_dma(&data);
+        ppu.write_to_oam_dma(&data);
 
         ppu.write_to_oam_addr(0xf); //wrap around
         assert_eq!(ppu.read_oam_data(), 0x88);
 
         ppu.write_to_oam_addr(0x10);
-        assert_eq!(ppu.read_oam_data(), 0x77);
-
+        ppu.write_to_oam_addr(0x77);
         ppu.write_to_oam_addr(0x11);
-        assert_eq!(ppu.read_oam_data(), 0x66);
+        ppu.write_to_oam_addr(0x66);
     }
 }

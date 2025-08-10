@@ -6,7 +6,6 @@ use std::{
     sync::{Arc, atomic::AtomicBool},
 };
 
-use crate::traits::mem::Mem;
 use clap::Parser;
 use io::{
     joypad::{BUTTON_A, BUTTON_B, DOWN, Joypad, LEFT, RIGHT, SELECT, START, UP},
@@ -14,7 +13,6 @@ use io::{
 };
 use nes::NES;
 use ppu::PPU;
-use rand::Rng;
 use rom::Rom;
 use sdl2::{event::Event, keyboard::Keycode, pixels::PixelFormatEnum};
 
@@ -123,11 +121,8 @@ fn main() {
 
     nes.set_tracing(args.trace);
 
-    let mut rng = rand::thread_rng();
-
     let result = nes.run_with_callback(move |cpu| {
         // handle_user_input(cpu, &mut event_pump);
-        cpu.mem_write(0xFE, rng.gen_range(1, 16));
 
         // if args.debug {
         //     for event in event_pump.wait_iter() {

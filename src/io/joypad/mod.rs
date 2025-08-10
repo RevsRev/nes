@@ -37,7 +37,7 @@ impl Joypad {
 
         let response = (self.button_status & (1 << self.button_index)) >> self.button_index;
 
-        if !self.strobe && self.button_index < 7 {
+        if !self.strobe && self.button_index <= 7 {
             self.button_index += 1;
         }
         response

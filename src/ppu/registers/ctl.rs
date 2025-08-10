@@ -54,3 +54,35 @@ impl ControlRegister {
         0x0000
     }
 }
+
+#[cfg(test)]
+mod test {
+
+    use super::ControlRegister;
+
+    #[test]
+    fn should_get_correct_increment() {
+        let mut ctl = ControlRegister::new();
+        ctl.update(0b0000_0100);
+        assert_eq!(ctl.vram_addr_increment(), 32);
+        ctl.update(0b1100_0101);
+        assert_eq!(ctl.vram_addr_increment(), 32);
+        ctl.update(0b0000_0000);
+        assert_eq!(ctl.vram_addr_increment(), 1);
+        ctl.update(0b1111_0001);
+        assert_eq!(ctl.vram_addr_increment(), 1);
+    }
+
+    #[test]
+    fn should_get_correct_vblank_nmi() {
+        let mut ctl = ControlRegister::new();
+        ctl.update(0b0000_0000);
+        assert_eq!(ctl.generate_vblank_nmi(), false);
+        ctl.update(0b0100_0101);
+        assert_eq!(ctl.generate_vblank_nmi(), false);
+        ctl.update(0b1000_0000);
+        assert_eq!(ctl.generate_vblank_nmi(), true);
+        ctl.update(0b1111_0001);
+        assert_eq!(ctl.generate_vblank_nmi(), true);
+    }
+}

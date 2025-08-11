@@ -44,6 +44,10 @@ impl Tick for PPU {
             return;
         }
 
+        if self.is_sprite_0_hit(self.frame_cycles) {
+            self.status.set_sprite_0_hit(true);
+        }
+
         self.frame_cycles = self.frame_cycles - 341;
         self.scanline += 1;
 
@@ -235,12 +239,18 @@ impl PPU {
         self.scroll.write(value)
     }
 
-    pub(crate) fn write_to_oam_dma(&mut self, data: &[u8; 256]) -> u8 {
+    pub fn write_to_oam_dma(&mut self, data: &[u8; 256]) -> u8 {
         for x in data.iter() {
             self.oam_data[self.oam_addr as usize] = *x;
             self.oam_addr = self.oam_addr.wrapping_add(1);
         }
         0
+    }
+
+    pub fn is_sprite_0_hit(&self, cycle: usize) -> bool {
+        let y = self.oam_data[0] as usize;
+        let x = self.oam_data[3] as usize;
+        (y == self.scanline as usize) && x <= cycle && self.mask.show_sprites()
     }
 }
 #[cfg(test)]

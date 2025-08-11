@@ -1,3 +1,12 @@
+pub const GREYSCALE: u8 = 0b0000_0001;
+pub const SHOW_BACKGROUND_LEFTMOST_8_PIXELS: u8 = 0b0000_0010;
+pub const SHOW_SPRITES_LEFTMOST_8_PIXELS: u8 = 0b0000_0100;
+pub const ENABLE_BACKGROUND_RENDERING: u8 = 0b0000_1000;
+pub const ENABLE_SPRITE_RENDERING: u8 = 0b0001_0000;
+pub const EMPHASIZE_RED: u8 = 0b0010_0000;
+pub const EMPHASIZE_GREEN: u8 = 0b0100_0000;
+pub const EMPHASIZE_BLUE: u8 = 0b1000_0000;
+
 pub struct MaskRegister {
     value: u8,
 }
@@ -16,4 +25,12 @@ impl MaskRegister {
     pub fn read(&self) -> u8 {
         self.value
     }
+
+    pub fn show_sprites(&self) -> bool {
+        has_flag(self.value, ENABLE_SPRITE_RENDERING)
+    }
+}
+
+fn has_flag(value: u8, flag: u8) -> bool {
+    value & flag == flag
 }

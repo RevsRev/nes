@@ -53,6 +53,16 @@ impl ControlRegister {
         }
         0x0000
     }
+
+    pub(crate) fn nametable_address(&self) -> u16 {
+        match self.bits & 0b11 {
+            0 => 0x2000,
+            1 => 0x2400,
+            2 => 0x2800,
+            3 => 0x2C00,
+            _ => panic!("Impossible!"),
+        }
+    }
 }
 
 #[cfg(test)]

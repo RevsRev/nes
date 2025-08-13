@@ -21,7 +21,7 @@ pub struct PPU {
     internal_data_buf: u8,
 
     addr: AddrRegister,
-    scroll: ScrollRegister,
+    pub scroll: ScrollRegister,
     mask: MaskRegister,
     pub ctl: ControlRegister,
     status: StatusRegister,
@@ -214,7 +214,7 @@ impl PPU {
         let data = self.status.snapshot();
         self.status.reset_vblank_status();
         self.addr.reset_latch();
-        //self.scroll.reset_latch();
+        self.scroll.reset_latch();
         data
     }
 

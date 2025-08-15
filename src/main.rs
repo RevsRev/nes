@@ -16,6 +16,7 @@ use ppu::PPU;
 use rom::Rom;
 use sdl2::{event::Event, keyboard::Keycode, pixels::PixelFormatEnum};
 
+mod apu;
 mod bus;
 mod cpu;
 mod io;

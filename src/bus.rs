@@ -1,5 +1,6 @@
 use core::fmt;
 
+use crate::apu::APU;
 use crate::io::joypad::Joypad;
 use crate::ppu::PPU;
 use crate::rom::Rom;
@@ -18,6 +19,7 @@ pub struct BusImpl<'call> {
     cpu_vram: [u8; 2048],
     prg_rom: Vec<u8>,
     pub ppu: PPU,
+    pub apu: APU,
     pub joypad: Joypad,
     gameloop_callback: Box<dyn FnMut(&PPU, &mut Joypad) + 'call>,
 }
@@ -34,6 +36,7 @@ impl<'a> BusImpl<'a> {
             cpu_vram: [0; 2048],
             prg_rom: rom.prg_rom,
             ppu: ppu,
+            apu: APU::new(),
             joypad,
             gameloop_callback: Box::from(gameloop_callback),
         }
@@ -90,7 +93,12 @@ impl<'a> Mem for BusImpl<'a> {
                 self.mem_read(mirror_down_addr)
             }
 
-            0x4000..=0x4015 => {
+            0x4000..=0x4013 => Result::Err(format!(
+                "Attempt to read from APU write only address {:#04X}",
+                addr
+            )),
+
+            0x4014..=0x4015 => {
                 //ignore APU
                 Result::Ok(0)
             }
@@ -137,17 +145,31 @@ impl<'a> Mem for BusImpl<'a> {
                 Result::Ok(self.mem_write(mirror_down_addr, data)?)
             }
 
-            0x4000..=0x4013 | 0x4015 => {
-                //ignore APU
-                Result::Ok(0)
-            }
+            0x4000 => Result::Ok(self.apu.pulse_1.write_to_envelope(data)),
+            0x4001 => Result::Ok(self.apu.pulse_1.write_to_sweep(data)),
+            0x4002 => Result::Ok(self.apu.pulse_1.write_to_timerl(data)),
+            0x4003 => Result::Ok(self.apu.pulse_1.write_to_len_timerh(data)),
+            0x4004 => Result::Ok(self.apu.pulse_2.write_to_envelope(data)),
+            0x4005 => Result::Ok(self.apu.pulse_2.write_to_sweep(data)),
+            0x4006 => Result::Ok(self.apu.pulse_2.write_to_timerl(data)),
+            0x4007 => Result::Ok(self.apu.pulse_2.write_to_len_timerh(data)),
+            0x4008 => Result::Ok(self.apu.triangle.write_to_linear_counter(data)),
+            0x4009 => Result::Ok(self.apu.triangle.write_to_unused(data)),
+            0x400A => Result::Ok(self.apu.triangle.write_to_timerl(data)),
+            0x400B => Result::Ok(self.apu.triangle.write_to_len_timerh(data)),
+            0x400C => Result::Ok(self.apu.noise.write_to_env_loop_len_ctr_halt_cvol(data)),
+            0x400D => Result::Ok(self.apu.noise.write_unused(data)),
+            0x400E => Result::Ok(self.apu.noise.write_noise_mode_period(data)),
+            0x400F => Result::Ok(self.apu.noise.write_len_counter_load(data)),
+            0x4010 => Result::Ok(self.apu.dmc.write_to_flags_and_rate(data)),
+            0x4011 => Result::Ok(self.apu.dmc.write_to_direct_load(data)),
+            0x4012 => Result::Ok(self.apu.dmc.write_to_sample_address(data)),
+            0x4013 => Result::Ok(self.apu.dmc.write_to_sample_length(data)),
+
+            0x4015 => Result::Ok(self.apu.write_to_status(data)),
+            0x4017 => Result::Ok(self.apu.write_to_frame_counter(data)),
 
             0x4016 => Result::Ok(self.joypad.write(data)),
-
-            0x4017 => {
-                Result::Ok(0)
-                // ignore joypad 2
-            }
 
             // https://wiki.nesdev.com/w/index.php/PPU_programmer_reference#OAM_DMA_.28.244014.29_.3E_write
             0x4014 => {

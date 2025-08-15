@@ -38,4 +38,16 @@ impl TriangleChannel {
         self.len_timerh = data;
         old_value
     }
+
+    pub fn decrement_timer(&mut self) {
+        let time = (((self.len_timerh & 0b0000_0111) as u16) << 8) | (self.timerl as u16);
+        let next_time = if time == 0 {
+            0b0000_0111_1111_1111
+        } else {
+            time - 1
+        };
+
+        self.timerl = (next_time & 0xFF) as u8;
+        self.len_timerh = self.len_timerh & (0b1111_1000 | ((next_time >> 8) as u8));
+    }
 }

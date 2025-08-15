@@ -5,7 +5,7 @@ use crate::{
         },
         registers::{frame::FrameCounter, status::Status},
     },
-    traits::mem::Mem,
+    traits::{mem::Mem, tick::Tick},
 };
 
 pub mod channel;
@@ -19,6 +19,8 @@ pub struct APU {
     pub dmc: DmcChannel,
     status: Status,
     frame: FrameCounter,
+
+    cycles: u16,
 }
 
 impl APU {
@@ -31,6 +33,7 @@ impl APU {
             dmc: DmcChannel::new(),
             status: Status::new(),
             frame: FrameCounter::new(),
+            cycles: 0,
         }
     }
 
@@ -41,5 +44,14 @@ impl APU {
 
     pub fn write_to_frame_counter(&mut self, data: u8) -> u8 {
         self.frame.write(data)
+    }
+}
+
+impl Tick for APU {
+    fn tick(&mut self, cycles: u8) {
+        self.cycles.wrapping_add(1);
+        self.pulse_1.decrement_timer();
+        self.pulse_2.decrement_timer();
+        self.triangle.decrement_timer();
     }
 }

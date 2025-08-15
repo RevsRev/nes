@@ -203,6 +203,8 @@ impl<'call> Tick for BusImpl<'call> {
         // let nmi_before = self.ppu.poll(&InterruptType::Nmi).is_some();
         self.ppu.tick(3 * cycles);
         // let nmi_after = self.ppu.poll(&InterruptType::Nmi).is_some();
+        //
+        self.apu.tick(cycles);
 
         if self.ppu.new_frame {
             (self.gameloop_callback)(&self.ppu, &mut self.joypad)

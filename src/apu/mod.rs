@@ -59,6 +59,8 @@ impl Tick for APU {
             self.pulse_2.decrement_timer();
         }
 
-        self.triangle.decrement_timer();
+        if self.status.triangle_enabled() {
+            self.triangle.decrement_timer();
+        }
     }
 }

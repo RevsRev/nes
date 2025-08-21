@@ -30,6 +30,14 @@ impl Status {
         self.has_flag(PULSE_2)
     }
 
+    pub fn triangle_enabled(&self) -> bool {
+        self.has_flag(TRIANGLE)
+    }
+
+    pub fn noise_enabled(&self) -> bool {
+        self.has_flag(NOISE)
+    }
+
     fn has_flag(&self, flag: u8) -> bool {
         self.data & flag == flag
     }

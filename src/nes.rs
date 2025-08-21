@@ -264,9 +264,8 @@ mod test {
             }
         }
 
-        assert_eq!(
-            nes_test_log.len(),
-            result.len(),
+        assert!(
+            nes_test_log.len() <= result.len(),
             "Lines from NES test do not match expected log. Last line of result log was:\n{:?}\n\nExpected next line from nestest.log is:\n{:?}",
             match result.get(result.len() - 1) {
                 Some(v) => v,

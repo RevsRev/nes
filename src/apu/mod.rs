@@ -50,8 +50,15 @@ impl APU {
 impl Tick for APU {
     fn tick(&mut self, cycles: u8) {
         self.cycles.wrapping_add(1);
-        self.pulse_1.decrement_timer();
-        self.pulse_2.decrement_timer();
+
+        if self.status.pulse_1_enabled() {
+            self.pulse_1.decrement_timer();
+        }
+
+        if self.status.pulse_2_enabled() {
+            self.pulse_2.decrement_timer();
+        }
+
         self.triangle.decrement_timer();
     }
 }

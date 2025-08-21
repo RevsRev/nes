@@ -22,7 +22,7 @@ pub struct Sweep {
 
 impl Sweep {
     pub fn new() -> Self {
-        Sweep { data: 0 }
+        Sweep { data: 0xFF }
     }
 
     pub fn write(&mut self, data: u8) -> u8 {
@@ -37,7 +37,7 @@ pub struct Envelope {
 
 impl Envelope {
     pub fn new() -> Self {
-        Envelope { data: 0 }
+        Envelope { data: 0xFF }
     }
 
     pub fn write(&mut self, data: u8) -> u8 {
@@ -51,7 +51,10 @@ pub struct SquareChannel {
     envelope: Envelope,
     sweep: Sweep,
     timerl: u8,
-    len_timeh: u8,
+    len_timerh: u8,
+
+    last_timerl: u8,
+    last_timerh: u8,
 }
 
 impl SquareChannel {
@@ -60,7 +63,9 @@ impl SquareChannel {
             envelope: Envelope::new(),
             sweep: Sweep::new(),
             timerl: 0,
-            len_timeh: 0,
+            len_timerh: 0,
+            last_timerl: 0xFF,
+            last_timerh: 0xFF,
         }
     }
 
@@ -73,19 +78,21 @@ impl SquareChannel {
     }
 
     pub fn write_to_timerl(&mut self, data: u8) -> u8 {
-        let old_value = self.timerl;
+        let old_value = self.last_timerl;
         self.timerl = data;
+        self.last_timerl = data;
         old_value
     }
 
     pub fn write_to_len_timerh(&mut self, data: u8) -> u8 {
-        let old_value = self.len_timeh;
-        self.len_timeh = data;
+        let old_value = self.last_timerh;
+        self.len_timerh = data;
+        self.last_timerh = data;
         old_value
     }
 
     pub fn decrement_timer(&mut self) {
-        let time = (((self.len_timeh & 0b0000_0111) as u16) << 8) | (self.timerl as u16);
+        let time = (((self.len_timerh & 0b0000_0111) as u16) << 8) | (self.timerl as u16);
         let next_time = if time == 0 {
             0b0000_0111_1111_1111
         } else {
@@ -93,6 +100,6 @@ impl SquareChannel {
         };
 
         self.timerl = (next_time & 0xFF) as u8;
-        self.len_timeh = self.len_timeh & (0b1111_1000 | ((next_time >> 8) as u8));
+        self.len_timerh = self.len_timerh & (0b1111_1000 | ((next_time >> 8) as u8));
     }
 }

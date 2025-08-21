@@ -13,12 +13,24 @@ pub struct Status {
 
 impl Status {
     pub fn new() -> Self {
-        Status { data: 0 }
+        Status { data: 0xFF }
     }
 
     pub fn write(&mut self, data: u8) -> u8 {
         let old_val = self.data;
         self.data = data;
         old_val
+    }
+
+    pub fn pulse_1_enabled(&self) -> bool {
+        self.has_flag(PULSE_1)
+    }
+
+    pub fn pulse_2_enabled(&self) -> bool {
+        self.has_flag(PULSE_2)
+    }
+
+    fn has_flag(&self, flag: u8) -> bool {
+        self.data & flag == flag
     }
 }

@@ -1,15 +1,16 @@
-pub enum InterruptType {
-    Nmi,
-}
-
 pub trait Interrupt {
     fn poll_nmi(&mut self) -> bool;
     fn take_nmi(&mut self) -> bool;
     fn set_nmi(&mut self, state: bool);
+
+    fn poll_irq(&mut self) -> bool;
+    fn take_irq(&mut self) -> bool;
+    fn set_irq(&mut self, state: bool);
 }
 
 pub struct InterruptImpl {
     nmi_interrupt: Option<u8>,
+    irq_interrupt: Option<u8>,
 }
 
 impl Interrupt for InterruptImpl {
@@ -27,12 +28,30 @@ impl Interrupt for InterruptImpl {
             self.nmi_interrupt = None;
         }
     }
+
+    fn poll_irq(&mut self) -> bool {
+        self.irq_interrupt.is_some()
+    }
+
+    fn take_irq(&mut self) -> bool {
+        let state = self.irq_interrupt.take();
+        state.is_some()
+    }
+
+    fn set_irq(&mut self, state: bool) {
+        if state {
+            self.irq_interrupt = Some(1);
+        } else {
+            self.irq_interrupt = None;
+        }
+    }
 }
 
 impl InterruptImpl {
     pub fn new() -> InterruptImpl {
         InterruptImpl {
             nmi_interrupt: None,
+            irq_interrupt: None,
         }
     }
 }

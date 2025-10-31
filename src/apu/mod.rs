@@ -20,7 +20,8 @@ pub struct APU {
     status: Status,
     frame: FrameCounter,
 
-    cycles: u16,
+    cpu_cycles: u16,
+    sequencer_cycles: u16,
 }
 
 impl APU {
@@ -33,7 +34,8 @@ impl APU {
             dmc: DmcChannel::new(),
             status: Status::new(),
             frame: FrameCounter::new(),
-            cycles: 0,
+            cpu_cycles: 0,
+            sequencer_cycles: 0,
         }
     }
 
@@ -49,7 +51,12 @@ impl APU {
 
 impl Tick for APU {
     fn tick(&mut self, cycles: u8) {
-        self.cycles.wrapping_add(1);
+        self.cpu_cycles.wrapping_add(1);
+
+        //APU ticks at the half the speed of the cpu, which is what drives this clock
+        if self.cpu_cycles % 2 == 0 {
+            return;
+        }
 
         if self.status.pulse_1_enabled() {
             self.pulse_1.decrement_timer();
@@ -62,5 +69,7 @@ impl Tick for APU {
         if self.status.triangle_enabled() {
             self.triangle.decrement_timer();
         }
+
+        self.sequencer_cycles.wrapping_add(1);
     }
 }

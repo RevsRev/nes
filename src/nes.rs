@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 
 use crate::bus::BusImpl;
 use crate::cpu::CPU;
+use crate::interrupt::{Interrupt, InterruptImpl};
 use crate::io::joypad::Joypad;
 use crate::ppu::PPU;
 use crate::rom::Rom;
@@ -28,8 +29,14 @@ impl<'call> NES<'call> {
     where
         F: FnMut(&PPU, &mut Joypad) + 'cl,
     {
-        let bus = Rc::new(RefCell::new(BusImpl::new(rom, gameloop_callback)));
-        let mut cpu = CPU::new(Rc::clone(&bus), halt);
+        let interrupt = Rc::new(RefCell::new(InterruptImpl::new()));
+        let interrupt_cpu = interrupt.clone();
+        let bus = Rc::new(RefCell::new(BusImpl::new(
+            rom,
+            interrupt,
+            gameloop_callback,
+        )));
+        let mut cpu = CPU::new(Rc::clone(&bus), interrupt_cpu, halt);
         cpu.reset();
         NES {
             tracing: false,

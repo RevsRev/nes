@@ -1,12 +1,12 @@
+use std::{cell::RefCell, rc::Rc};
+
 use registers::{mask::MaskRegister, scroll::ScrollRegister, status::StatusRegister};
 
 use crate::{
+    interrupt::{Interrupt, InterruptImpl},
     ppu::registers::{addr::AddrRegister, ctl::ControlRegister},
     rom::Mirroring,
-    traits::{
-        interrupt::{InterruptType, Interrupting},
-        tick::Tick,
-    },
+    traits::tick::Tick,
 };
 
 pub mod registers;
@@ -26,11 +26,11 @@ pub struct PPU {
     pub ctl: ControlRegister,
     status: StatusRegister,
     oam_addr: u8,
+    interrupt: Rc<RefCell<InterruptImpl>>,
 
     frame_cycles: usize,
     total_cycles: u64,
     scanline: u16,
-    nmi_interrupt: Option<u8>,
     pub new_frame: bool,
 }
 
@@ -55,13 +55,13 @@ impl Tick for PPU {
             self.status.set_vblank(true);
             self.status.set_sprite_0_hit(false);
             if self.ctl.generate_vblank_nmi() {
-                self.nmi_interrupt = Some(1);
+                self.interrupt.borrow_mut().set_nmi(true);
             }
         }
 
         if self.scanline >= 262 {
             self.scanline = 0;
-            self.nmi_interrupt = None;
+            self.interrupt.borrow_mut().set_nmi(false);
             self.status.set_sprite_0_hit(false);
             self.status.reset_vblank_status();
             self.new_frame = true;
@@ -69,21 +69,12 @@ impl Tick for PPU {
     }
 }
 
-impl Interrupting for PPU {
-    fn poll(&self, interrupt_type: &crate::traits::interrupt::InterruptType) -> Option<u8> {
-        match *interrupt_type {
-            InterruptType::Nmi => self.nmi_interrupt,
-        }
-    }
-    fn take(&mut self, interrupt_type: &crate::traits::interrupt::InterruptType) -> Option<u8> {
-        match *interrupt_type {
-            InterruptType::Nmi => self.nmi_interrupt.take(),
-        }
-    }
-}
-
 impl PPU {
-    pub fn new(chr_rom: Vec<u8>, mirroring: Mirroring) -> Self {
+    pub fn new(
+        chr_rom: Vec<u8>,
+        mirroring: Mirroring,
+        interrupt: Rc<RefCell<InterruptImpl>>,
+    ) -> Self {
         PPU {
             chr_rom: chr_rom,
             palette_table: [0; 32],
@@ -99,11 +90,11 @@ impl PPU {
             ctl: ControlRegister::new(),
             status: StatusRegister::new(),
             oam_addr: 0,
+            interrupt: interrupt,
 
             total_cycles: 0,
             frame_cycles: 0,
             scanline: 0,
-            nmi_interrupt: Option::None,
             new_frame: false,
         }
     }
@@ -201,7 +192,7 @@ impl PPU {
         let before_nmi_status = self.ctl.generate_vblank_nmi();
         let retval = self.ctl.update(value);
         if !before_nmi_status && self.ctl.generate_vblank_nmi() && self.status.is_vblank() {
-            self.nmi_interrupt = Some(1);
+            self.interrupt.borrow_mut().set_nmi(true);
         }
         retval
     }
@@ -255,10 +246,16 @@ impl PPU {
 }
 #[cfg(test)]
 pub mod test {
-    use crate::{ppu::PPU, rom::Mirroring};
+    use std::{cell::RefCell, rc::Rc};
+
+    use crate::{interrupt::InterruptImpl, ppu::PPU, rom::Mirroring};
 
     fn ppu_empty_rom(mirroring: Mirroring) -> PPU {
-        PPU::new(vec![0; 2048], mirroring)
+        PPU::new(
+            vec![0; 2048],
+            mirroring,
+            Rc::new(RefCell::new(InterruptImpl::new())),
+        )
     }
 
     #[test]

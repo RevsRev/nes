@@ -1,11 +1,13 @@
 use core::fmt;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use crate::apu::APU;
+use crate::interrupt::InterruptImpl;
 use crate::io::joypad::Joypad;
 use crate::ppu::PPU;
 use crate::rom::Rom;
 use crate::traits::bus::Bus;
-use crate::traits::interrupt::{InterruptType, Interrupting};
 use crate::traits::mem::Mem;
 use crate::traits::tick::Tick;
 
@@ -20,16 +22,22 @@ pub struct BusImpl<'call> {
     prg_rom: Vec<u8>,
     pub ppu: PPU,
     pub apu: APU,
+    interrupt: Rc<RefCell<InterruptImpl>>,
     pub joypad: Joypad,
     gameloop_callback: Box<dyn FnMut(&PPU, &mut Joypad) + 'call>,
 }
 
 impl<'a> BusImpl<'a> {
-    pub fn new<'call, F>(rom: Rom, gameloop_callback: F) -> BusImpl<'call>
+    pub fn new<'call, F>(
+        rom: Rom,
+        interrupt: Rc<RefCell<InterruptImpl>>,
+        gameloop_callback: F,
+    ) -> BusImpl<'call>
     where
         F: FnMut(&PPU, &mut Joypad) + 'call,
     {
-        let ppu = PPU::new(rom.chr_rom, rom.screen_mirroring);
+        let interrupt_ppu = interrupt.clone();
+        let ppu = PPU::new(rom.chr_rom, rom.screen_mirroring, interrupt_ppu);
         let joypad = Joypad::new();
 
         BusImpl {
@@ -37,6 +45,8 @@ impl<'a> BusImpl<'a> {
             prg_rom: rom.prg_rom,
             ppu: ppu,
             apu: APU::new(),
+            interrupt: interrupt,
+
             joypad,
             gameloop_callback: Box::from(gameloop_callback),
         }
@@ -60,16 +70,6 @@ impl<'a> fmt::Display for BusImpl<'a> {
         )
     }
 }
-
-impl<'a> Interrupting for BusImpl<'a> {
-    fn poll(&self, interrupt_type: &InterruptType) -> Option<u8> {
-        return self.ppu.poll(interrupt_type);
-    }
-    fn take(&mut self, interrupt_type: &InterruptType) -> Option<u8> {
-        return self.ppu.take(interrupt_type);
-    }
-}
-
 impl<'a> Bus for BusImpl<'a> {}
 
 impl<'a> Mem for BusImpl<'a> {

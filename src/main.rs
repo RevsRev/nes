@@ -19,6 +19,7 @@ use sdl2::{event::Event, keyboard::Keycode, pixels::PixelFormatEnum};
 mod apu;
 mod bus;
 mod cpu;
+mod interrupt;
 mod io;
 mod nes;
 mod opp;

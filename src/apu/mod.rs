@@ -24,7 +24,7 @@ pub struct APU {
     frame: FrameCounter,
     interrupt: Rc<RefCell<InterruptImpl>>,
 
-    cpu_cycles: u16,
+    cpu_cycles: u8,
     sequencer_cycles: u16,
 }
 
@@ -56,25 +56,24 @@ impl APU {
 
 impl Tick for APU {
     fn tick(&mut self, cycles: u8) {
-        self.cpu_cycles.wrapping_add(1);
+        //apu ticks at half the frequency of the cpu
+        let num_apu_cycles = ((self.cpu_cycles % 2 + cycles) / 2) as u16;
+        self.cpu_cycles = self.cpu_cycles.wrapping_add(cycles);
 
-        //APU ticks at the half the speed of the cpu, which is what drives this clock
-        if self.cpu_cycles % 2 == 0 {
-            return;
+        for _ in 0..num_apu_cycles {
+            if self.status.pulse_1_enabled() {
+                self.pulse_1.decrement_timer();
+            }
+
+            if self.status.pulse_2_enabled() {
+                self.pulse_2.decrement_timer();
+            }
+
+            if self.status.triangle_enabled() {
+                self.triangle.decrement_timer();
+            }
         }
 
-        if self.status.pulse_1_enabled() {
-            self.pulse_1.decrement_timer();
-        }
-
-        if self.status.pulse_2_enabled() {
-            self.pulse_2.decrement_timer();
-        }
-
-        if self.status.triangle_enabled() {
-            self.triangle.decrement_timer();
-        }
-
-        self.sequencer_cycles.wrapping_add(1);
+        self.sequencer_cycles = self.sequencer_cycles.wrapping_add(num_apu_cycles);
     }
 }

@@ -12,6 +12,7 @@ use crate::{
 };
 
 pub mod channel;
+pub mod mixer;
 pub mod registers;
 
 pub struct APU {

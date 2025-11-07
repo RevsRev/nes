@@ -37,6 +37,8 @@ impl<'a> BusImpl<'a> {
         F: FnMut(&PPU, &mut Joypad) + 'call,
     {
         let interrupt_ppu = interrupt.clone();
+        let interrupt_apu = interrupt.clone();
+        let apu = APU::new(interrupt_apu);
         let ppu = PPU::new(rom.chr_rom, rom.screen_mirroring, interrupt_ppu);
         let joypad = Joypad::new();
 
@@ -44,7 +46,7 @@ impl<'a> BusImpl<'a> {
             cpu_vram: [0; 2048],
             prg_rom: rom.prg_rom,
             ppu: ppu,
-            apu: APU::new(),
+            apu: apu,
             interrupt: interrupt,
 
             joypad,

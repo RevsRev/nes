@@ -1,3 +1,5 @@
+use std::{cell::RefCell, rc::Rc};
+
 use crate::{
     apu::{
         channel::{
@@ -5,6 +7,7 @@ use crate::{
         },
         registers::{frame::FrameCounter, status::Status},
     },
+    interrupt::{Interrupt, InterruptImpl},
     traits::{mem::Mem, tick::Tick},
 };
 
@@ -19,13 +22,14 @@ pub struct APU {
     pub dmc: DmcChannel,
     status: Status,
     frame: FrameCounter,
+    interrupt: Rc<RefCell<InterruptImpl>>,
 
     cpu_cycles: u16,
     sequencer_cycles: u16,
 }
 
 impl APU {
-    pub fn new() -> Self {
+    pub fn new(interrupt: Rc<RefCell<InterruptImpl>>) -> Self {
         APU {
             pulse_1: SquareChannel::new(),
             pulse_2: SquareChannel::new(),
@@ -34,13 +38,14 @@ impl APU {
             dmc: DmcChannel::new(),
             status: Status::new(),
             frame: FrameCounter::new(),
+            interrupt: interrupt,
             cpu_cycles: 0,
             sequencer_cycles: 0,
         }
     }
 
     pub fn write_to_status(&mut self, data: u8) -> u8 {
-        //TODO - This should clear the DMC interrupt flag
+        self.interrupt.borrow_mut().set_irq(false);
         self.status.write(data)
     }
 

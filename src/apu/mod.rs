@@ -5,6 +5,7 @@ use crate::{
         channel::{
             dmc::DmcChannel, noise::NoiseChannel, square::SquareChannel, triangle::TriangleChannel,
         },
+        mixer::Mixer,
         registers::{frame::FrameCounter, status::Status},
     },
     interrupt::{Interrupt, InterruptImpl},
@@ -24,6 +25,7 @@ pub struct APU {
     status: Status,
     frame: FrameCounter,
     interrupt: Rc<RefCell<InterruptImpl>>,
+    mixer: Mixer,
 
     cpu_cycles: u8,
     sequencer_cycles: u16,
@@ -40,6 +42,7 @@ impl APU {
             status: Status::new(),
             frame: FrameCounter::new(),
             interrupt: interrupt,
+            mixer: Mixer::new(),
             cpu_cycles: 0,
             sequencer_cycles: 0,
         }

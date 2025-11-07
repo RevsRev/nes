@@ -16,6 +16,13 @@ const SWEEP_PERIOD_1: u8 = 0b0010_0000;
 const SWEEP_PERIOD_2: u8 = 0b0100_0000;
 const SWEEP_ENABLED: u8 = 0b1000_0000;
 
+const DUTY_PATTERNS: [[u8; 8]; 4] = [
+    [0, 0, 0, 0, 0, 0, 0, 1],
+    [0, 0, 0, 0, 0, 0, 1, 1],
+    [0, 0, 0, 0, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 0, 0],
+];
+
 pub struct Sweep {
     data: u8,
 }
@@ -52,9 +59,11 @@ pub struct SquareChannel {
     sweep: Sweep,
     timerl: u8,
     len_timerh: u8,
+    sequence_step: u8,
 
     last_timerl: u8,
     last_timerh: u8,
+    out: u8,
 }
 
 impl SquareChannel {
@@ -64,8 +73,10 @@ impl SquareChannel {
             sweep: Sweep::new(),
             timerl: 0,
             len_timerh: 0,
+            sequence_step: 0,
             last_timerl: 0xFF,
             last_timerh: 0xFF,
+            out: 0,
         }
     }
 
@@ -91,9 +102,14 @@ impl SquareChannel {
         old_value
     }
 
+    pub fn getOut(&mut self) -> u8 {
+        self.out
+    }
+
     pub fn decrement_timer(&mut self) {
         let time = (((self.len_timerh & 0b0000_0111) as u16) << 8) | (self.timerl as u16);
         let next_time = if time == 0 {
+            self.sequence_step = (self.sequence_step + 1) % 8;
             0b0000_0111_1111_1111
         } else {
             time - 1
@@ -101,5 +117,9 @@ impl SquareChannel {
 
         self.timerl = (next_time & 0xFF) as u8;
         self.len_timerh = self.len_timerh & (0b1111_1000 | ((next_time >> 8) as u8));
+
+        //TODO - look up the duty cycle (an 8 bit cycle) and send to the mixer
+        let duty = (self.envelope.data & 0b1100_0000 >> 6);
+        self.out = DUTY_PATTERNS[duty as usize][self.sequence_step as usize];
     }
 }

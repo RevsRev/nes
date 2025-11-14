@@ -24,7 +24,7 @@ pub struct BusImpl<'call> {
     pub apu: APU,
     interrupt: Rc<RefCell<InterruptImpl>>,
     pub joypad: Joypad,
-    gameloop_callback: Box<dyn FnMut(&PPU, &mut Joypad) + 'call>,
+    gameloop_callback: Box<dyn FnMut(&PPU, &APU, &mut Joypad) + 'call>,
 }
 
 impl<'a> BusImpl<'a> {
@@ -34,7 +34,7 @@ impl<'a> BusImpl<'a> {
         gameloop_callback: F,
     ) -> BusImpl<'call>
     where
-        F: FnMut(&PPU, &mut Joypad) + 'call,
+        F: FnMut(&PPU, &APU, &mut Joypad) + 'call,
     {
         let interrupt_ppu = interrupt.clone();
         let interrupt_apu = interrupt.clone();
@@ -209,7 +209,7 @@ impl<'call> Tick for BusImpl<'call> {
         self.apu.tick(cycles);
 
         if self.ppu.new_frame {
-            (self.gameloop_callback)(&self.ppu, &mut self.joypad)
+            (self.gameloop_callback)(&self.ppu, &self.apu, &mut self.joypad)
         }
 
         // if !nmi_before && nmi_after {

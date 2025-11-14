@@ -1,6 +1,6 @@
 pub struct Mixer {
     apu_cycles: u8,
-    output: f32, //TODO - Should this be a f32?
+    pub output: f32, //TODO - Should this be a f32?
 }
 
 impl Mixer {
@@ -13,19 +13,17 @@ impl Mixer {
 
     //TODO - Output type - f32?
     //TODO - Wire in other channel types
-    pub fn output(&mut self, pulse1: u8) {
+    pub fn output(&mut self, pulse1: u8, pulse2: u8) {
         self.apu_cycles = (self.apu_cycles + 1) % 20;
 
         if self.apu_cycles % 20 != 0 {
             return;
         }
 
-        let pulse2 = 0.0;
-
-        let pulse_out = if pulse1 == 0 && pulse2 == 0.0 {
+        let pulse_out = if pulse1 == 0 && pulse2 == 0 {
             0.0
         } else {
-            95.8 / (8128.0 / (pulse1 as f32 + pulse2) + 100.0)
+            95.8 / (8128.0 / (pulse1 as f32 + pulse2 as f32) + 100.0)
         };
 
         let triangle_out = 0.0;

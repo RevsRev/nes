@@ -4,9 +4,10 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use crate::apu::APU;
 use crate::bus::BusImpl;
 use crate::cpu::CPU;
-use crate::interrupt::{Interrupt, InterruptImpl};
+use crate::interrupt::InterruptImpl;
 use crate::io::joypad::Joypad;
 use crate::ppu::PPU;
 use crate::rom::Rom;
@@ -27,7 +28,7 @@ impl<'call> fmt::Display for NES<'call> {
 impl<'call> NES<'call> {
     pub fn new<'cl, F>(rom: Rom, halt: Arc<AtomicBool>, gameloop_callback: F) -> NES<'cl>
     where
-        F: FnMut(&PPU, &mut Joypad) + 'cl,
+        F: FnMut(&PPU, &APU, &mut Joypad) + 'cl,
     {
         let interrupt = Rc::new(RefCell::new(InterruptImpl::new()));
         let interrupt_cpu = interrupt.clone();
@@ -72,6 +73,7 @@ impl<'call> NES<'call> {
 mod test {
     use clap::error::Result;
 
+    use crate::apu::APU;
     use crate::io::joypad::Joypad;
     use crate::ppu::PPU;
     use crate::rom::{self, Rom};
@@ -114,7 +116,7 @@ mod test {
         let mut nes = NES::new(
             rom,
             Arc::clone(&halt),
-            |_ppu: &PPU, _joypad: &mut Joypad| {},
+            |_ppu: &PPU, apu: &APU, _joypad: &mut Joypad| {},
         );
         let mut result: Vec<String> = Vec::new();
 
@@ -173,7 +175,7 @@ mod test {
         let mut nes = NES::new(
             rom,
             Arc::clone(&halt),
-            |_ppu: &PPU, _joypad: &mut Joypad| {},
+            |_ppu: &PPU, apu: &APU, _joypad: &mut Joypad| {},
         );
         let mut result: Vec<String> = Vec::new();
 
@@ -218,7 +220,7 @@ mod test {
         let mut nes = NES::new(
             nestest_rom(),
             Arc::clone(&halt),
-            |_ppu: &PPU, _joypad: &mut Joypad| {},
+            |_ppu: &PPU, apu: &APU, _joypad: &mut Joypad| {},
         );
         let mut result: Vec<String> = Vec::new();
         let nes_test_log = nestest_log();

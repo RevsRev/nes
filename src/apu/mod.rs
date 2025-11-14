@@ -56,6 +56,10 @@ impl APU {
     pub fn write_to_frame_counter(&mut self, data: u8) -> u8 {
         self.frame.write(data)
     }
+
+    pub fn output(&self) -> f32 {
+        self.mixer.output
+    }
 }
 
 impl Tick for APU {
@@ -76,6 +80,8 @@ impl Tick for APU {
             if self.status.triangle_enabled() {
                 self.triangle.decrement_timer();
             }
+            self.mixer
+                .output(self.pulse_1.getOut(), self.pulse_2.getOut());
         }
 
         self.sequencer_cycles = self.sequencer_cycles.wrapping_add(num_apu_cycles);

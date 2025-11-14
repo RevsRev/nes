@@ -1,12 +1,17 @@
 use std::{
     collections::HashMap,
-    fmt,
+    f32::consts::PI,
+    fmt::{self, Debug},
     fs::File,
     io::Read,
-    sync::{Arc, atomic::AtomicBool},
+    sync::{Arc, Mutex, atomic::AtomicBool},
 };
 
 use clap::Parser;
+use cpal::{
+    SampleFormat,
+    traits::{DeviceTrait, HostTrait, StreamTrait},
+};
 use io::{
     joypad::{BUTTON_A, BUTTON_B, DOWN, Joypad, LEFT, RIGHT, SELECT, START, UP},
     render::frame::Frame,
@@ -15,6 +20,8 @@ use nes::NES;
 use ppu::PPU;
 use rom::Rom;
 use sdl2::{event::Event, keyboard::Keycode, pixels::PixelFormatEnum};
+
+use crate::{apu::APU, io::audio::sound_frame::SoundFrame};
 
 mod apu;
 mod bus;
@@ -91,37 +98,83 @@ fn main() {
         .unwrap();
 
     let mut frame = Frame::new();
+    let mut event_loop_sound_frame = Arc::new(Mutex::new(SoundFrame::new()));
+    let mut audio_sound_frame = event_loop_sound_frame.clone();
     let halt = Arc::new(AtomicBool::new(false));
-    let mut nes = NES::new(rom, halt, move |ppu: &PPU, joypad: &mut Joypad| {
-        io::render::render(&mut frame, ppu);
+    let mut nes = NES::new(
+        rom,
+        halt,
+        move |ppu: &PPU, apu: &APU, joypad: &mut Joypad| {
+            io::render::render(&mut frame, ppu);
+            io::audio::sound(&mut event_loop_sound_frame, apu);
 
-        texture.update(None, &frame.data, 256 * 3).unwrap();
-        canvas.copy(&texture, None, None).unwrap();
-        canvas.present();
+            texture.update(None, &frame.data, 256 * 3).unwrap();
+            canvas.copy(&texture, None, None).unwrap();
+            canvas.present();
 
-        for event in event_pump.poll_iter() {
-            match event {
-                Event::Quit { .. }
-                | Event::KeyDown {
-                    keycode: Some(Keycode::Escape),
-                    ..
-                } => std::process::exit(0),
-                Event::KeyDown { keycode, .. } => {
-                    if let Some(key) = KEY_MAP.get(&keycode.unwrap_or(Keycode::Ampersand)) {
-                        joypad.set_button_pressed_status(*key, true);
+            for event in event_pump.poll_iter() {
+                match event {
+                    Event::Quit { .. }
+                    | Event::KeyDown {
+                        keycode: Some(Keycode::Escape),
+                        ..
+                    } => std::process::exit(0),
+                    Event::KeyDown { keycode, .. } => {
+                        if let Some(key) = KEY_MAP.get(&keycode.unwrap_or(Keycode::Ampersand)) {
+                            joypad.set_button_pressed_status(*key, true);
+                        }
                     }
-                }
-                Event::KeyUp { keycode, .. } => {
-                    if let Some(key) = KEY_MAP.get(&keycode.unwrap_or(Keycode::Ampersand)) {
-                        joypad.set_button_pressed_status(*key, false);
+                    Event::KeyUp { keycode, .. } => {
+                        if let Some(key) = KEY_MAP.get(&keycode.unwrap_or(Keycode::Ampersand)) {
+                            joypad.set_button_pressed_status(*key, false);
+                        }
                     }
+                    _ => { /* do nothing */ }
                 }
-                _ => { /* do nothing */ }
             }
-        }
-    });
+        },
+    );
 
     nes.set_tracing(args.trace);
+
+    let host = cpal::default_host();
+
+    let device = host
+        .default_output_device()
+        .expect("no output device available");
+
+    let mut supported_configs_range = device
+        .supported_output_configs()
+        .expect("error while querying configs");
+    let supported_config = supported_configs_range
+        .next()
+        .expect("no supported config?!")
+        .with_max_sample_rate();
+
+    let sample_rate = supported_config.sample_rate().0;
+    let freq = 440.0;
+    let mut phase = 0.0;
+
+    let sample_format = supported_config.sample_format();
+    let config = supported_config.into();
+    let stream = match sample_format {
+        SampleFormat::U8 => device.build_output_stream(
+            &config,
+            move |data: &mut [f32], _| {
+                for sample in data {
+                    // *sample = 0.001 * (phase * 2.0 * PI).sin();
+                    // phase = (phase + freq / sample_rate as f32) % 1.0;
+                    *sample = audio_sound_frame.lock().unwrap().output;
+                }
+            },
+            move |err| eprintln!("stream error: {err}"),
+            None,
+        ),
+        sample_format => panic!("Unsupported sample format '{sample_format}'"),
+    }
+    .unwrap();
+
+    stream.play().unwrap();
 
     let result = nes.run_with_callback(move |cpu| {
         // handle_user_input(cpu, &mut event_pump);

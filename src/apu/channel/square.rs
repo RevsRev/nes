@@ -118,8 +118,7 @@ impl SquareChannel {
         self.timerl = (next_time & 0xFF) as u8;
         self.len_timerh = self.len_timerh & (0b1111_1000 | ((next_time >> 8) as u8));
 
-        //TODO - look up the duty cycle (an 8 bit cycle) and send to the mixer
-        let duty = (self.envelope.data & 0b1100_0000 >> 6);
+        let duty = self.envelope.data & 0b1100_0000 >> 6;
         self.out = DUTY_PATTERNS[duty as usize][self.sequence_step as usize];
     }
 }

@@ -7,6 +7,11 @@ const ENVELOPE_LENGTH_COUNTER_HALT: u8 = 0b0010_0000;
 const ENVELOPE_DUTY_1: u8 = 0b0100_0000;
 const ENVELOPE_DUTY_2: u8 = 0b1000_0001;
 
+const VOLUME_SELECTOR: u8 = ENVELOPE_VOL_OR_ENV_DIVIDER_1
+    | ENVELOPE_VOL_OR_ENV_DIVIDER_2
+    | ENVELOPE_VOL_OR_ENV_DIVIDER_3
+    | ENVELOPE_VOL_OR_ENV_DIVIDER_4;
+
 const SWEEP_SHIFT_COUNT_0: u8 = 0b0000_0001;
 const SWEEP_SHIFT_COUNT_1: u8 = 0b0000_0010;
 const SWEEP_SHIFT_COUNT_2: u8 = 0b0000_0100;
@@ -119,6 +124,7 @@ impl SquareChannel {
         self.len_timerh = self.len_timerh & (0b1111_1000 | ((next_time >> 8) as u8));
 
         let duty = self.envelope.data & 0b1100_0000 >> 6;
-        self.out = DUTY_PATTERNS[duty as usize][self.sequence_step as usize];
+        self.out = (self.envelope.data & VOLUME_SELECTOR)
+            * DUTY_PATTERNS[duty as usize][self.sequence_step as usize];
     }
 }

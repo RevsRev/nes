@@ -116,7 +116,7 @@ mod test {
         let mut nes = NES::new(
             rom,
             Arc::clone(&halt),
-            |_ppu: &PPU, apu: &APU, _joypad: &mut Joypad| {},
+            |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
         );
         let mut result: Vec<String> = Vec::new();
 
@@ -175,7 +175,7 @@ mod test {
         let mut nes = NES::new(
             rom,
             Arc::clone(&halt),
-            |_ppu: &PPU, apu: &APU, _joypad: &mut Joypad| {},
+            |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
         );
         let mut result: Vec<String> = Vec::new();
 
@@ -220,7 +220,7 @@ mod test {
         let mut nes = NES::new(
             nestest_rom(),
             Arc::clone(&halt),
-            |_ppu: &PPU, apu: &APU, _joypad: &mut Joypad| {},
+            |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
         );
         let mut result: Vec<String> = Vec::new();
         let nes_test_log = nestest_log();

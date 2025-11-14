@@ -102,7 +102,7 @@ impl SquareChannel {
         old_value
     }
 
-    pub fn getOut(&mut self) -> u8 {
+    pub fn get_out(&mut self) -> u8 {
         self.out
     }
 

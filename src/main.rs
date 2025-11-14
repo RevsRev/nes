@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    f32::consts::PI,
     fmt::{self, Debug},
     fs::File,
     io::Read,
@@ -99,7 +98,7 @@ fn main() {
 
     let mut frame = Frame::new();
     let mut event_loop_sound_frame = Arc::new(Mutex::new(SoundFrame::new()));
-    let mut audio_sound_frame = event_loop_sound_frame.clone();
+    let audio_sound_frame = event_loop_sound_frame.clone();
     let halt = Arc::new(AtomicBool::new(false));
     let mut nes = NES::new(
         rom,
@@ -151,10 +150,6 @@ fn main() {
         .expect("no supported config?!")
         .with_max_sample_rate();
 
-    let sample_rate = supported_config.sample_rate().0;
-    let freq = 440.0;
-    let mut phase = 0.0;
-
     let sample_format = supported_config.sample_format();
     let config = supported_config.into();
     let stream = match sample_format {
@@ -162,8 +157,6 @@ fn main() {
             &config,
             move |data: &mut [f32], _| {
                 for sample in data {
-                    // *sample = 0.001 * (phase * 2.0 * PI).sin();
-                    // phase = (phase + freq / sample_rate as f32) % 1.0;
                     *sample = audio_sound_frame.lock().unwrap().output;
                 }
             },
@@ -176,38 +169,7 @@ fn main() {
 
     stream.play().unwrap();
 
-    let result = nes.run_with_callback(move |cpu| {
-        // handle_user_input(cpu, &mut event_pump);
-
-        // if args.debug {
-        //     for event in event_pump.wait_iter() {
-        //         if let Event::KeyDown {
-        //             keycode: Some(Keycode::Return),
-        //             ..
-        //         } = event
-        //         {
-        //             return;
-        //         }
-        //
-        //         if let Event::Quit { .. }
-        //         | Event::KeyDown {
-        //             keycode: Some(Keycode::Escape),
-        //             ..
-        //         } = event
-        //         {
-        //             std::process::exit(0)
-        //         }
-        //     }
-        // }
-
-        // if read_screen_state(cpu, &mut screen_state) {
-        //     texture.update(None, &screen_state, 32 * 3).unwrap();
-        //     canvas.copy(&texture, None, None).unwrap();
-        //     canvas.present();
-        // }
-
-        // ::std::thread::sleep(std::time::Duration::new(0, 70_000));
-    });
+    let result = nes.run_with_callback(move |_| {});
 
     match result {
         Ok(_) => {}

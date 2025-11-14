@@ -9,7 +9,7 @@ use crate::{
         registers::{frame::FrameCounter, status::Status},
     },
     interrupt::{Interrupt, InterruptImpl},
-    traits::{mem::Mem, tick::Tick},
+    traits::tick::Tick,
 };
 
 pub mod channel;
@@ -81,7 +81,7 @@ impl Tick for APU {
                 self.triangle.decrement_timer();
             }
             self.mixer
-                .output(self.pulse_1.getOut(), self.pulse_2.getOut());
+                .output(self.pulse_1.get_out(), self.pulse_2.get_out());
         }
 
         self.sequencer_cycles = self.sequencer_cycles.wrapping_add(num_apu_cycles);

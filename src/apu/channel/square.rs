@@ -67,6 +67,10 @@ pub struct SquareChannel {
     timerl: u8,
     len_timerh: u8,
     sequence_step: u8,
+    decay_counter: u8,
+    divider: u8,
+
+    start_flag: bool,
 
     last_timerl: u8,
     last_timerh: u8,
@@ -81,6 +85,9 @@ impl SquareChannel {
             timerl: 0,
             len_timerh: 0,
             sequence_step: 0,
+            decay_counter: 0,
+            start_flag: false,
+            divider: 0,
             last_timerl: 0xFF,
             last_timerh: 0xFF,
             out: 0,
@@ -126,7 +133,33 @@ impl SquareChannel {
         self.len_timerh = self.len_timerh & (0b1111_1000 | ((next_time >> 8) as u8));
 
         let duty = self.envelope.data & ENVELOPE_DUTY_SELECTOR >> 6;
-        self.out = (self.envelope.data & VOLUME_SELECTOR)
-            * DUTY_PATTERNS[duty as usize][self.sequence_step as usize];
+        let volume = match self.envelope.data & ENVELOPE_CONST_VOL_OR_ENV_FLAG
+            == ENVELOPE_CONST_VOL_OR_ENV_FLAG
+        {
+            true => self.envelope.data & VOLUME_SELECTOR,
+            false => self.decay_counter,
+        };
+        self.out = volume * DUTY_PATTERNS[duty as usize][self.sequence_step as usize];
+    }
+
+    pub fn frame_clock(&mut self) {
+        if self.start_flag {
+            self.divider = self.envelope.data & VOLUME_SELECTOR;
+            self.decay_counter = 15;
+            self.start_flag = false;
+        }
+
+        if self.divider == 0 {
+            self.divider = self.envelope.data & VOLUME_SELECTOR;
+            if self.decay_counter != 0 {
+                self.decay_counter = self.decay_counter - 1;
+            } else if self.envelope.data & ENVELOPE_LENGTH_COUNTER_HALT
+                == ENVELOPE_LENGTH_COUNTER_HALT
+            {
+                self.decay_counter = 15;
+            }
+        } else {
+            self.divider = self.divider - 1;
+        }
     }
 }

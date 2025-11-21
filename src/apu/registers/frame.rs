@@ -35,7 +35,7 @@ impl FrameCounter {
             || self.apu_cycles == 7456
             || self.apu_cycles == 11185
             || self.apu_cycles == 14914;
-        if self.apu_cycles == 14914 {
+        if self.apu_cycles >= 14914 {
             self.apu_cycles = 0;
         }
         emit_clock
@@ -49,7 +49,7 @@ impl FrameCounter {
             || self.apu_cycles == 11185
             || self.apu_cycles == 14914
             || self.apu_cycles == 18640;
-        if self.apu_cycles == 18640 {
+        if self.apu_cycles >= 18640 {
             self.apu_cycles = 0;
         }
         emit_clock

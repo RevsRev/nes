@@ -69,6 +69,13 @@ impl Tick for APU {
         self.cpu_cycles = self.cpu_cycles.wrapping_add(cycles);
 
         for _ in 0..num_apu_cycles {
+            let emit_clock = self.frame.clock();
+
+            if emit_clock {
+                self.pulse_1.frame_clock();
+                self.pulse_2.frame_clock();
+            }
+
             if self.status.pulse_1_enabled() {
                 self.pulse_1.decrement_timer();
             }

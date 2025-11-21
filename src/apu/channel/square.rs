@@ -120,6 +120,9 @@ impl SquareChannel {
         self.out
     }
 
+    //TODO - Length counter stuff is incorrect - need to be looking up the value from a lookup table,
+    //etc...
+
     pub fn decrement_timer(&mut self) {
         let time = (((self.len_timerh & 0b0000_0111) as u16) << 8) | (self.timerl as u16);
         let next_time = if time == 0 {

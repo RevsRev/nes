@@ -1,3 +1,5 @@
+use crate::apu::mixer;
+
 const ENVELOPE_VOL_OR_ENV_DIVIDER_1: u8 = 0b0000_0001;
 const ENVELOPE_VOL_OR_ENV_DIVIDER_2: u8 = 0b0000_0010;
 const ENVELOPE_VOL_OR_ENV_DIVIDER_4: u8 = 0b0000_0100;
@@ -67,17 +69,70 @@ pub const LENGTH_TABLE: [u8; 32] = [
 
 pub struct Sweep {
     data: u8,
+    enabled: bool,
+    divider: u8,
+    negate_flag: bool,
+    shift_count: u8,
+    divider_counter: u8,
+    reload_flag: bool,
 }
 
 impl Sweep {
     pub fn new() -> Self {
-        Sweep { data: 0xFF }
+        Sweep {
+            data: 0,
+            enabled: true,
+            divider: 0,
+            negate_flag: false,
+            shift_count: 0,
+            divider_counter: 0,
+            reload_flag: false,
+        }
     }
 
     pub fn write(&mut self, data: u8) -> u8 {
         let old_val = self.data;
         self.data = data;
+
+        self.enabled = data & 0b1000_0000 == 0b1000_0000;
+        self.divider = data & (0b0111_0000) >> 4;
+        self.negate_flag = data & 0b0000_1000 == 0b0000_1000;
+        self.shift_count = data & 0b0000_0111;
+
+        self.reload_flag = true;
+
         old_val
+    }
+
+    pub fn on_frame(&mut self, current_period: u16) -> u16 {
+        let sign: i16 = match self.negate_flag {
+            true => -1,
+            false => 1,
+        };
+
+        let change_amount: i16 = sign * ((current_period >> self.shift_count) as i16);
+        let target_period: u16 = (current_period as i16)
+            .wrapping_add(change_amount)
+            .clamp(0, 0b0000_0111_1111_1111)
+            .try_into()
+            .unwrap();
+
+        let muting = target_period > 0x7FF || current_period < 8;
+
+        if self.divider_counter == 0 && self.enabled && self.shift_count != 0 {
+            if !muting {
+                return target_period;
+            }
+        }
+
+        if self.divider_counter == 0 && self.reload_flag {
+            self.divider_counter = self.divider;
+        }
+
+        if self.divider != 0 {
+            self.divider_counter = self.divider_counter - 1;
+        }
+        return current_period;
     }
 }
 pub struct Envelope {
@@ -173,7 +228,7 @@ impl SquareChannel {
     //etc...
 
     pub fn decrement_timer(&mut self) {
-        let time = ((self.timer_HHH as u16) << 7) | (self.timer_lll_llll as u16);
+        let time = self.get_time();
         let next_time = if time == 0 {
             self.sequence_step = (self.sequence_step + 1) % 8;
             0b0000_0111_1111_1111
@@ -181,8 +236,7 @@ impl SquareChannel {
             time - 1
         };
 
-        self.timer_lll_llll = (next_time & 0b0111_1111) as u8;
-        self.timer_HHH = ((next_time >> 7) & 0b0000_0111) as u8;
+        self.set_time(next_time);
 
         if self.length_counter == 0 {
             self.out = 0;
@@ -199,6 +253,15 @@ impl SquareChannel {
         self.out = volume * DUTY_PATTERNS[duty as usize][self.sequence_step as usize];
     }
 
+    fn get_time(&self) -> u16 {
+        ((self.timer_HHH as u16) << 7) | (self.timer_lll_llll as u16)
+    }
+
+    fn set_time(&mut self, time: u16) {
+        self.timer_lll_llll = (time & 0b0111_1111) as u8;
+        self.timer_HHH = (time & 0b0000_0111) as u8;
+    }
+
     pub fn frame_clock(&mut self) {
         if self.length_counter != 0 && !self.timer_halt {
             self.length_counter = self.length_counter - 1;
@@ -209,6 +272,10 @@ impl SquareChannel {
             self.decay_counter = 15;
             self.start_flag = false;
         }
+
+        let time = self.get_time();
+        let next_time = self.sweep.on_frame(time);
+        self.set_time(next_time);
 
         if self.divider == 0 {
             self.divider = self.envelope.data & VOLUME_SELECTOR;

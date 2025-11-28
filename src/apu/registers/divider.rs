@@ -19,6 +19,14 @@ impl Divider {
         self.counter = self.counter - 1;
         return false;
     }
+
+    pub fn reset_counter(&mut self) {
+        self.counter = 0;
+    }
+
+    pub fn reset_reload_value(&mut self, reload_value: u8) {
+        self.reload_value = reload_value;
+    }
 }
 
 #[cfg(test)]
@@ -38,5 +46,37 @@ mod test {
         assert!(!divider.clock());
         assert!(!divider.clock());
         assert!(divider.clock());
+    }
+
+    #[test]
+    pub fn should_reset_counter() {
+        let mut divider = Divider::new(3);
+
+        assert!(divider.clock());
+        assert!(!divider.clock());
+        divider.reset_counter();
+
+        assert!(divider.clock());
+        assert!(!divider.clock());
+        assert!(!divider.clock());
+        assert!(!divider.clock());
+        assert!(divider.clock());
+    }
+
+    #[test]
+    pub fn should_reset_reload_value() {
+        let mut divider = Divider::new(3);
+
+        assert!(divider.clock());
+
+        divider.reset_reload_value(1);
+
+        assert!(!divider.clock());
+        assert!(!divider.clock());
+        assert!(!divider.clock());
+        assert!(divider.clock());
+        assert!(!divider.clock());
+        assert!(divider.clock());
+        assert!(!divider.clock());
     }
 }

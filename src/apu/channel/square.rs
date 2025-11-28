@@ -1,4 +1,4 @@
-use crate::apu::mixer;
+use crate::apu::{mixer, registers::divider::Divider};
 
 const ENVELOPE_VOL_OR_ENV_DIVIDER_1: u8 = 0b0000_0001;
 const ENVELOPE_VOL_OR_ENV_DIVIDER_2: u8 = 0b0000_0010;
@@ -70,10 +70,9 @@ pub const LENGTH_TABLE: [u8; 32] = [
 pub struct Sweep {
     data: u8,
     enabled: bool,
-    divider: u8,
+    divider: Divider,
     negate_flag: bool,
     shift_count: u8,
-    divider_counter: u8,
     reload_flag: bool,
 }
 
@@ -82,10 +81,9 @@ impl Sweep {
         Sweep {
             data: 0,
             enabled: true,
-            divider: 0,
+            divider: Divider::new(0),
             negate_flag: false,
             shift_count: 0,
-            divider_counter: 0,
             reload_flag: false,
         }
     }
@@ -95,7 +93,7 @@ impl Sweep {
         self.data = data;
 
         self.enabled = data & 0b1000_0000 == 0b1000_0000;
-        self.divider = data & (0b0111_0000) >> 4;
+        self.divider.reset_reload_value(data & (0b0111_0000) >> 4);
         self.negate_flag = data & 0b0000_1000 == 0b0000_1000;
         self.shift_count = data & 0b0000_0111;
 
@@ -105,6 +103,8 @@ impl Sweep {
     }
 
     pub fn on_frame(&mut self, current_period: u16) -> u16 {
+        let clocked = self.divider.clock();
+
         let sign: i16 = match self.negate_flag {
             true => -1,
             false => 1,
@@ -119,19 +119,18 @@ impl Sweep {
 
         let muting = target_period > 0x7FF || current_period < 8;
 
-        if self.divider_counter == 0 && self.enabled && self.shift_count != 0 {
+        if clocked && self.enabled && self.shift_count != 0 {
             if !muting {
                 return target_period;
             }
         }
 
-        if self.divider_counter == 0 && self.reload_flag {
-            self.divider_counter = self.divider;
+        if self.reload_flag {
+            self.divider
+                .reset_reload_value(self.data & (0b0111_0000) >> 4);
+            self.reload_flag = false;
         }
 
-        if self.divider != 0 {
-            self.divider_counter = self.divider_counter - 1;
-        }
         return current_period;
     }
 }

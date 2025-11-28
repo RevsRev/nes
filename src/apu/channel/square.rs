@@ -74,6 +74,8 @@ pub struct Sweep {
     negate_flag: bool,
     shift_count: u8,
     reload_flag: bool,
+
+    muted: bool,
 }
 
 impl Sweep {
@@ -85,6 +87,8 @@ impl Sweep {
             negate_flag: false,
             shift_count: 0,
             reload_flag: false,
+
+            muted: false,
         }
     }
 
@@ -93,7 +97,7 @@ impl Sweep {
         self.data = data;
 
         self.enabled = data & 0b1000_0000 == 0b1000_0000;
-        self.divider.reset_reload_value(data & (0b0111_0000) >> 4);
+        // self.divider.reset_reload_value(data & (0b0111_0000) >> 4);
         self.negate_flag = data & 0b0000_1000 == 0b0000_1000;
         self.shift_count = data & 0b0000_0111;
 
@@ -117,10 +121,10 @@ impl Sweep {
             .try_into()
             .unwrap();
 
-        let muting = target_period > 0x7FF || current_period < 8;
+        self.muted = target_period > 0x7FF || current_period < 8;
 
         if clocked && self.enabled && self.shift_count != 0 {
-            if !muting {
+            if !self.muted {
                 return target_period;
             }
         }
@@ -220,7 +224,10 @@ impl SquareChannel {
     }
 
     pub fn get_out(&mut self) -> u8 {
-        self.out
+        match self.sweep.muted {
+            true => 0,
+            false => self.out,
+        }
     }
 
     //TODO - Length counter stuff is incorrect - need to be looking up the value from a lookup table,

@@ -98,6 +98,10 @@ impl Envelope {
         }
     }
 
+    pub fn duty(&self) -> u8 {
+        self.data & ENVELOPE_DUTY_SELECTOR >> 6
+    }
+
     pub fn frame_clock(&mut self) {
         if self.start_flag {
             self.divider
@@ -107,6 +111,8 @@ impl Envelope {
         }
 
         if self.divider.clock() {
+            self.divider
+                .reset_reload_value((self.data & VOLUME_SELECTOR) as u16);
             if self.decay_counter != 0 {
                 self.decay_counter = self.decay_counter - 1;
             } else if self.data & ENVELOPE_LENGTH_COUNTER_HALT == ENVELOPE_LENGTH_COUNTER_HALT {
@@ -191,7 +197,7 @@ impl SquareChannel {
             return;
         }
 
-        let duty = self.envelope.data & ENVELOPE_DUTY_SELECTOR >> 6;
+        let duty = self.envelope.duty();
         let volume = self.envelope.volume();
         self.out = volume * DUTY_PATTERNS[duty as usize][self.sequence_step as usize];
     }

@@ -69,11 +69,15 @@ pub const LENGTH_TABLE: [u8; 32] = [
 
 pub struct Envelope {
     data: u8,
+    divider: Divider,
 }
 
 impl Envelope {
     pub fn new() -> Self {
-        Envelope { data: 0xFF }
+        Envelope {
+            data: 0xFF,
+            divider: Divider::new(0),
+        }
     }
 
     pub fn write(&mut self, data: u8) -> u8 {
@@ -88,9 +92,7 @@ pub struct SquareChannel {
     sweep: Sweep,
     sequence_step: u8,
     decay_counter: u8,
-    divider: u8,
 
-    length_counter_halt: bool,
     timer: Divider,
     length_counter_idx: u8,
     length_counter: u8,
@@ -110,9 +112,7 @@ impl SquareChannel {
             sequence_step: 0,
             decay_counter: 0,
             start_flag: false,
-            divider: 0,
             timer: Divider::new(0),
-            length_counter_halt: false,
             length_counter_idx: 0,
             length_counter: 0,
             last_timerl: 0xFF,
@@ -122,8 +122,6 @@ impl SquareChannel {
     }
 
     pub fn write_to_envelope(&mut self, data: u8) -> u8 {
-        self.length_counter_halt =
-            data & ENVELOPE_LENGTH_COUNTER_HALT == ENVELOPE_LENGTH_COUNTER_HALT;
         self.envelope.write(data)
     }
 
@@ -192,12 +190,16 @@ impl SquareChannel {
     }
 
     pub fn frame_clock(&mut self) {
-        if self.length_counter != 0 && !self.length_counter_halt {
+        if self.length_counter != 0
+            && !(self.envelope.data & ENVELOPE_LENGTH_COUNTER_HALT == ENVELOPE_LENGTH_COUNTER_HALT)
+        {
             self.length_counter = self.length_counter - 1;
         }
 
         if self.start_flag {
-            self.divider = self.envelope.data & VOLUME_SELECTOR;
+            self.envelope
+                .divider
+                .reset_reload_value((self.envelope.data & VOLUME_SELECTOR) as u16);
             self.decay_counter = 15;
             self.start_flag = false;
         }
@@ -206,8 +208,7 @@ impl SquareChannel {
         let next_time = self.sweep.on_frame(time);
         self.set_time(next_time);
 
-        if self.divider == 0 {
-            self.divider = self.envelope.data & VOLUME_SELECTOR;
+        if self.envelope.divider.clock() {
             if self.decay_counter != 0 {
                 self.decay_counter = self.decay_counter - 1;
             } else if self.envelope.data & ENVELOPE_LENGTH_COUNTER_HALT
@@ -215,8 +216,6 @@ impl SquareChannel {
             {
                 self.decay_counter = 15;
             }
-        } else {
-            self.divider = self.divider - 1;
         }
     }
 }

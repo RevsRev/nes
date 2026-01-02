@@ -122,6 +122,8 @@ impl SquareChannel {
     }
 
     pub fn write_to_envelope(&mut self, data: u8) -> u8 {
+        self.length_counter_halt =
+            data & ENVELOPE_LENGTH_COUNTER_HALT == ENVELOPE_LENGTH_COUNTER_HALT;
         self.envelope.write(data)
     }
 
@@ -130,29 +132,23 @@ impl SquareChannel {
     }
 
     pub fn write_to_timerl(&mut self, data: u8) -> u8 {
-        let halt_flag = match self.length_counter_halt {
-            true => 0b1000_0000,
-            false => 0b0,
-        };
-        let old_value = ((self.timer.reload_value() as u8) & 0b0111_1111) + halt_flag;
+        let old_value = self.timer.reload_value() as u8;
 
-        let new_reload_value =
-            (self.timer.reload_value() & 0b0000_0011_1000_0000) | ((data & 0b0111_1111) as u16);
+        let new_reload_value = (self.timer.reload_value() & 0b0000_0111_0000_0000) | (data as u16);
 
         self.timer.reset_reload_value(new_reload_value);
 
-        self.length_counter_halt = data & 0b1000_0000 == 0b1000_0000;
         old_value
     }
 
     pub fn write_to_len_timerh(&mut self, data: u8) -> u8 {
-        let timer_h_bits = ((self.timer.reload_value() & 0b0000_0011_1000_000) >> 7) as u8;
+        let timer_h_bits = ((self.timer.reload_value() & 0b0000_0111_0000_000) >> 8) as u8;
         let old_value = self.length_counter_idx | timer_h_bits;
 
         self.length_counter_idx = (data & 0b1111_1000) >> 3;
 
         let new_reload_value = (self.timer.reload_value() & 0b0000_0000_0111_1111)
-            | (((data & 0b0000_0111) as u16) << 7);
+            | (((data & 0b0000_0111) as u16) << 8);
         self.timer.reset_reload_value(new_reload_value);
 
         self.length_counter = LENGTH_TABLE[self.length_counter_idx as usize];

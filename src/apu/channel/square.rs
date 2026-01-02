@@ -90,7 +90,7 @@ pub struct SquareChannel {
     decay_counter: u8,
     divider: u8,
 
-    timer_halt: bool,
+    length_counter_halt: bool,
     timer: Divider,
     length_counter_idx: u8,
     length_counter: u8,
@@ -112,7 +112,7 @@ impl SquareChannel {
             start_flag: false,
             divider: 0,
             timer: Divider::new(0),
-            timer_halt: false,
+            length_counter_halt: false,
             length_counter_idx: 0,
             length_counter: 0,
             last_timerl: 0xFF,
@@ -130,7 +130,7 @@ impl SquareChannel {
     }
 
     pub fn write_to_timerl(&mut self, data: u8) -> u8 {
-        let halt_flag = match self.timer_halt {
+        let halt_flag = match self.length_counter_halt {
             true => 0b1000_0000,
             false => 0b0,
         };
@@ -141,7 +141,7 @@ impl SquareChannel {
 
         self.timer.reset_reload_value(new_reload_value);
 
-        self.timer_halt = data & 0b1000_0000 == 0b1000_0000;
+        self.length_counter_halt = data & 0b1000_0000 == 0b1000_0000;
         old_value
     }
 
@@ -196,7 +196,7 @@ impl SquareChannel {
     }
 
     pub fn frame_clock(&mut self) {
-        if self.length_counter != 0 && !self.timer_halt {
+        if self.length_counter != 0 && !self.length_counter_halt {
             self.length_counter = self.length_counter - 1;
         }
 

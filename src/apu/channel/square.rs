@@ -134,7 +134,7 @@ impl SquareChannel {
     pub fn write_to_timerl(&mut self, data: u8) -> u8 {
         let old_value = match self.timer_halt {
             true => 0b1000_0000 | self.timer_lll_llll,
-            false => 0b0111_111 & self.timer_lll_llll,
+            false => 0b0111_1111 & self.timer_lll_llll,
         };
         self.timer_lll_llll = data & 0b0111_1111;
         self.timer_halt = data & 0b1000_0000 == 0b1000_0000;

@@ -20,6 +20,10 @@ impl Divider {
         return false;
     }
 
+    pub fn reload_value(&self) -> u16 {
+        self.reload_value
+    }
+
     pub fn reset_counter(&mut self) {
         self.counter = 0;
     }

@@ -91,8 +91,7 @@ pub struct SquareChannel {
     divider: u8,
 
     timer_halt: bool,
-    timer_lll_llll: u8,
-    timer_HHH: u8,
+    timer: Divider,
     length_counter_idx: u8,
     length_counter: u8,
 
@@ -112,9 +111,8 @@ impl SquareChannel {
             decay_counter: 0,
             start_flag: false,
             divider: 0,
+            timer: Divider::new(0),
             timer_halt: false,
-            timer_lll_llll: 0,
-            timer_HHH: 0,
             length_counter_idx: 0,
             length_counter: 0,
             last_timerl: 0xFF,
@@ -132,20 +130,30 @@ impl SquareChannel {
     }
 
     pub fn write_to_timerl(&mut self, data: u8) -> u8 {
-        let old_value = match self.timer_halt {
-            true => 0b1000_0000 | self.timer_lll_llll,
-            false => 0b0111_1111 & self.timer_lll_llll,
+        let halt_flag = match self.timer_halt {
+            true => 0b1000_0000,
+            false => 0b0,
         };
-        self.timer_lll_llll = data & 0b0111_1111;
+        let old_value = ((self.timer.reload_value() as u8) & 0b0111_1111) + halt_flag;
+
+        let new_reload_value =
+            (self.timer.reload_value() & 0b0000_0011_1000_0000) | ((data & 0b0111_1111) as u16);
+
+        self.timer.reset_reload_value(new_reload_value);
+
         self.timer_halt = data & 0b1000_0000 == 0b1000_0000;
         old_value
     }
 
     pub fn write_to_len_timerh(&mut self, data: u8) -> u8 {
-        let old_value = self.length_counter_idx | self.timer_HHH;
+        let timer_h_bits = ((self.timer.reload_value() & 0b0000_0011_1000_000) >> 7) as u8;
+        let old_value = self.length_counter_idx | timer_h_bits;
 
         self.length_counter_idx = (data & 0b1111_1000) >> 3;
-        self.timer_HHH = data & 0b0000_0111;
+
+        let new_reload_value = (self.timer.reload_value() & 0b0000_0000_0111_1111)
+            | (((data & 0b0000_0111) as u16) << 7);
+        self.timer.reset_reload_value(new_reload_value);
 
         self.length_counter = LENGTH_TABLE[self.length_counter_idx as usize];
 
@@ -163,15 +171,9 @@ impl SquareChannel {
     //etc...
 
     pub fn decrement_timer(&mut self) {
-        let time = self.get_time();
-        let next_time = if time == 0 {
+        if self.timer.clock() {
             self.sequence_step = (self.sequence_step + 1) % 8;
-            0b0000_0111_1111_1111
-        } else {
-            time - 1
-        };
-
-        self.set_time(next_time);
+        }
 
         if self.length_counter == 0 {
             self.out = 0;
@@ -189,12 +191,11 @@ impl SquareChannel {
     }
 
     fn get_time(&self) -> u16 {
-        ((self.timer_HHH as u16) << 7) | (self.timer_lll_llll as u16)
+        self.timer.reload_value()
     }
 
     fn set_time(&mut self, time: u16) {
-        self.timer_lll_llll = (time & 0b0111_1111) as u8;
-        self.timer_HHH = (time & 0b0000_0111) as u8;
+        self.timer.reset_reload_value(time);
     }
 
     pub fn frame_clock(&mut self) {

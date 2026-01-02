@@ -64,7 +64,7 @@ impl Sweep {
 
         if self.reload_flag {
             self.divider
-                .reset_reload_value(self.data & (0b0111_0000) >> 4);
+                .reset_reload_value((self.data & (0b0111_0000) >> 4) as u16);
             self.reload_flag = false;
         }
 

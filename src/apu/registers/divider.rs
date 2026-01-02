@@ -1,10 +1,10 @@
 pub struct Divider {
-    counter: u8,
-    reload_value: u8,
+    counter: u16,
+    reload_value: u16,
 }
 
 impl Divider {
-    pub fn new(reload_value: u8) -> Self {
+    pub fn new(reload_value: u16) -> Self {
         Divider {
             counter: 0,
             reload_value: reload_value,
@@ -24,7 +24,7 @@ impl Divider {
         self.counter = 0;
     }
 
-    pub fn reset_reload_value(&mut self, reload_value: u8) {
+    pub fn reset_reload_value(&mut self, reload_value: u16) {
         self.reload_value = reload_value;
     }
 }

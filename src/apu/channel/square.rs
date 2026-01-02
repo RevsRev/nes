@@ -161,14 +161,11 @@ impl SquareChannel {
     }
 
     pub fn get_out(&mut self) -> u8 {
-        match self.sweep.is_muted() {
+        match self.sweep.is_muted() || self.timer.reload_value() < 8 {
             true => 0,
             false => self.out,
         }
     }
-
-    //TODO - Length counter stuff is incorrect - need to be looking up the value from a lookup table,
-    //etc...
 
     pub fn decrement_timer(&mut self) {
         if self.timer.clock() {

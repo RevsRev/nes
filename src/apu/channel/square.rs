@@ -122,6 +122,7 @@ impl SquareChannel {
     }
 
     pub fn write_to_envelope(&mut self, data: u8) -> u8 {
+        self.start_flag = true;
         self.envelope.write(data)
     }
 

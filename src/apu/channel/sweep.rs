@@ -14,7 +14,7 @@ pub struct Sweep {
 impl Sweep {
     pub fn new() -> Self {
         Sweep {
-            data: 0,
+            data: 0xFF,
             enabled: true,
             divider: Divider::new(0),
             negate_flag: false,

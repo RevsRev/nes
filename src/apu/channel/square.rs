@@ -140,8 +140,8 @@ impl SquareChannel {
             envelope: Envelope::new(),
             sweep: Sweep::new(),
             sequence_step: 0,
-            timer: Divider::new(0),
-            length_counter_idx: 0,
+            timer: Divider::new(0xFFFF),
+            length_counter_idx: 0xFF,
             length_counter: 0,
             out: 0,
         }

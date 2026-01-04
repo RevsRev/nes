@@ -29,6 +29,7 @@ pub struct Rom {
     pub chr_rom: Vec<u8>,
     pub mapper: u8,
     pub screen_mirroring: Mirroring,
+    allow_chr_writes: bool,
 }
 
 impl fmt::Display for Rom {
@@ -74,11 +75,19 @@ impl Rom {
         let prg_rom_start = 16 + if skip_trainer { 512 } else { 0 };
         let chr_rom_start = prg_rom_start + prg_rom_size;
 
+        let allow_chr_rom_writes = chr_rom_size == 0;
+        let chr_rom = if chr_rom_size > 0 {
+            raw[chr_rom_start..(chr_rom_start + chr_rom_size)].to_vec()
+        } else {
+            vec![0; 8 * 1024] //chr_ram
+        };
+
         Ok(Rom {
             prg_rom: raw[prg_rom_start..(prg_rom_start + prg_rom_size)].to_vec(),
-            chr_rom: raw[chr_rom_start..(chr_rom_start + chr_rom_size)].to_vec(),
+            chr_rom: chr_rom,
             mapper: mapper,
             screen_mirroring: screen_mirroring,
+            allow_chr_writes: allow_chr_rom_writes,
         })
     }
 
@@ -98,6 +107,16 @@ impl Rom {
             Ok(r) => r,
             Err(s) => panic!("{}", s),
         }
+    }
+
+    pub fn write_to_chr_rom(&mut self, addr: usize, data: u8) -> u8 {
+        if !self.allow_chr_writes {
+            panic!("Attempt to write to chr rom space {:#04X}", addr);
+        }
+
+        let retval = self.chr_rom[addr];
+        self.chr_rom[addr] = data;
+        retval
     }
 }
 

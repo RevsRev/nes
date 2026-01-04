@@ -28,7 +28,10 @@ fn render_background(frame: &mut Frame, ppu: &PPU) {
     let scroll_x = (ppu.scroll.scroll_x) as usize;
     let scroll_y = (ppu.scroll.scroll_y) as usize;
 
-    let (main_nametable, second_nametable) = match (&ppu.mirroring, ppu.ctl.nametable_address()) {
+    let (main_nametable, second_nametable) = match (
+        &ppu.rom.borrow().screen_mirroring,
+        ppu.ctl.nametable_address(),
+    ) {
         (Mirroring::Vertical, 0x2000)
         | (Mirroring::Vertical, 0x2800)
         | (Mirroring::Horizontal, 0x2000)
@@ -37,7 +40,10 @@ fn render_background(frame: &mut Frame, ppu: &PPU) {
         | (Mirroring::Vertical, 0x2C00)
         | (Mirroring::Horizontal, 0x2800)
         | (Mirroring::Horizontal, 0x2C00) => (&ppu.vram[0x400..0x800], &ppu.vram[0..0x400]),
-        (_, _) => panic!("Unsupported mirroring type {:?}", ppu.mirroring),
+        (_, _) => panic!(
+            "Unsupported mirroring type {:?}",
+            ppu.rom.borrow().screen_mirroring
+        ),
     };
 
     render_name_table(
@@ -85,8 +91,8 @@ fn render_sprites(frame: &mut Frame, ppu: &PPU) {
 
         let bank = ppu.ctl.sprite_pattern_addr();
 
-        let tile =
-            &ppu.chr_rom[(bank + tile_idx * 16) as usize..=(bank + tile_idx * 16 + 15) as usize];
+        let tile = &ppu.rom.borrow().chr_rom
+            [(bank + tile_idx * 16) as usize..=(bank + tile_idx * 16 + 15) as usize];
 
         for y in 0..8 {
             let mut upper = tile[y];
@@ -130,8 +136,8 @@ fn render_name_table(
         let col = i % 32;
         let row = i / 32;
         let tile_idx = name_table[i] as u16;
-        let tile =
-            &ppu.chr_rom[(bank + tile_idx * 16) as usize..=(bank + tile_idx * 16 + 15) as usize];
+        let tile = &ppu.rom.borrow().chr_rom
+            [(bank + tile_idx * 16) as usize..=(bank + tile_idx * 16 + 15) as usize];
         let palette = background_pallette(ppu, attribute_table, col, row);
 
         for y in 0..8 {

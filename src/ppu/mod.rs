@@ -5,18 +5,17 @@ use registers::{mask::MaskRegister, scroll::ScrollRegister, status::StatusRegist
 use crate::{
     interrupt::{Interrupt, InterruptImpl},
     ppu::registers::{addr::AddrRegister, ctl::ControlRegister},
-    rom::Mirroring,
+    rom::{Mirroring, Rom},
     traits::tick::Tick,
 };
 
 pub mod registers;
 
 pub struct PPU {
-    pub chr_rom: Vec<u8>,
+    pub rom: Rc<RefCell<Rom>>,
     pub palette_table: [u8; 32],
     pub vram: [u8; 2048],
     pub oam_data: [u8; 256],
-    pub mirroring: Mirroring,
 
     internal_data_buf: u8,
 
@@ -70,17 +69,12 @@ impl Tick for PPU {
 }
 
 impl PPU {
-    pub fn new(
-        chr_rom: Vec<u8>,
-        mirroring: Mirroring,
-        interrupt: Rc<RefCell<InterruptImpl>>,
-    ) -> Self {
+    pub fn new(rom: Rc<RefCell<Rom>>, interrupt: Rc<RefCell<InterruptImpl>>) -> Self {
         PPU {
-            chr_rom: chr_rom,
+            rom,
             palette_table: [0; 32],
             vram: [0; 2048],
             oam_data: [0; 256],
-            mirroring: mirroring,
 
             internal_data_buf: 0x0000,
 
@@ -106,7 +100,7 @@ impl PPU {
         match addr {
             0x0000..=0x1FFF => {
                 let result = self.internal_data_buf;
-                self.internal_data_buf = self.chr_rom[addr as usize];
+                self.internal_data_buf = self.rom.borrow().chr_rom[addr as usize];
                 Result::Ok(result)
             }
             0x2000..=0x2FFF => {
@@ -127,7 +121,7 @@ impl PPU {
         let addr = self.addr.get();
         match addr {
             0x0000..=0x1FFF => {
-                retval = Result::Err(format!("Attempt to write to chr rom space {:#04X}", addr));
+                retval = Result::Ok(self.rom.borrow_mut().write_to_chr_rom(addr as usize, value));
             }
             0x2000..=0x2FFF => {
                 retval = Result::Ok(self.vram[self.mirror_vram_addr(addr) as usize]);
@@ -159,7 +153,7 @@ impl PPU {
         let mirrored_vram = addr & 0b0010_1111_1111_1111; // mirror down 0x3000-0x3eff to 0x2000 - 0x2eff
         let vram_index = mirrored_vram - 0x2000; // to vram vector
         let name_table = vram_index / 0x400;
-        match (&self.mirroring, name_table) {
+        match (&self.rom.borrow().screen_mirroring, name_table) {
             (Mirroring::Vertical, 2) | (Mirroring::Vertical, 3) => vram_index - 0x800,
             (Mirroring::Horizontal, 2) => vram_index - 0x400,
             (Mirroring::Horizontal, 1) => vram_index - 0x400,
@@ -248,12 +242,41 @@ impl PPU {
 pub mod test {
     use std::{cell::RefCell, rc::Rc};
 
-    use crate::{interrupt::InterruptImpl, ppu::PPU, rom::Mirroring};
+    use crate::{
+        interrupt::InterruptImpl,
+        ppu::PPU,
+        rom::{Mirroring, Rom},
+    };
 
     fn ppu_empty_rom(mirroring: Mirroring) -> PPU {
+        let mirror_byte = match mirroring {
+            Mirroring::Vertical => 0b1,
+            Mirroring::Horizontal => 0b0,
+            Mirroring::FourScreen => 0b1000,
+        };
+
+        //TODO - set mirroring on the rom we create?
+        let rom = Rom::new(&vec![
+            0x4E,
+            0x45,
+            0x53,
+            0x1A,
+            0x00,
+            0x00,
+            mirror_byte,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+        ])
+        .unwrap();
         PPU::new(
-            vec![0; 2048],
-            mirroring,
+            Rc::new(RefCell::new(rom)),
             Rc::new(RefCell::new(InterruptImpl::new())),
         )
     }

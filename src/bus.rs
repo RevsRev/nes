@@ -19,7 +19,7 @@ const ROM_END: u16 = 0xFFFF;
 
 pub struct BusImpl<'call> {
     cpu_vram: [u8; 2048],
-    prg_rom: Vec<u8>,
+    rom: Rc<RefCell<Rom>>,
     pub ppu: PPU,
     pub apu: APU,
     interrupt: Rc<RefCell<InterruptImpl>>,
@@ -39,12 +39,14 @@ impl<'a> BusImpl<'a> {
         let interrupt_ppu = interrupt.clone();
         let interrupt_apu = interrupt.clone();
         let apu = APU::new(interrupt_apu);
-        let ppu = PPU::new(rom.chr_rom, rom.screen_mirroring, interrupt_ppu);
+        let rc_rom = Rc::new(RefCell::new(rom));
+        let bus_rc_rom = rc_rom.clone();
+        let ppu = PPU::new(rc_rom, interrupt_ppu);
         let joypad = Joypad::new();
 
         BusImpl {
             cpu_vram: [0; 2048],
-            prg_rom: rom.prg_rom,
+            rom: bus_rc_rom,
             ppu: ppu,
             apu: apu,
             interrupt: interrupt,
@@ -56,10 +58,10 @@ impl<'a> BusImpl<'a> {
 
     fn read_prg_rom(&self, mut addr: u16) -> u8 {
         addr -= 0x8000;
-        if self.prg_rom.len() == 0x4000 && addr >= 0x4000 {
+        if self.rom.borrow().prg_rom.len() == 0x4000 && addr >= 0x4000 {
             addr = addr % 0x4000;
         }
-        self.prg_rom[addr as usize]
+        self.rom.borrow().prg_rom[addr as usize]
     }
 }
 
@@ -68,7 +70,8 @@ impl<'a> fmt::Display for BusImpl<'a> {
         write!(
             f,
             "\ncpu_vram: {:?}, \nrprg_romom: {:?}",
-            self.cpu_vram, self.prg_rom
+            self.cpu_vram,
+            self.rom.borrow().prg_rom
         )
     }
 }

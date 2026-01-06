@@ -223,4 +223,8 @@ impl SquareChannel {
 
         self.envelope.frame_clock();
     }
+
+    pub fn disable(&mut self) {
+        self.length_counter = 0;
+    }
 }

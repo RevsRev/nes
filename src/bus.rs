@@ -171,7 +171,16 @@ impl<'a> Mem for BusImpl<'a> {
             0x4012 => Result::Ok(self.apu.dmc.write_to_sample_address(data)),
             0x4013 => Result::Ok(self.apu.dmc.write_to_sample_length(data)),
 
-            0x4015 => Result::Ok(self.apu.write_to_status(data)),
+            0x4015 => {
+                let retval = Result::Ok(self.apu.write_to_status(data));
+                if !self.apu.status.pulse_1_enabled() {
+                    self.apu.pulse_1.disable();
+                }
+                if !self.apu.status.pulse_2_enabled() {
+                    self.apu.pulse_2.disable();
+                }
+                retval
+            }
             0x4017 => Result::Ok(self.apu.write_to_frame_counter(data)),
 
             0x4016 => Result::Ok(self.joypad.write(data)),

@@ -22,7 +22,7 @@ pub struct APU {
     pub triangle: TriangleChannel,
     pub noise: NoiseChannel,
     pub dmc: DmcChannel,
-    status: Status,
+    pub status: Status,
     frame: FrameCounter,
     interrupt: Rc<RefCell<InterruptImpl>>,
     mixer: Mixer,
@@ -76,13 +76,8 @@ impl Tick for APU {
                 self.pulse_2.frame_clock();
             }
 
-            if self.status.pulse_1_enabled() {
-                self.pulse_1.decrement_timer();
-            }
-
-            if self.status.pulse_2_enabled() {
-                self.pulse_2.decrement_timer();
-            }
+            self.pulse_1.decrement_timer();
+            self.pulse_2.decrement_timer();
 
             if self.status.triangle_enabled() {
                 self.triangle.decrement_timer();

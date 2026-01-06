@@ -64,28 +64,29 @@ impl APU {
 
 impl Tick for APU {
     fn tick(&mut self, cycles: u8) {
-        //apu ticks at half the frequency of the cpu
-        let num_apu_cycles = ((self.cpu_cycles % 2 + cycles) / 2) as u16;
-        self.cpu_cycles = self.cpu_cycles.wrapping_add(cycles);
+        for c in 0..cycles {
+            if (self.cpu_cycles.wrapping_add(c)) % 2 == 0 {
+                let emit_clock = self.frame.clock();
 
-        for _ in 0..num_apu_cycles {
-            let emit_clock = self.frame.clock();
+                if emit_clock {
+                    self.pulse_1.frame_clock();
+                    self.pulse_2.frame_clock();
+                    self.triangle.frame_clock();
+                }
 
-            if emit_clock {
-                self.pulse_1.frame_clock();
-                self.pulse_2.frame_clock();
+                self.pulse_1.decrement_timer();
+                self.pulse_2.decrement_timer();
             }
-
-            self.pulse_1.decrement_timer();
-            self.pulse_2.decrement_timer();
-
-            if self.status.triangle_enabled() {
-                self.triangle.decrement_timer();
-            }
-            self.mixer
-                .output(self.pulse_1.get_out(), self.pulse_2.get_out());
+            self.triangle.decrement_timer();
+            self.mixer.output(
+                self.pulse_1.get_out(),
+                self.pulse_2.get_out(),
+                self.triangle.get_out(),
+            );
         }
 
+        let num_apu_cycles = ((self.cpu_cycles % 2 + cycles) / 2) as u16;
+        self.cpu_cycles = self.cpu_cycles.wrapping_add(cycles);
         self.sequencer_cycles = self.sequencer_cycles.wrapping_add(num_apu_cycles);
     }
 }

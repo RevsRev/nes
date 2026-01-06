@@ -101,4 +101,8 @@ impl TriangleChannel {
             self.linear_counter_reload = false;
         }
     }
+
+    pub fn get_out(&self) -> u8 {
+        self.out
+    }
 }

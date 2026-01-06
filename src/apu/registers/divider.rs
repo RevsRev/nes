@@ -31,6 +31,10 @@ impl Divider {
     pub fn reset_reload_value(&mut self, reload_value: u16) {
         self.reload_value = reload_value;
     }
+
+    pub fn value(&self) -> u16 {
+        self.counter
+    }
 }
 
 #[cfg(test)]

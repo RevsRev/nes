@@ -1,5 +1,7 @@
 use crate::apu::{channel::sweep::Sweep, mixer, registers::divider::Divider};
 
+use super::len_counter::LenCounter;
+
 const ENVELOPE_VOL_OR_ENV_DIVIDER_1: u8 = 0b0000_0001;
 const ENVELOPE_VOL_OR_ENV_DIVIDER_2: u8 = 0b0000_0010;
 const ENVELOPE_VOL_OR_ENV_DIVIDER_4: u8 = 0b0000_0100;
@@ -129,8 +131,7 @@ pub struct SquareChannel {
 
     timer: Divider,
     length_counter_idx: u8,
-    length_counter: u8,
-
+    len_counter: LenCounter,
     out: u8,
 }
 
@@ -142,7 +143,7 @@ impl SquareChannel {
             sequence_step: 0,
             timer: Divider::new(0xFFFF),
             length_counter_idx: 0xFF,
-            length_counter: 0,
+            len_counter: LenCounter::new(),
             out: 0,
         }
     }
@@ -175,7 +176,7 @@ impl SquareChannel {
             | (((data & 0b0000_0111) as u16) << 8);
         self.timer.reset_reload_value(new_reload_value);
 
-        self.length_counter = LENGTH_TABLE[self.length_counter_idx as usize];
+        self.len_counter.set(self.length_counter_idx as usize);
 
         old_value
     }
@@ -192,7 +193,7 @@ impl SquareChannel {
             self.sequence_step = (self.sequence_step + 1) % 8;
         }
 
-        if self.length_counter == 0 {
+        if self.len_counter.get() == 0 {
             self.out = 0;
             return;
         }
@@ -211,10 +212,10 @@ impl SquareChannel {
     }
 
     pub fn frame_clock(&mut self) {
-        if self.length_counter != 0
+        if self.len_counter.get() != 0
             && !(self.envelope.data & ENVELOPE_LENGTH_COUNTER_HALT == ENVELOPE_LENGTH_COUNTER_HALT)
         {
-            self.length_counter = self.length_counter - 1;
+            self.len_counter.decrement();
         }
 
         let time = self.get_time();
@@ -225,6 +226,6 @@ impl SquareChannel {
     }
 
     pub fn disable(&mut self) {
-        self.length_counter = 0;
+        self.len_counter.disable();
     }
 }

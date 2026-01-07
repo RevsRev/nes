@@ -84,7 +84,7 @@ impl<'a> Mem for BusImpl<'a> {
                 let mirror_down_addr = addr & 0b0000111_11111111;
                 Result::Ok(self.cpu_vram[mirror_down_addr as usize])
             }
-            0x2000 | 0x2001 | 0x2003 | 0x2005 | 0x2006 | 0x4014 => {
+            0x2000 | 0x2001 | 0x2003 | 0x2005 | 0x2006 => {
                 // panic!("Attempt to read from write-only PPU address {:#04X}", addr);
                 Result::Ok(0)
             }
@@ -103,10 +103,9 @@ impl<'a> Mem for BusImpl<'a> {
                 addr
             )),
 
-            0x4014..=0x4015 => {
-                //ignore APU
-                Result::Ok(0)
-            }
+            0x4014 => Result::Err(format!("Unexpected mem read from 0x4014")),
+
+            0x4015 => self.apu.status.read(),
 
             0x4016 => Result::Ok(self.joypad.read()),
 

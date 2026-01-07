@@ -41,4 +41,8 @@ impl Status {
     fn has_flag(&self, flag: u8) -> bool {
         self.data & flag == flag
     }
+
+    pub fn read(&self) -> Result<u8, String> {
+        Result::Ok(self.data)
+    }
 }

@@ -90,8 +90,11 @@ impl APU {
 impl Tick for APU {
     fn tick(&mut self, cycles: u8) {
         for c in 0..cycles {
-            if (self.cpu_cycles.wrapping_add(c)) % 2 == 0 {
-                let emit_clock = self.frame.clock();
+            let on_apu_clock_cycle = self.cpu_cycles.wrapping_add(c) % 2 == 0;
+            let frame_tick = if on_apu_clock_cycle { 1 } else { 0 };
+            self.frame.tick(frame_tick);
+            if on_apu_clock_cycle {
+                let emit_clock = self.frame.emit_clock();
 
                 match emit_clock {
                     Some(clock) => {
@@ -101,6 +104,8 @@ impl Tick for APU {
                     }
                     None => {}
                 }
+
+                self.frame.step();
 
                 self.pulse_1.decrement_timer();
                 self.pulse_2.decrement_timer();

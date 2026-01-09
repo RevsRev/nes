@@ -1,9 +1,14 @@
+use crate::traits::tick::Tick;
+
 const MODE: u8 = 0b1000_0000;
 const INTERRUPT: u8 = 0b0100_0000;
 
 pub struct FrameCounter {
     data: u8,
     apu_cycles: u32,
+    written_during_cycle: bool,
+    reset_timer_countdown: i8,
+    clock: Option<FrameClock>,
 }
 
 pub enum FrameClock {
@@ -16,16 +21,30 @@ impl FrameCounter {
         FrameCounter {
             data: 0,
             apu_cycles: 0,
+            written_during_cycle: false,
+            reset_timer_countdown: -1,
+            clock: Option::None,
         }
     }
 
     pub fn write(&mut self, data: u8) -> u8 {
         let old_value = self.data;
+
+        if self.written_during_cycle {
+            self.reset_timer_countdown = 3;
+        } else {
+            self.reset_timer_countdown = 4;
+        }
+
         self.data = data;
         old_value
     }
 
-    pub fn clock(&mut self) -> Option<FrameClock> {
+    pub fn emit_clock(&mut self) -> Option<FrameClock> {
+        self.clock.take()
+    }
+
+    pub fn step(&mut self) {
         if self.data & MODE == MODE {
             self.five_step_clock()
         } else {
@@ -33,37 +52,45 @@ impl FrameCounter {
         }
     }
 
-    fn four_step_clock(&mut self) -> Option<FrameClock> {
-        let emit_clock = if self.apu_cycles == 7456 || self.apu_cycles == 14914 {
-            Option::Some(FrameClock::HALF)
+    fn four_step_clock(&mut self) {
+        if self.apu_cycles == 7456 || self.apu_cycles == 14914 {
+            self.clock = Option::Some(FrameClock::HALF);
         } else if self.apu_cycles == 3728 || self.apu_cycles == 11185 {
-            Option::Some(FrameClock::QUARTER)
-        } else {
-            Option::None
-        };
+            self.clock = Option::Some(FrameClock::QUARTER);
+        }
 
         self.apu_cycles = self.apu_cycles + 1;
         if self.apu_cycles > 14914 {
             self.apu_cycles = 0;
         }
-
-        emit_clock
     }
 
-    fn five_step_clock(&mut self) -> Option<FrameClock> {
-        let emit_clock = if self.apu_cycles == 7456 || self.apu_cycles == 18640 {
-            Option::Some(FrameClock::HALF)
+    fn five_step_clock(&mut self) {
+        if self.apu_cycles == 7456 || self.apu_cycles == 18640 {
+            self.clock = Option::Some(FrameClock::HALF);
         } else if self.apu_cycles == 3728 || self.apu_cycles == 11185 || self.apu_cycles == 14914 {
-            Option::Some(FrameClock::QUARTER)
-        } else {
-            Option::None
-        };
+            self.clock = Option::Some(FrameClock::QUARTER);
+        }
 
         self.apu_cycles = self.apu_cycles + 1;
         if self.apu_cycles > 18640 {
             self.apu_cycles = 0;
         }
+    }
+}
 
-        emit_clock
+impl Tick for FrameCounter {
+    fn tick(&mut self, cycles: u8) {
+        self.written_during_cycle = if cycles == 0 { true } else { false };
+
+        if self.reset_timer_countdown == -1 {
+            return;
+        }
+        if self.reset_timer_countdown == 0 {
+            self.clock = Option::Some(FrameClock::HALF);
+            self.apu_cycles = 0;
+        }
+
+        self.reset_timer_countdown = self.reset_timer_countdown - 1;
     }
 }

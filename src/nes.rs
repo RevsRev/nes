@@ -237,7 +237,7 @@ mod test {
     fn test_nestest() {
         let halt = Arc::new(AtomicBool::new(false));
         let mut nes = NES::new(
-            blargg_rom(),
+            nestest_rom(),
             Arc::clone(&halt),
             |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
         );

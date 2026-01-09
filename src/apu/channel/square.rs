@@ -176,11 +176,13 @@ impl SquareChannel {
 
         self.length_counter_idx = (data & 0b1111_1000) >> 3;
 
-        let new_reload_value = (self.timer.reload_value() & 0b0000_0000_0111_1111)
+        let new_reload_value = (self.timer.reload_value() & 0b0000_0000_1111_1111)
             | (((data & 0b0000_0111) as u16) << 8);
         self.timer.reset_reload_value(new_reload_value);
 
         self.len_counter.set(self.length_counter_idx as usize);
+        self.envelope.start_flag = true;
+        self.sequence_step = 0;
 
         old_value
     }

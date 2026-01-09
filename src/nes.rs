@@ -72,18 +72,21 @@ impl<'call> NES<'call> {
 #[cfg(test)]
 mod test {
     use clap::error::Result;
+    use once_cell::sync::Lazy;
+    use regex::Regex;
 
     use crate::apu::APU;
     use crate::io::joypad::Joypad;
     use crate::ppu::PPU;
     use crate::rom::{self, Rom};
     use crate::traits::mem::Mem;
+    use std::collections::{HashMap, VecDeque};
     use std::io::{BufRead, BufReader};
     use std::panic::AssertUnwindSafe;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
-    use std::{panic, thread};
+    use std::{panic, string, thread};
 
     use super::NES;
 
@@ -91,8 +94,24 @@ mod test {
         Rom::from_file("assets/nestest.nes")
     }
 
+    fn blargg_rom() -> Rom {
+        Rom::from_file("nestest/01.len_ctr.nes")
+    }
+
     fn nestest_log() -> Vec<String> {
         let file_result = std::fs::File::open("assets/nestest.log");
+
+        let file = match file_result {
+            Ok(f) => f,
+            Err(e) => panic!("Failed to open file: {}", e),
+        };
+
+        let reader = BufReader::new(file);
+        reader.lines().filter_map(Result::ok).collect()
+    }
+
+    fn blargg_fceux_log() -> Vec<String> {
+        let file_result = std::fs::File::open("nestest/01_fceux.log");
 
         let file = match file_result {
             Ok(f) => f,
@@ -218,7 +237,7 @@ mod test {
     fn test_nestest() {
         let halt = Arc::new(AtomicBool::new(false));
         let mut nes = NES::new(
-            nestest_rom(),
+            blargg_rom(),
             Arc::clone(&halt),
             |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
         );
@@ -285,5 +304,151 @@ mod test {
                 None => "NULL",
             }
         );
+    }
+
+    #[test]
+    fn test_blargg_apu_nestest() {
+        let halt = Arc::new(AtomicBool::new(false));
+        let mut nes = NES::new(
+            blargg_rom(),
+            Arc::clone(&halt),
+            |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
+        );
+        let mut result: Vec<String> = Vec::new();
+        let nes_test_log = blargg_fceux_log();
+
+        // nes.cpu.reset();
+
+        //        nes.setDebug(true);
+        // nes.cpu.program_counter = 0xE037;
+
+        let halt_share = halt.clone();
+        let handle = thread::spawn(move || {
+            thread::sleep(Duration::from_secs(2));
+            halt_share.store(true, Ordering::Relaxed);
+        });
+
+        let _runtime_result = panic::catch_unwind(AssertUnwindSafe(|| {
+            let _ = nes.run_with_callback(|cpu| {
+                let trace = cpu.get_trace_str();
+                match trace {
+                    None => println!("WARN: No CPU trace"),
+                    Some(tr) => {
+                        // println!("{}", tr);
+                        result.push(tr)
+                    }
+                }
+            });
+        }));
+
+        let _ = handle.join();
+
+        assert_ne!(nes_test_log.len(), 0);
+
+        if let Some(i) = find_first_failure(&nes_test_log, &result) {
+            let expected = &nes_test_log[i + 1];
+            let actual = &result[i];
+
+            // Collect previous 10 lines
+            let start = i.saturating_sub(10);
+            let f_hist = &nes_test_log[start + 1..=(i + 1).min(nes_test_log.len() - 1)];
+            let n_hist = &result[start..=i.min(result.len() - 1)];
+
+            let mut f_str = String::new();
+            for h in f_hist {
+                f_str.push_str(&format!("\t{}\n", h));
+            }
+
+            let mut n_str = String::new();
+            for h in n_hist {
+                n_str.push_str(&format!("\t{}\n", h));
+            }
+
+            panic!(
+                "\n\nMismatch at line {i}\nFCEUX expected: {}\nNES actual: {}\n\nPrevious lines:\nFCEUX:\n{}\nNES:\n{}",
+                expected, actual, f_str, n_str
+            );
+        }
+
+        assert!(
+            nes_test_log.len() <= result.len(),
+            "Lines from NES test do not match expected log. Last line of result log was:\n{:?}\n\nExpected next line from nestest.log is:\n{:?}",
+            match result.get(result.len() - 1) {
+                Some(v) => v,
+                None => "NULL",
+            },
+            match nes_test_log.get(result.len()) {
+                Some(v) => v.split("PPU").next().unwrap_or(v).trim(),
+                None => "NULL",
+            }
+        );
+    }
+
+    fn find_first_failure(fceux: &[String], nes: &[String]) -> Option<usize> {
+        let mut low = 0;
+        let mut high = nes.len();
+
+        let mut first_bad = None;
+
+        while low < high {
+            let mid = (low + high) / 2;
+
+            if line_matches(mid, fceux, nes) {
+                low = mid + 1; // failure is after mid
+            } else {
+                first_bad = Some(mid);
+                high = mid; // failure is at or before mid
+            }
+        }
+
+        first_bad
+    }
+    fn line_matches(i: usize, fceux: &[String], nes: &[String]) -> bool {
+        let expected = match fceux.get(i + 1) {
+            Some(v) => v,
+            None => return false,
+        };
+        let actual = match nes.get(i) {
+            Some(v) => v,
+            None => return false,
+        };
+        let expected_capture = Capture::from_line(expected, "S");
+        let actual_capture = Capture::from_line(actual, "SP");
+        expected_capture == actual_capture
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct Capture {
+        a: String,
+        x: String,
+        y: String,
+        sp: String,
+    }
+
+    impl Capture {
+        fn from_line(line: &str, sp_string: &str) -> Self {
+            Capture {
+                a: capture_register(line, "A").unwrap(),
+                x: capture_register(line, "X").unwrap(),
+                y: capture_register(line, "Y").unwrap(),
+                sp: capture_register(line, sp_string).unwrap(),
+            }
+        }
+    }
+    static REGEX_CACHE: Lazy<std::sync::Mutex<HashMap<String, Regex>>> =
+        Lazy::new(|| std::sync::Mutex::new(HashMap::new()));
+
+    fn capture_register(line: &str, reg: &str) -> Option<String> {
+        let pattern = format!(r"{}:([0-9A-F]{{2}})", reg);
+
+        let re = {
+            let mut cache = REGEX_CACHE.lock().unwrap();
+            cache
+                .entry(pattern.clone())
+                .or_insert_with(|| Regex::new(&pattern).unwrap())
+                .clone()
+        };
+
+        re.captures(line).map(|caps| caps[1].to_string())
     }
 }

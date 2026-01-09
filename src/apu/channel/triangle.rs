@@ -1,4 +1,4 @@
-use crate::apu::registers::divider::Divider;
+use crate::apu::registers::{divider::Divider, frame::FrameClock};
 
 use super::len_counter::LenCounter;
 
@@ -85,11 +85,22 @@ impl TriangleChannel {
         self.out = SEQUENCE_PATTERNS[self.sequence_step as usize];
     }
 
-    pub fn frame_clock(&mut self) {
-        if self.len_counter.get() != 0 && !self.halt {
-            self.len_counter.decrement();
-        }
+    pub fn frame_clock(&mut self, clock: &FrameClock) {
+        match clock {
+            FrameClock::QUARTER => {
+                self.quarter_frame_clock();
+            }
+            FrameClock::HALF => {
+                self.quarter_frame_clock();
 
+                if self.len_counter.get() != 0 && !self.halt {
+                    self.len_counter.decrement();
+                }
+            }
+        }
+    }
+
+    fn quarter_frame_clock(&mut self) {
         if self.linear_counter_reload {
             self.linear_counter
                 .reset_reload_value(self.counter_reload_value as u16); //todo

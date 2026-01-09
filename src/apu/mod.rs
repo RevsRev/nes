@@ -93,10 +93,13 @@ impl Tick for APU {
             if (self.cpu_cycles.wrapping_add(c)) % 2 == 0 {
                 let emit_clock = self.frame.clock();
 
-                if emit_clock {
-                    self.pulse_1.frame_clock();
-                    self.pulse_2.frame_clock();
-                    self.triangle.frame_clock();
+                match emit_clock {
+                    Some(clock) => {
+                        self.pulse_1.frame_clock(&clock);
+                        self.pulse_2.frame_clock(&clock);
+                        self.triangle.frame_clock(&clock);
+                    }
+                    None => {}
                 }
 
                 self.pulse_1.decrement_timer();

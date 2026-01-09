@@ -1,4 +1,8 @@
-use crate::apu::{channel::sweep::Sweep, mixer, registers::divider::Divider};
+use crate::apu::{
+    channel::sweep::Sweep,
+    mixer,
+    registers::{divider::Divider, frame::FrameClock},
+};
 
 use super::len_counter::LenCounter;
 
@@ -211,18 +215,24 @@ impl SquareChannel {
         self.timer.reset_reload_value(time);
     }
 
-    pub fn frame_clock(&mut self) {
-        if self.len_counter.get() != 0
-            && !(self.envelope.data & ENVELOPE_LENGTH_COUNTER_HALT == ENVELOPE_LENGTH_COUNTER_HALT)
-        {
-            self.len_counter.decrement();
+    pub fn frame_clock(&mut self, clock: &FrameClock) {
+        match clock {
+            FrameClock::QUARTER => {
+                self.envelope.frame_clock();
+            }
+            FrameClock::HALF => {
+                self.envelope.frame_clock();
+                if self.len_counter.get() != 0
+                    && !(self.envelope.data & ENVELOPE_LENGTH_COUNTER_HALT
+                        == ENVELOPE_LENGTH_COUNTER_HALT)
+                {
+                    self.len_counter.decrement();
+                }
+                let time = self.get_time();
+                let next_time = self.sweep.on_frame(time);
+                self.set_time(next_time);
+            }
         }
-
-        let time = self.get_time();
-        let next_time = self.sweep.on_frame(time);
-        self.set_time(next_time);
-
-        self.envelope.frame_clock();
     }
 
     pub fn disable(&mut self) {

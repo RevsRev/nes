@@ -6,6 +6,11 @@ pub struct FrameCounter {
     apu_cycles: u32,
 }
 
+pub enum FrameClock {
+    QUARTER,
+    HALF,
+}
+
 impl FrameCounter {
     pub fn new() -> Self {
         FrameCounter {
@@ -20,7 +25,7 @@ impl FrameCounter {
         old_value
     }
 
-    pub fn clock(&mut self) -> bool {
+    pub fn clock(&mut self) -> Option<FrameClock> {
         if self.data & MODE == MODE {
             self.five_step_clock()
         } else {
@@ -28,28 +33,37 @@ impl FrameCounter {
         }
     }
 
-    fn four_step_clock(&mut self) -> bool {
-        let emit_clock = self.apu_cycles == 3728
-            || self.apu_cycles == 7456
-            || self.apu_cycles == 11185
-            || self.apu_cycles == 14914;
-        if self.apu_cycles >= 14914 {
+    fn four_step_clock(&mut self) -> Option<FrameClock> {
+        let emit_clock = if self.apu_cycles == 7456 || self.apu_cycles == 14914 {
+            Option::Some(FrameClock::HALF)
+        } else if self.apu_cycles == 3728 || self.apu_cycles == 11185 {
+            Option::Some(FrameClock::QUARTER)
+        } else {
+            Option::None
+        };
+
+        self.apu_cycles = self.apu_cycles + 1;
+        if self.apu_cycles > 14914 {
             self.apu_cycles = 0;
         }
-        self.apu_cycles = self.apu_cycles + 1;
+
         emit_clock
     }
 
-    fn five_step_clock(&mut self) -> bool {
-        let emit_clock = self.apu_cycles == 3728
-            || self.apu_cycles == 7456
-            || self.apu_cycles == 11185
-            || self.apu_cycles == 14914
-            || self.apu_cycles == 18640;
-        if self.apu_cycles >= 18640 {
+    fn five_step_clock(&mut self) -> Option<FrameClock> {
+        let emit_clock = if self.apu_cycles == 7456 || self.apu_cycles == 18640 {
+            Option::Some(FrameClock::HALF)
+        } else if self.apu_cycles == 3728 || self.apu_cycles == 11185 || self.apu_cycles == 14914 {
+            Option::Some(FrameClock::QUARTER)
+        } else {
+            Option::None
+        };
+
+        self.apu_cycles = self.apu_cycles + 1;
+        if self.apu_cycles > 18640 {
             self.apu_cycles = 0;
         }
-        self.apu_cycles = self.apu_cycles + 1;
+
         emit_clock
     }
 }

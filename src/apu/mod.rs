@@ -60,6 +60,31 @@ impl APU {
     pub fn output(&self) -> f32 {
         self.mixer.output
     }
+
+    pub fn read_status(&self) -> Result<u8, String> {
+        let status_data = self.status.read();
+        let pulse_1_expired = self.pulse_1.len_counter_expired();
+        let pulse_2_expired = self.pulse_2.len_counter_expired();
+        let triangle_expired = self.triangle.len_counter_expired();
+
+        let pulse_1_flag = if pulse_1_expired {
+            !0b0000_0001
+        } else {
+            0b1111_1111
+        };
+        let pulse_2_flag = if pulse_2_expired {
+            !0b0000_0010
+        } else {
+            0b1111_1111
+        };
+        let triangle_flag = if triangle_expired {
+            !0b0000_0100
+        } else {
+            0b1111_1111
+        };
+
+        status_data.map(|d| d & pulse_1_flag & pulse_2_flag & triangle_flag)
+    }
 }
 
 impl Tick for APU {

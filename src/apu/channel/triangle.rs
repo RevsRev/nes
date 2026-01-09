@@ -105,4 +105,8 @@ impl TriangleChannel {
     pub fn get_out(&self) -> u8 {
         self.out
     }
+
+    pub fn len_counter_expired(&self) -> bool {
+        self.len_counter.get() == 0
+    }
 }

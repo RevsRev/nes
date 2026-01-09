@@ -29,8 +29,6 @@ impl FrameCounter {
     }
 
     fn four_step_clock(&mut self) -> bool {
-        self.apu_cycles = self.apu_cycles + 1;
-
         let emit_clock = self.apu_cycles == 3728
             || self.apu_cycles == 7456
             || self.apu_cycles == 11185
@@ -38,12 +36,11 @@ impl FrameCounter {
         if self.apu_cycles >= 14914 {
             self.apu_cycles = 0;
         }
+        self.apu_cycles = self.apu_cycles + 1;
         emit_clock
     }
 
     fn five_step_clock(&mut self) -> bool {
-        self.apu_cycles = self.apu_cycles + 1;
-
         let emit_clock = self.apu_cycles == 3728
             || self.apu_cycles == 7456
             || self.apu_cycles == 11185
@@ -52,6 +49,7 @@ impl FrameCounter {
         if self.apu_cycles >= 18640 {
             self.apu_cycles = 0;
         }
+        self.apu_cycles = self.apu_cycles + 1;
         emit_clock
     }
 }

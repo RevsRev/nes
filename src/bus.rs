@@ -105,7 +105,7 @@ impl<'a> Mem for BusImpl<'a> {
 
             0x4014 => Result::Err(format!("Unexpected mem read from 0x4014")),
 
-            0x4015 => self.apu.status.read(),
+            0x4015 => self.apu.read_status(),
 
             0x4016 => Result::Ok(self.joypad.read()),
 

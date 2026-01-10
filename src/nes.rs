@@ -299,6 +299,13 @@ mod test {
         should_match_fceux(rom, nes_test_log, 28478);
     }
 
+    #[test]
+    fn nestest_blargg_03_irq_flag() {
+        let rom = Rom::from_file("nestest/03.irq_flag.nes");
+        let nes_test_log = read_file("nestest/03_fceux.log");
+        should_match_fceux(rom, nes_test_log, -1);
+    }
+
     fn should_match_fceux(rom: Rom, fceux_log: Vec<String>, max_cycles: i64) {
         let halt = Arc::new(AtomicBool::new(false));
         let mut nes = NES::new(

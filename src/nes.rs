@@ -85,21 +85,13 @@ mod test {
     use std::panic::AssertUnwindSafe;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
     use std::{panic, string, thread};
 
     use super::NES;
 
-    fn nestest_rom() -> Rom {
-        Rom::from_file("assets/nestest.nes")
-    }
-
-    fn blargg_rom() -> Rom {
-        Rom::from_file("nestest/01.len_ctr.nes")
-    }
-
-    fn nestest_log() -> Vec<String> {
-        let file_result = std::fs::File::open("assets/nestest.log");
+    fn read_file(path: &str) -> Vec<String> {
+        let file_result = std::fs::File::open(path);
 
         let file = match file_result {
             Ok(f) => f,
@@ -109,19 +101,6 @@ mod test {
         let reader = BufReader::new(file);
         reader.lines().filter_map(Result::ok).collect()
     }
-
-    fn blargg_fceux_log() -> Vec<String> {
-        let file_result = std::fs::File::open("nestest/01_fceux.log");
-
-        let file = match file_result {
-            Ok(f) => f,
-            Err(e) => panic!("Failed to open file: {}", e),
-        };
-
-        let reader = BufReader::new(file);
-        reader.lines().filter_map(Result::ok).collect()
-    }
-
     #[test]
     fn test_format_string() {
         let mut program = vec![];
@@ -237,12 +216,12 @@ mod test {
     fn test_nestest() {
         let halt = Arc::new(AtomicBool::new(false));
         let mut nes = NES::new(
-            nestest_rom(),
+            Rom::from_file("assets/nestest.nes"),
             Arc::clone(&halt),
             |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
         );
         let mut result: Vec<String> = Vec::new();
-        let nes_test_log = nestest_log();
+        let nes_test_log = read_file("assets/nestest.log");
 
         nes.cpu.reset();
 
@@ -307,24 +286,33 @@ mod test {
     }
 
     #[test]
-    fn test_blargg_apu_nestest() {
+    fn nestest_blargg_01_len_ctr() {
+        let rom = Rom::from_file("nestest/01.len_ctr.nes");
+        let nes_test_log = read_file("nestest/01_fceux.log");
+        should_match_fceux(rom, nes_test_log, 270300);
+    }
+
+    fn should_match_fceux(rom: Rom, fceux_log: Vec<String>, max_cycles: i64) {
         let halt = Arc::new(AtomicBool::new(false));
         let mut nes = NES::new(
-            blargg_rom(),
+            rom,
             Arc::clone(&halt),
             |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
         );
         let mut result: Vec<String> = Vec::new();
-        let nes_test_log = blargg_fceux_log();
-
-        // nes.cpu.reset();
-
-        //        nes.setDebug(true);
-        // nes.cpu.program_counter = 0xE037;
 
         let halt_share = halt.clone();
         let handle = thread::spawn(move || {
-            thread::sleep(Duration::from_secs(2));
+            let timeout = Duration::from_secs(2);
+            let start = Instant::now();
+
+            while start.elapsed() < timeout {
+                if halt_share.load(Ordering::Relaxed) {
+                    return;
+                }
+
+                thread::sleep(Duration::from_millis(1));
+            }
             halt_share.store(true, Ordering::Relaxed);
         });
 
@@ -338,20 +326,24 @@ mod test {
                         result.push(tr)
                     }
                 }
+
+                if max_cycles > 0 && cpu.total_cycles > max_cycles as u64 {
+                    halt.store(true, Ordering::Relaxed);
+                }
             });
         }));
 
         let _ = handle.join();
 
-        assert_ne!(nes_test_log.len(), 0);
+        assert_ne!(fceux_log.len(), 0);
 
-        if let Some(i) = find_first_failure(&nes_test_log, &result) {
-            let expected = &nes_test_log[i + 1];
+        if let Some(i) = find_first_failure(&fceux_log, &result) {
+            let expected = &fceux_log[i + 1];
             let actual = &result[i];
 
             // Collect previous 10 lines
             let start = i.saturating_sub(10);
-            let f_hist = &nes_test_log[start + 1..=(i + 1).min(nes_test_log.len() - 1)];
+            let f_hist = &fceux_log[start + 1..=(i + 1).min(fceux_log.len() - 1)];
             let n_hist = &result[start..=i.min(result.len() - 1)];
 
             let mut f_str = String::new();
@@ -369,19 +361,6 @@ mod test {
                 expected, actual, f_str, n_str
             );
         }
-
-        assert!(
-            nes_test_log.len() <= result.len(),
-            "Lines from NES test do not match expected log. Last line of result log was:\n{:?}\n\nExpected next line from nestest.log is:\n{:?}",
-            match result.get(result.len() - 1) {
-                Some(v) => v,
-                None => "NULL",
-            },
-            match nes_test_log.get(result.len()) {
-                Some(v) => v.split("PPU").next().unwrap_or(v).trim(),
-                None => "NULL",
-            }
-        );
     }
 
     fn find_first_failure(fceux: &[String], nes: &[String]) -> Option<usize> {

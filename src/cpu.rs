@@ -335,7 +335,7 @@ pub struct CPU<T: Bus> {
     halt: Arc<AtomicBool>,
 
     next_program_counter: u16,
-    total_cycles: u64,
+    pub total_cycles: u64,
     op_cycles: u8,
 }
 

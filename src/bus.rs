@@ -174,9 +174,13 @@ impl<'a> Mem for BusImpl<'a> {
                 let retval = Result::Ok(self.apu.write_to_status(data));
                 if !self.apu.status.pulse_1_enabled() {
                     self.apu.pulse_1.disable();
+                } else {
+                    self.apu.pulse_1.enable();
                 }
                 if !self.apu.status.pulse_2_enabled() {
                     self.apu.pulse_2.disable();
+                } else {
+                    self.apu.pulse_2.enable();
                 }
                 retval
             }

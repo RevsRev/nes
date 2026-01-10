@@ -241,6 +241,10 @@ impl SquareChannel {
         self.len_counter.disable();
     }
 
+    pub fn enable(&mut self) {
+        self.len_counter.enable();
+    }
+
     pub fn len_counter_expired(&self) -> bool {
         self.len_counter.get() == 0
     }

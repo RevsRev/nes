@@ -292,6 +292,13 @@ mod test {
         should_match_fceux(rom, nes_test_log, 270300);
     }
 
+    #[test]
+    fn nestest_blargg_02_len_table() {
+        let rom = Rom::from_file("nestest/02.len_table.nes");
+        let nes_test_log = read_file("nestest/02_fceux.log");
+        should_match_fceux(rom, nes_test_log, 28478);
+    }
+
     fn should_match_fceux(rom: Rom, fceux_log: Vec<String>, max_cycles: i64) {
         let halt = Arc::new(AtomicBool::new(false));
         let mut nes = NES::new(

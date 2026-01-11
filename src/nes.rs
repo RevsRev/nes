@@ -355,23 +355,38 @@ mod test {
             let expected = &fceux_log[i + 1];
             let actual = &result[i];
 
-            // Collect previous 10 lines
-            let start = i.saturating_sub(10);
-            let f_hist = &fceux_log[start + 1..=(i + 1).min(fceux_log.len() - 1)];
-            let n_hist = &result[start..=i.min(result.len() - 1)];
+            let start_prev = i.saturating_sub(10);
+            let prev_fceux = &fceux_log[start_prev + 1..(i + 1).min(fceux_log.len() - 1)];
+            let prev_nes = &result[start_prev..i];
+
+            let end_next = i + 10;
+            let next_fceux = &fceux_log[i + 2..=end_next.min(fceux_log.len() - 1)];
+            let next_nes = &result[i + 1..=end_next.min(result.len() - 1)];
+
+            // ANSI red for highlighting
+            let red_start = "\x1b[31m";
+            let red_end = "\x1b[0m";
 
             let mut f_str = String::new();
-            for h in f_hist {
+            for h in prev_fceux {
+                f_str.push_str(&format!("\t{}\n", h));
+            }
+            f_str.push_str(&format!("\t{}{}{}\n", red_start, expected, red_end));
+            for h in next_fceux {
                 f_str.push_str(&format!("\t{}\n", h));
             }
 
             let mut n_str = String::new();
-            for h in n_hist {
+            for h in prev_nes {
+                n_str.push_str(&format!("\t{}\n", h));
+            }
+            n_str.push_str(&format!("\t{}{}{}\n", red_start, actual, red_end));
+            for h in next_nes {
                 n_str.push_str(&format!("\t{}\n", h));
             }
 
             panic!(
-                "\n\nMismatch at line {i}\nFCEUX expected: {}\nNES actual: {}\n\nPrevious lines:\nFCEUX:\n{}\nNES:\n{}",
+                "\n\nMismatch at line {i}\nFCEUX expected: {}\nNES actual: {}\n\nContext around failure:\nFCEUX:\n{}\nNES:\n{}",
                 expected, actual, f_str, n_str
             );
         }

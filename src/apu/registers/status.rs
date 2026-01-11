@@ -18,7 +18,7 @@ impl Status {
 
     pub fn write(&mut self, data: u8) -> u8 {
         let old_val = self.data;
-        self.data = data;
+        self.data = (self.data & 0b1110_0000) | (data & 0b0001_1111);
         old_val
     }
 
@@ -42,13 +42,18 @@ impl Status {
         self.data & flag == flag
     }
 
-    pub fn read(&self) -> Result<u8, String> {
-        Result::Ok(self.data)
+    pub fn read(&mut self) -> Result<u8, String> {
+        let read = self.data;
+        self.set_irq_flag(false);
+        Result::Ok(read)
     }
 
     pub fn set_irq_flag(&mut self, flag: bool) {
-        let mask = if (flag) { 0b1111_1111 } else { 0b1011_1111 };
-        self.data = mask & self.data;
+        if flag {
+            self.data = self.data | 0b0100_0000;
+        } else {
+            self.data = self.data & 0b1011_1111;
+        }
     }
 
     pub fn get_irq_flag(&self) -> bool {

@@ -54,17 +54,8 @@ impl APU {
     }
 
     pub fn write_to_frame_counter(&mut self, data: u8) -> u8 {
-        // self.interrupt
-        //     .borrow_mut()
-        //     .set_irq(data & 0b1100_0000 == 0b0);
-
-        let old_irq_inhibit = self.frame.get_data() & 0b1000_0000 == 0b1000_0000;
-        let new_irq_inhibit = data & 0b1000_0000 == 0b1000_0000;
-
-        if !old_irq_inhibit && new_irq_inhibit {
-            self.status.set_irq_flag(false);
-            self.interrupt.borrow_mut().set_irq(false);
-        }
+        self.status.set_irq_flag(false);
+        self.recompute_irq();
         self.frame.write(data)
     }
 
@@ -78,8 +69,9 @@ impl APU {
         self.mixer.output
     }
 
-    pub fn read_status(&self) -> Result<u8, String> {
+    pub fn read_status(&mut self) -> Result<u8, String> {
         let status_data = self.status.read();
+        self.recompute_irq();
         let pulse_1_expired = self.pulse_1.len_counter_expired();
         let pulse_2_expired = self.pulse_2.len_counter_expired();
         let triangle_expired = self.triangle.len_counter_expired();

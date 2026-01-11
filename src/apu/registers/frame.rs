@@ -70,7 +70,7 @@ impl FrameCounter {
             self.clock = Option::Some(FrameClock::QUARTER);
         }
 
-        let irq_set = self.apu_cycles == 14914 && self.data & 0b1000_0000 == 0b0;
+        let irq_set = self.apu_cycles == 14914 && self.data & 0b0100_0000 == 0b0;
 
         self.apu_cycles = self.apu_cycles + 1;
         if self.apu_cycles > 14914 {

@@ -45,4 +45,13 @@ impl Status {
     pub fn read(&self) -> Result<u8, String> {
         Result::Ok(self.data)
     }
+
+    pub fn set_irq_flag(&mut self, flag: bool) {
+        let mask = if (flag) { 0b1111_1111 } else { 0b1011_1111 };
+        self.data = mask & self.data;
+    }
+
+    pub fn get_irq_flag(&self) -> bool {
+        self.data & 0b0100_0000 == 0b0100_0000
+    }
 }

@@ -40,7 +40,7 @@ impl APU {
             noise: NoiseChannel::new(),
             dmc: DmcChannel::new(),
             status: Status::new(),
-            frame: FrameCounter::new(),
+            frame: FrameCounter::new(interrupt.clone()),
             interrupt: interrupt,
             mixer: Mixer::new(),
             cpu_cycles: 0,
@@ -49,12 +49,29 @@ impl APU {
     }
 
     pub fn write_to_status(&mut self, data: u8) -> u8 {
-        self.interrupt.borrow_mut().set_irq(false);
+        self.interrupt.borrow_mut().set_dmc(false);
         self.status.write(data)
     }
 
     pub fn write_to_frame_counter(&mut self, data: u8) -> u8 {
+        // self.interrupt
+        //     .borrow_mut()
+        //     .set_irq(data & 0b1100_0000 == 0b0);
+
+        let old_irq_inhibit = self.frame.get_data() & 0b1000_0000 == 0b1000_0000;
+        let new_irq_inhibit = data & 0b1000_0000 == 0b1000_0000;
+
+        if !old_irq_inhibit && new_irq_inhibit {
+            self.status.set_irq_flag(false);
+            self.interrupt.borrow_mut().set_irq(false);
+        }
         self.frame.write(data)
+    }
+
+    fn recompute_irq(&mut self) {
+        self.interrupt
+            .borrow_mut()
+            .set_irq(self.status.get_irq_flag());
     }
 
     pub fn output(&self) -> f32 {
@@ -105,7 +122,11 @@ impl Tick for APU {
                     None => {}
                 }
 
-                self.frame.step();
+                let irq_set = self.frame.step();
+                if irq_set {
+                    self.status.set_irq_flag(true);
+                    self.recompute_irq();
+                }
 
                 self.pulse_1.decrement_timer();
                 self.pulse_2.decrement_timer();

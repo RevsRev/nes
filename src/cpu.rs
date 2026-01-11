@@ -653,20 +653,54 @@ impl<T: Bus> CPU<T> {
             match execution_result {
                 Ok(_) => {}
                 Err(s) => {
-                    let registers_and_pointers = format!(
-                        "A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}",
-                        self.register_a,
-                        self.register_x,
-                        self.register_y,
-                        self.status,
-                        self.stack_pointer
-                    );
-                    let last_cpu_trace = match &self.trace {
-                        Some(t) => format!("{}", t),
-                        None => format!("NULL"),
-                    };
-                    return Err(format!(
-                        indoc! {"
+                    return Err(self.format_fatal_error(opcode, s));
+                }
+            }
+
+            self.store_trace(&opcode);
+            callback(self);
+
+            if self.halt.load(Ordering::Relaxed) {
+                break;
+            }
+
+            if !Self::get_flag(self.status, INTERRUPT_DISABLE_FLAG)
+                && self.interrupt.borrow_mut().poll_irq()
+            {
+                self.stack_push_u16(self.next_program_counter);
+                self.stack_push((self.status & !BREAK_FLAG) | BREAK2_FLAG);
+
+                let pc = self.mem_read_u16(0xFFFE);
+
+                match pc {
+                    Ok(val) => {
+                        self.set_status_flag(INTERRUPT_DISABLE_FLAG, true);
+                        self.program_counter = val;
+                        self.tick(7);
+                    }
+                    Err(s) => {
+                        return Err(self.format_fatal_error(opcode, s));
+                    }
+                }
+            } else {
+                self.program_counter = self.next_program_counter;
+                self.tick(self.op_cycles);
+            }
+        }
+        Result::Ok(())
+    }
+
+    fn format_fatal_error(&mut self, opcode: &&OpCode, s: String) -> String {
+        let registers_and_pointers = format!(
+            "A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}",
+            self.register_a, self.register_x, self.register_y, self.status, self.stack_pointer
+        );
+        let last_cpu_trace = match &self.trace {
+            Some(t) => format!("{}", t),
+            None => format!("NULL"),
+        };
+        return format!(
+            indoc! {"
                             A fatal error occurred during CPU execution
 
                             Error was:
@@ -680,28 +714,14 @@ impl<T: Bus> CPU<T> {
                             Reads {:?}:
                             Writes {:?}:
                         "},
-                        s,
-                        last_cpu_trace,
-                        self.program_counter,
-                        opcode.code,
-                        registers_and_pointers,
-                        self.reads,
-                        self.writes
-                    ));
-                }
-            }
-
-            self.store_trace(&opcode);
-            callback(self);
-
-            if self.halt.load(Ordering::Relaxed) {
-                break;
-            }
-
-            self.program_counter = self.next_program_counter;
-            self.tick(self.op_cycles);
-        }
-        Result::Ok(())
+            s,
+            last_cpu_trace,
+            self.program_counter,
+            opcode.code,
+            registers_and_pointers,
+            self.reads,
+            self.writes
+        );
     }
 
     fn stack_pop(&mut self) -> Result<u8, String> {

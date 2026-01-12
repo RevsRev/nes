@@ -371,6 +371,13 @@ mod test {
         should_match_nes(rom, nes_test_log, 1_000_000);
     }
 
+    #[test]
+    fn nestest_blargg_05_len_timing_mode0() {
+        let rom = Rom::from_file("nestest/05.len_timing_mode0.nes");
+        let nes_test_log = read_file("nestest/05_fceux.log");
+        should_match_fceux(rom, nes_test_log, 812136);
+    }
+
     fn write_nes_logs(rom_path: &str, out_path: &str, max_cycles: i64) {
         let file = File::create(out_path).expect("failed to create log file");
         let writer = RefCell::new(BufWriter::new(file));
@@ -572,6 +579,7 @@ mod test {
         x: String,
         y: String,
         sp: String,
+        mem_addr: Option<String>,
     }
 
     impl Capture {
@@ -581,6 +589,7 @@ mod test {
                 x: capture_register(line, "X").unwrap(),
                 y: capture_register(line, "Y").unwrap(),
                 sp: capture_register(line, sp_string).unwrap(),
+                mem_addr: capture_mem_addr(line),
             }
         }
     }
@@ -599,5 +608,11 @@ mod test {
         };
 
         re.captures(line).map(|caps| caps[1].to_string())
+    }
+
+    fn capture_mem_addr(line: &str) -> Option<String> {
+        let re = Regex::new(r"([0-9A-Fa-f]{4})").unwrap();
+        re.captures(line)
+            .and_then(|caps| caps.get(1).map(|m| m.as_str().to_string()))
     }
 }

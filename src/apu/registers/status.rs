@@ -1,3 +1,11 @@
+use std::{cell::RefCell, rc::Rc};
+
+use crate::apu::channel::{
+    dmc::DmcChannel, noise::NoiseChannel, square::SquareChannel, triangle::TriangleChannel,
+};
+
+use super::frame::FrameCounter;
+
 pub const PULSE_1: u8 = 0b0000_0001;
 pub const PULSE_2: u8 = 0b0000_0010;
 pub const TRIANGLE: u8 = 0b0000_0100;
@@ -8,55 +16,82 @@ pub const UNUSED_2: u8 = 0b0100_0000;
 pub const UNUSED_3: u8 = 0b1000_0000;
 
 pub struct Status {
-    data: u8,
+    pulse_1: Rc<RefCell<SquareChannel>>,
+    pulse_2: Rc<RefCell<SquareChannel>>,
+    triangle: Rc<RefCell<TriangleChannel>>,
+    noise: Rc<RefCell<NoiseChannel>>,
+    dmc: Rc<RefCell<DmcChannel>>,
+    frame: Rc<RefCell<FrameCounter>>,
 }
 
 impl Status {
-    pub fn new() -> Self {
-        Status { data: 0xFF }
-    }
+    pub fn new(
+        pulse_1: Rc<RefCell<SquareChannel>>,
+        pulse_2: Rc<RefCell<SquareChannel>>,
+        triangle: Rc<RefCell<TriangleChannel>>,
+        noise: Rc<RefCell<NoiseChannel>>,
+        dmc: Rc<RefCell<DmcChannel>>,
 
-    pub fn write(&mut self, data: u8) -> u8 {
-        let old_val = self.data;
-        self.data = (self.data & 0b1110_0000) | (data & 0b0001_1111);
-        old_val
-    }
-
-    pub fn pulse_1_enabled(&self) -> bool {
-        self.has_flag(PULSE_1)
-    }
-
-    pub fn pulse_2_enabled(&self) -> bool {
-        self.has_flag(PULSE_2)
-    }
-
-    pub fn triangle_enabled(&self) -> bool {
-        self.has_flag(TRIANGLE)
-    }
-
-    pub fn noise_enabled(&self) -> bool {
-        self.has_flag(NOISE)
-    }
-
-    fn has_flag(&self, flag: u8) -> bool {
-        self.data & flag == flag
-    }
-
-    pub fn read(&mut self) -> Result<u8, String> {
-        let read = self.data;
-        self.set_irq_flag(false);
-        Result::Ok(read)
-    }
-
-    pub fn set_irq_flag(&mut self, flag: bool) {
-        if flag {
-            self.data = self.data | 0b0100_0000;
-        } else {
-            self.data = self.data & 0b1011_1111;
+        frame: Rc<RefCell<FrameCounter>>,
+    ) -> Self {
+        Status {
+            pulse_1,
+            pulse_2,
+            triangle,
+            noise,
+            dmc,
+            frame,
         }
     }
 
-    pub fn get_irq_flag(&self) -> bool {
-        self.data & 0b0100_0000 == 0b0100_0000
+    pub fn write(&mut self, data: u8) -> u8 {
+        let mut old_val = 0b0;
+        if !self.pulse_1.borrow_mut().len_counter_expired() {
+            old_val |= 0b0000_0001;
+        }
+        if !self.pulse_2.borrow_mut().len_counter_expired() {
+            old_val |= 0b0000_0010;
+        }
+        if !self.triangle.borrow_mut().len_counter_expired() {
+            old_val |= 0b0000_0100;
+        }
+
+        //Do this while we haven't implemented noise/dmc properly
+        old_val |= 0b1111_1000;
+
+        if !Self::has_flag(data, PULSE_1) {
+            self.pulse_1.borrow_mut().disable();
+        } else {
+            self.pulse_1.borrow_mut().enable();
+        }
+        if !Self::has_flag(data, PULSE_2) {
+            self.pulse_2.borrow_mut().disable();
+        } else {
+            self.pulse_2.borrow_mut().enable();
+        }
+
+        old_val
+    }
+
+    fn has_flag(data: u8, flag: u8) -> bool {
+        data & flag == flag
+    }
+
+    pub fn read(&mut self) -> Result<u8, String> {
+        let mut read = 0b0;
+
+        if self.frame.borrow_mut().set_irq_flag(false) {
+            read |= 0b0100_0000;
+        }
+        if !self.pulse_1.borrow_mut().len_counter_expired() {
+            read |= 0b0000_0001;
+        }
+        if !self.pulse_2.borrow_mut().len_counter_expired() {
+            read |= 0b0000_0010;
+        }
+        if !self.triangle.borrow_mut().len_counter_expired() {
+            read |= 0b0000_0100;
+        }
+        Result::Ok(read)
     }
 }

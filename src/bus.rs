@@ -149,39 +149,34 @@ impl<'a> Mem for BusImpl<'a> {
                 Result::Ok(self.mem_write(mirror_down_addr, data)?)
             }
 
-            0x4000 => Result::Ok(self.apu.pulse_1.write_to_envelope(data)),
-            0x4001 => Result::Ok(self.apu.pulse_1.write_to_sweep(data)),
-            0x4002 => Result::Ok(self.apu.pulse_1.write_to_timerl(data)),
-            0x4003 => Result::Ok(self.apu.pulse_1.write_to_len_timerh(data)),
-            0x4004 => Result::Ok(self.apu.pulse_2.write_to_envelope(data)),
-            0x4005 => Result::Ok(self.apu.pulse_2.write_to_sweep(data)),
-            0x4006 => Result::Ok(self.apu.pulse_2.write_to_timerl(data)),
-            0x4007 => Result::Ok(self.apu.pulse_2.write_to_len_timerh(data)),
-            0x4008 => Result::Ok(self.apu.triangle.write_to_linear_counter(data)),
-            0x4009 => Result::Ok(self.apu.triangle.write_to_unused(data)),
-            0x400A => Result::Ok(self.apu.triangle.write_to_timerl(data)),
-            0x400B => Result::Ok(self.apu.triangle.write_to_len_timerh(data)),
-            0x400C => Result::Ok(self.apu.noise.write_to_env_loop_len_ctr_halt_cvol(data)),
-            0x400D => Result::Ok(self.apu.noise.write_unused(data)),
-            0x400E => Result::Ok(self.apu.noise.write_noise_mode_period(data)),
-            0x400F => Result::Ok(self.apu.noise.write_len_counter_load(data)),
-            0x4010 => Result::Ok(self.apu.dmc.write_to_flags_and_rate(data)),
-            0x4011 => Result::Ok(self.apu.dmc.write_to_direct_load(data)),
-            0x4012 => Result::Ok(self.apu.dmc.write_to_sample_address(data)),
-            0x4013 => Result::Ok(self.apu.dmc.write_to_sample_length(data)),
+            0x4000 => Result::Ok(self.apu.pulse_1.borrow_mut().write_to_envelope(data)),
+            0x4001 => Result::Ok(self.apu.pulse_1.borrow_mut().write_to_sweep(data)),
+            0x4002 => Result::Ok(self.apu.pulse_1.borrow_mut().write_to_timerl(data)),
+            0x4003 => Result::Ok(self.apu.pulse_1.borrow_mut().write_to_len_timerh(data)),
+            0x4004 => Result::Ok(self.apu.pulse_2.borrow_mut().write_to_envelope(data)),
+            0x4005 => Result::Ok(self.apu.pulse_2.borrow_mut().write_to_sweep(data)),
+            0x4006 => Result::Ok(self.apu.pulse_2.borrow_mut().write_to_timerl(data)),
+            0x4007 => Result::Ok(self.apu.pulse_2.borrow_mut().write_to_len_timerh(data)),
+            0x4008 => Result::Ok(self.apu.triangle.borrow_mut().write_to_linear_counter(data)),
+            0x4009 => Result::Ok(self.apu.triangle.borrow_mut().write_to_unused(data)),
+            0x400A => Result::Ok(self.apu.triangle.borrow_mut().write_to_timerl(data)),
+            0x400B => Result::Ok(self.apu.triangle.borrow_mut().write_to_len_timerh(data)),
+            0x400C => Result::Ok(
+                self.apu
+                    .noise
+                    .borrow_mut()
+                    .write_to_env_loop_len_ctr_halt_cvol(data),
+            ),
+            0x400D => Result::Ok(self.apu.noise.borrow_mut().write_unused(data)),
+            0x400E => Result::Ok(self.apu.noise.borrow_mut().write_noise_mode_period(data)),
+            0x400F => Result::Ok(self.apu.noise.borrow_mut().write_len_counter_load(data)),
+            0x4010 => Result::Ok(self.apu.dmc.borrow_mut().write_to_flags_and_rate(data)),
+            0x4011 => Result::Ok(self.apu.dmc.borrow_mut().write_to_direct_load(data)),
+            0x4012 => Result::Ok(self.apu.dmc.borrow_mut().write_to_sample_address(data)),
+            0x4013 => Result::Ok(self.apu.dmc.borrow_mut().write_to_sample_length(data)),
 
             0x4015 => {
                 let retval = Result::Ok(self.apu.write_to_status(data));
-                if !self.apu.status.pulse_1_enabled() {
-                    self.apu.pulse_1.disable();
-                } else {
-                    self.apu.pulse_1.enable();
-                }
-                if !self.apu.status.pulse_2_enabled() {
-                    self.apu.pulse_2.disable();
-                } else {
-                    self.apu.pulse_2.enable();
-                }
                 retval
             }
             0x4017 => Result::Ok(self.apu.write_to_frame_counter(data)),

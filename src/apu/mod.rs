@@ -17,13 +17,14 @@ pub mod mixer;
 pub mod registers;
 
 pub struct APU {
-    pub pulse_1: SquareChannel,
-    pub pulse_2: SquareChannel,
-    pub triangle: TriangleChannel,
-    pub noise: NoiseChannel,
-    pub dmc: DmcChannel,
+    pub pulse_1: Rc<RefCell<SquareChannel>>,
+    pub pulse_2: Rc<RefCell<SquareChannel>>,
+    pub triangle: Rc<RefCell<TriangleChannel>>,
+    pub noise: Rc<RefCell<NoiseChannel>>,
+    pub dmc: Rc<RefCell<DmcChannel>>,
+
     pub status: Status,
-    frame: FrameCounter,
+    pub frame: Rc<RefCell<FrameCounter>>,
     interrupt: Rc<RefCell<InterruptImpl>>,
     mixer: Mixer,
 
@@ -33,14 +34,29 @@ pub struct APU {
 
 impl APU {
     pub fn new(interrupt: Rc<RefCell<InterruptImpl>>) -> Self {
+        let pulse_1 = Rc::new(RefCell::new(SquareChannel::new()));
+        let pulse_2 = Rc::new(RefCell::new(SquareChannel::new()));
+        let triangle = Rc::new(RefCell::new(TriangleChannel::new()));
+        let noise = Rc::new(RefCell::new(NoiseChannel::new()));
+        let dmc = Rc::new(RefCell::new(DmcChannel::new()));
+        let frame = Rc::new(RefCell::new(FrameCounter::new(interrupt.clone())));
+
+        let status = Status::new(
+            pulse_1.clone(),
+            pulse_2.clone(),
+            triangle.clone(),
+            noise.clone(),
+            dmc.clone(),
+            frame.clone(),
+        );
         APU {
-            pulse_1: SquareChannel::new(),
-            pulse_2: SquareChannel::new(),
-            triangle: TriangleChannel::new(),
-            noise: NoiseChannel::new(),
-            dmc: DmcChannel::new(),
-            status: Status::new(),
-            frame: FrameCounter::new(interrupt.clone()),
+            pulse_1: pulse_1.clone(),
+            pulse_2: pulse_2.clone(),
+            triangle: triangle.clone(),
+            noise: noise.clone(),
+            dmc: dmc.clone(),
+            status,
+            frame: frame.clone(),
             interrupt: interrupt,
             mixer: Mixer::new(),
             cpu_cycles: 0,
@@ -54,15 +70,7 @@ impl APU {
     }
 
     pub fn write_to_frame_counter(&mut self, data: u8) -> u8 {
-        self.status.set_irq_flag(false);
-        self.recompute_irq();
-        self.frame.write(data)
-    }
-
-    fn recompute_irq(&mut self) {
-        self.interrupt
-            .borrow_mut()
-            .set_irq(self.status.get_irq_flag());
+        self.frame.borrow_mut().write(data)
     }
 
     pub fn output(&self) -> f32 {
@@ -70,29 +78,7 @@ impl APU {
     }
 
     pub fn read_status(&mut self) -> Result<u8, String> {
-        let status_data = self.status.read();
-        self.recompute_irq();
-        let pulse_1_expired = self.pulse_1.len_counter_expired();
-        let pulse_2_expired = self.pulse_2.len_counter_expired();
-        let triangle_expired = self.triangle.len_counter_expired();
-
-        let pulse_1_flag = if pulse_1_expired {
-            !0b0000_0001
-        } else {
-            0b1111_1111
-        };
-        let pulse_2_flag = if pulse_2_expired {
-            !0b0000_0010
-        } else {
-            0b1111_1111
-        };
-        let triangle_flag = if triangle_expired {
-            !0b0000_0100
-        } else {
-            0b1111_1111
-        };
-
-        status_data.map(|d| d & pulse_1_flag & pulse_2_flag & triangle_flag)
+        self.status.read()
     }
 }
 
@@ -101,33 +87,29 @@ impl Tick for APU {
         for c in 0..cycles {
             let on_apu_clock_cycle = self.cpu_cycles.wrapping_add(c) % 2 == 0;
             let frame_tick = if on_apu_clock_cycle { 1 } else { 0 };
-            self.frame.tick(frame_tick);
+            self.frame.borrow_mut().tick(frame_tick);
             if on_apu_clock_cycle {
-                let emit_clock = self.frame.emit_clock();
+                let emit_clock = self.frame.borrow_mut().emit_clock();
 
                 match emit_clock {
                     Some(clock) => {
-                        self.pulse_1.frame_clock(&clock);
-                        self.pulse_2.frame_clock(&clock);
-                        self.triangle.frame_clock(&clock);
+                        self.pulse_1.borrow_mut().frame_clock(&clock);
+                        self.pulse_2.borrow_mut().frame_clock(&clock);
+                        self.triangle.borrow_mut().frame_clock(&clock);
                     }
                     None => {}
                 }
 
-                let irq_set = self.frame.step();
-                if irq_set {
-                    self.status.set_irq_flag(true);
-                    self.recompute_irq();
-                }
+                self.frame.borrow_mut().step();
 
-                self.pulse_1.decrement_timer();
-                self.pulse_2.decrement_timer();
+                self.pulse_1.borrow_mut().decrement_timer();
+                self.pulse_2.borrow_mut().decrement_timer();
             }
-            self.triangle.decrement_timer();
+            self.triangle.borrow_mut().decrement_timer();
             self.mixer.output(
-                self.pulse_1.get_out(),
-                self.pulse_2.get_out(),
-                self.triangle.get_out(),
+                self.pulse_1.borrow_mut().get_out(),
+                self.pulse_2.borrow_mut().get_out(),
+                self.triangle.borrow_mut().get_out(),
             );
         }
 

@@ -15,6 +15,7 @@ pub struct FrameCounter {
     reset_timer_countdown: i8,
     clock: Option<FrameClock>,
     interrupt: Rc<RefCell<InterruptImpl>>,
+    irq_flag: bool,
 }
 
 pub enum FrameClock {
@@ -31,11 +32,16 @@ impl FrameCounter {
             reset_timer_countdown: -1,
             clock: Option::None,
             interrupt: interrupt,
+            irq_flag: false,
         }
     }
 
     pub fn write(&mut self, data: u8) -> u8 {
         let old_value = self.data;
+
+        if data & 0b0100_0000 == 0b0100_0000 {
+            self.set_irq_flag(false);
+        }
 
         if self.written_during_cycle {
             self.reset_timer_countdown = 3;
@@ -51,11 +57,18 @@ impl FrameCounter {
         self.data
     }
 
+    pub fn set_irq_flag(&mut self, flag: bool) -> bool {
+        let retval = self.irq_flag;
+        self.irq_flag = flag;
+        self.interrupt.borrow_mut().set_irq(self.irq_flag);
+        retval
+    }
+
     pub fn emit_clock(&mut self) -> Option<FrameClock> {
         self.clock.take()
     }
 
-    pub fn step(&mut self) -> bool {
+    pub fn step(&mut self) {
         if self.data & MODE == MODE {
             self.five_step_clock()
         } else {
@@ -63,23 +76,24 @@ impl FrameCounter {
         }
     }
 
-    fn four_step_clock(&mut self) -> bool {
+    fn four_step_clock(&mut self) {
         if self.apu_cycles == 7456 || self.apu_cycles == 14914 {
             self.clock = Option::Some(FrameClock::HALF);
         } else if self.apu_cycles == 3728 || self.apu_cycles == 11185 {
             self.clock = Option::Some(FrameClock::QUARTER);
         }
 
-        let irq_set = self.apu_cycles == 14914 && self.data & 0b0100_0000 == 0b0;
+        if self.apu_cycles == 14914 && self.data & 0b0100_0000 == 0b0 {
+            self.set_irq_flag(true);
+        }
 
         self.apu_cycles = self.apu_cycles + 1;
         if self.apu_cycles > 14914 {
             self.apu_cycles = 0;
         }
-        irq_set
     }
 
-    fn five_step_clock(&mut self) -> bool {
+    fn five_step_clock(&mut self) {
         if self.apu_cycles == 7456 || self.apu_cycles == 18640 {
             self.clock = Option::Some(FrameClock::HALF);
         } else if self.apu_cycles == 3728 || self.apu_cycles == 11185 || self.apu_cycles == 14914 {
@@ -90,7 +104,6 @@ impl FrameCounter {
         if self.apu_cycles > 18640 {
             self.apu_cycles = 0;
         }
-        false
     }
 }
 

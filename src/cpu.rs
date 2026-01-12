@@ -58,13 +58,19 @@ struct CpuTrace {
     pub stack: u8,
     pub reads: Vec<(u16, u8)>,
     pub writes: Vec<(u16, u8)>,
+    pub write_break_2_flag: bool,
 }
 
 impl fmt::Display for CpuTrace {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let p = if self.write_break_2_flag {
+            self.status
+        } else {
+            self.status & !BREAK2_FLAG
+        };
         let registers_and_pointers = format!(
             "A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}",
-            self.register_a, self.register_x, self.register_y, self.status, self.stack
+            self.register_a, self.register_x, self.register_y, p, self.stack
         );
 
         match self.op_code.mode {
@@ -333,6 +339,7 @@ pub struct CPU<T: Bus> {
     writes: Vec<(u16, u8)>,
 
     halt: Arc<AtomicBool>,
+    pub store_break_2_flag: bool,
 
     next_program_counter: u16,
     pub total_cycles: u64,
@@ -416,6 +423,7 @@ impl<T: Bus> CPU<T> {
             writes: Vec::new(),
             operand_address: Option::None,
             halt: halt,
+            store_break_2_flag: false,
             next_program_counter: 0,
             total_cycles: 0,
             op_cycles: 0,
@@ -456,6 +464,7 @@ impl<T: Bus> CPU<T> {
             stack: self.trace_sp,
             reads: self.reads.clone(),
             writes: self.writes.clone(),
+            write_break_2_flag: self.store_break_2_flag,
         });
 
         self.operand_address = Option::None;

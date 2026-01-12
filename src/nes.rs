@@ -149,15 +149,15 @@ mod test {
         handle.join().unwrap();
 
         assert_eq!(
-            "0064  A2 01     LDX #$01                        A:01 X:02 Y:03 P:24 SP:FD",
+            "0064  A2 01     LDX #$01                        A:01 X:02 Y:03 P:04 SP:FD",
             result[0]
         );
         assert_eq!(
-            "0066  CA        DEX                             A:01 X:01 Y:03 P:24 SP:FD",
+            "0066  CA        DEX                             A:01 X:01 Y:03 P:04 SP:FD",
             result[1]
         );
         assert_eq!(
-            "0067  88        DEY                             A:01 X:00 Y:03 P:26 SP:FD",
+            "0067  88        DEY                             A:01 X:00 Y:03 P:06 SP:FD",
             result[2]
         );
     }
@@ -209,7 +209,7 @@ mod test {
         handle.join().unwrap();
 
         assert_eq!(
-            "0064  11 33     ORA ($33),Y = 0400 @ 0400 = AA  A:00 X:00 Y:00 P:24 SP:FD",
+            "0064  11 33     ORA ($33),Y = 0400 @ 0400 = AA  A:00 X:00 Y:00 P:04 SP:FD",
             result[0]
         );
     }
@@ -226,6 +226,7 @@ mod test {
         let nes_test_log = read_file("assets/nestest.log");
 
         nes.cpu.reset();
+        nes.cpu.store_break_2_flag = true;
 
         //        nes.setDebug(true);
         nes.cpu.program_counter = 0xC000;
@@ -557,11 +558,10 @@ mod test {
             Some(v) => v,
             None => return false,
         };
-        let expected_capture = Capture::from_line(expected, "S");
-        let actual_capture = Capture::from_line(actual, "SP");
+        let expected_capture = Capture::from_line(expected, "S", |line| extract_fceux_status(line));
+        let actual_capture = Capture::from_line(actual, "SP", |line| capture_register(line, "P"));
         expected_capture == actual_capture
     }
-
     fn nes_nes_line_matches(i: usize, nes_gold: &[String], nes: &[String]) -> bool {
         let expected = match nes_gold.get(i) {
             Some(v) => v,
@@ -579,22 +579,43 @@ mod test {
         x: String,
         y: String,
         sp: String,
+        status: String,
         mem_addr: Option<String>,
     }
 
     impl Capture {
-        fn from_line(line: &str, sp_string: &str) -> Self {
+        fn from_line<F>(line: &str, sp_string: &str, status_extract: F) -> Self
+        where
+            F: Fn(&str) -> Option<String>,
+        {
             Capture {
                 a: capture_register(line, "A").unwrap(),
                 x: capture_register(line, "X").unwrap(),
                 y: capture_register(line, "Y").unwrap(),
                 sp: capture_register(line, sp_string).unwrap(),
+                status: status_extract(line).unwrap(),
                 mem_addr: capture_mem_addr(line),
             }
         }
     }
     static REGEX_CACHE: Lazy<std::sync::Mutex<HashMap<String, Regex>>> =
         Lazy::new(|| std::sync::Mutex::new(HashMap::new()));
+
+    fn extract_fceux_status(line: &str) -> Option<String> {
+        let re = Regex::new(r"\b([nvubdizcNVUBDIZC]{8})\b").unwrap();
+        let caps = re.captures(line)?;
+        let s = &caps[1];
+
+        let mut status = 0u8;
+
+        for (i, ch) in s.chars().enumerate() {
+            if ch.is_ascii_uppercase() {
+                status |= 1 << (7 - i);
+            }
+        }
+
+        Some(format!("{:02X}", status))
+    }
 
     fn capture_register(line: &str, reg: &str) -> Option<String> {
         let pattern = format!(r"{}:([0-9A-F]{{2}})", reg);

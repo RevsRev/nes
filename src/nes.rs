@@ -80,8 +80,10 @@ mod test {
     use crate::ppu::PPU;
     use crate::rom::{self, Rom};
     use crate::traits::mem::Mem;
+    use std::cell::RefCell;
     use std::collections::{HashMap, VecDeque};
-    use std::io::{BufRead, BufReader};
+    use std::fs::File;
+    use std::io::{BufRead, BufReader, BufWriter, Write};
     use std::panic::AssertUnwindSafe;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -293,10 +295,36 @@ mod test {
     }
 
     #[test]
+    fn nestest_regression_01_len_ctr() {
+        let regen_logs = std::env::var("REGEN_LOGS").is_ok();
+
+        if regen_logs {
+            write_nes_logs("nestest/01.len_ctr.nes", "nestest/01_nes.log", 1_000_000);
+        }
+
+        let rom = Rom::from_file("nestest/01.len_ctr.nes");
+        let nes_test_log = read_file("nestest/01_nes.log");
+        should_match_nes(rom, nes_test_log, 1_000_000);
+    }
+
+    #[test]
     fn nestest_blargg_02_len_table() {
         let rom = Rom::from_file("nestest/02.len_table.nes");
         let nes_test_log = read_file("nestest/02_fceux.log");
         should_match_fceux(rom, nes_test_log, 28478);
+    }
+
+    #[test]
+    fn nestest_regression_blargg_02_len_table() {
+        let regen_logs = std::env::var("REGEN_LOGS").is_ok();
+
+        if regen_logs {
+            write_nes_logs("nestest/02.len_table.nes", "nestest/02_nes.log", 1_000_000);
+        }
+
+        let rom = Rom::from_file("nestest/02.len_table.nes");
+        let nes_test_log = read_file("nestest/02_nes.log");
+        should_match_nes(rom, nes_test_log, 1_000_000);
     }
 
     #[test]
@@ -306,7 +334,83 @@ mod test {
         should_match_fceux(rom, nes_test_log, 76674);
     }
 
+    #[test]
+    fn nestest_regression_blargg_03_irq_flag() {
+        let regen_logs = std::env::var("REGEN_LOGS").is_ok();
+
+        if regen_logs {
+            write_nes_logs("nestest/03.irq_flag.nes", "nestest/03_nes.log", 1_000_000);
+        }
+
+        let rom = Rom::from_file("nestest/03.irq_flag.nes");
+        let nes_test_log = read_file("nestest/03_nes.log");
+        should_match_nes(rom, nes_test_log, 1_000_000);
+    }
+
+    fn write_nes_logs(rom_path: &str, out_path: &str, max_cycles: i64) {
+        let file = File::create(out_path).expect("failed to create log file");
+        let writer = RefCell::new(BufWriter::new(file));
+
+        let rom = Rom::from_file(rom_path);
+        let halt = Arc::new(AtomicBool::new(false));
+
+        let mut nes = NES::new(
+            rom,
+            Arc::clone(&halt),
+            |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
+        );
+
+        let halt_share = halt.clone();
+        let handle = thread::spawn(move || {
+            let timeout = Duration::from_secs(2);
+            let start = Instant::now();
+
+            while start.elapsed() < timeout {
+                if halt_share.load(Ordering::Relaxed) {
+                    return;
+                }
+
+                thread::sleep(Duration::from_millis(1));
+            }
+            halt_share.store(true, Ordering::Relaxed);
+        });
+
+        let _runtime_result = panic::catch_unwind(AssertUnwindSafe(|| {
+            let _ = nes.run_with_callback(|cpu| {
+                let trace = cpu.get_trace_str();
+                match trace {
+                    None => println!("WARN: No CPU trace"),
+                    Some(tr) => {
+                        writeln!(writer.borrow_mut(), "{}", tr)
+                            .expect("failed to write trace to log file");
+                    }
+                }
+
+                if max_cycles > 0 && cpu.total_cycles > max_cycles as u64 {
+                    halt.store(true, Ordering::Relaxed);
+                }
+            });
+        }));
+
+        let _ = handle.join();
+        writer.borrow_mut().flush().unwrap();
+    }
+
     fn should_match_fceux(rom: Rom, fceux_log: Vec<String>, max_cycles: i64) {
+        should_match(rom, fceux_log, max_cycles, |i, fceux_log, nes_log| {
+            nes_fceux_line_matches(i, fceux_log, nes_log)
+        });
+    }
+    fn should_match_nes(rom: Rom, fceux_log: Vec<String>, max_cycles: i64) {
+        should_match(rom, fceux_log, max_cycles, |i, nes_gold, nes_log| {
+            nes_nes_line_matches(i, nes_gold, nes_log)
+        });
+    }
+
+    fn should_match<F>(rom: Rom, compare_log: Vec<String>, max_cycles: i64, line_matches: F)
+    where
+        F: Fn(usize, &[String], &[String]) -> bool,
+    {
         let halt = Arc::new(AtomicBool::new(false));
         let mut nes = NES::new(
             rom,
@@ -349,18 +453,18 @@ mod test {
 
         let _ = handle.join();
 
-        assert_ne!(fceux_log.len(), 0);
+        assert_ne!(compare_log.len(), 0);
 
-        if let Some(i) = find_first_failure(&fceux_log, &result) {
-            let expected = &fceux_log[i + 1];
+        if let Some(i) = find_first_failure(&compare_log, &result, line_matches) {
+            let expected = &compare_log[i];
             let actual = &result[i];
 
             let start_prev = i.saturating_sub(10);
-            let prev_fceux = &fceux_log[start_prev + 1..(i + 1).min(fceux_log.len() - 1)];
+            let prev_fceux = &compare_log[start_prev..(i).min(compare_log.len() - 1)];
             let prev_nes = &result[start_prev..i];
 
             let end_next = i + 10;
-            let next_fceux = &fceux_log[i + 2..=end_next.min(fceux_log.len() - 1)];
+            let next_fceux = &compare_log[i + 1..=end_next.min(compare_log.len() - 1)];
             let next_nes = &result[i + 1..=end_next.min(result.len() - 1)];
 
             // ANSI red for highlighting
@@ -391,8 +495,10 @@ mod test {
             );
         }
     }
-
-    fn find_first_failure(fceux: &[String], nes: &[String]) -> Option<usize> {
+    fn find_first_failure<F>(fceux: &[String], nes: &[String], line_matches: F) -> Option<usize>
+    where
+        F: Fn(usize, &[String], &[String]) -> bool,
+    {
         let mut low = 0;
         let mut high = nes.len();
 
@@ -411,8 +517,8 @@ mod test {
 
         first_bad
     }
-    fn line_matches(i: usize, fceux: &[String], nes: &[String]) -> bool {
-        let expected = match fceux.get(i + 1) {
+    fn nes_fceux_line_matches(i: usize, fceux: &[String], nes: &[String]) -> bool {
+        let expected = match fceux.get(i) {
             Some(v) => v,
             None => return false,
         };
@@ -425,6 +531,17 @@ mod test {
         expected_capture == actual_capture
     }
 
+    fn nes_nes_line_matches(i: usize, nes_gold: &[String], nes: &[String]) -> bool {
+        let expected = match nes_gold.get(i) {
+            Some(v) => v,
+            None => return false,
+        };
+        let actual = match nes.get(i) {
+            Some(v) => v,
+            None => return false,
+        };
+        expected == actual
+    }
     #[derive(Debug, PartialEq, Eq)]
     struct Capture {
         a: String,

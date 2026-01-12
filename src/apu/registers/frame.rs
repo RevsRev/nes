@@ -83,13 +83,13 @@ impl FrameCounter {
             self.clock = Option::Some(FrameClock::QUARTER);
         }
 
-        if self.apu_cycles == 14914 && self.data & 0b0100_0000 == 0b0 {
-            self.set_irq_flag(true);
-        }
-
         self.apu_cycles = self.apu_cycles + 1;
         if self.apu_cycles > 14914 {
             self.apu_cycles = 0;
+        }
+
+        if self.apu_cycles == 14914 && self.data & 0b0100_0000 == 0b0 {
+            self.set_irq_flag(true);
         }
     }
 

@@ -347,6 +347,30 @@ mod test {
         should_match_nes(rom, nes_test_log, 1_000_000);
     }
 
+    #[test]
+    fn nestest_blargg_04_clock_jitter() {
+        let rom = Rom::from_file("nestest/04.clock_jitter.nes");
+        let nes_test_log = read_file("nestest/04_fceux.log");
+        should_match_fceux(rom, nes_test_log, -1);
+    }
+
+    #[test]
+    fn nestest_regression_blargg_04_clock_jitter() {
+        let regen_logs = std::env::var("REGEN_LOGS").is_ok();
+
+        if regen_logs {
+            write_nes_logs(
+                "nestest/04.clock_jitter.nes",
+                "nestest/04_nes.log",
+                1_000_000,
+            );
+        }
+
+        let rom = Rom::from_file("nestest/04.clock_jitter.nes");
+        let nes_test_log = read_file("nestest/04_nes.log");
+        should_match_nes(rom, nes_test_log, 1_000_000);
+    }
+
     fn write_nes_logs(rom_path: &str, out_path: &str, max_cycles: i64) {
         let file = File::create(out_path).expect("failed to create log file");
         let writer = RefCell::new(BufWriter::new(file));

@@ -60,7 +60,7 @@ impl TriangleChannel {
 
     pub fn write_to_len_timerh(&mut self, data: u8) -> u8 {
         let timer_h_bits = ((self.timer.reload_value() & 0b0000_0111_0000_000) >> 8) as u8;
-        let old_value = self.length_counter_idx | timer_h_bits;
+        let old_value = (self.length_counter_idx << 3) | timer_h_bits;
 
         self.length_counter_idx = (data & 0b1111_1000) >> 3;
 
@@ -119,5 +119,13 @@ impl TriangleChannel {
 
     pub fn len_counter_expired(&self) -> bool {
         self.len_counter.get() == 0
+    }
+
+    pub fn disable(&mut self) {
+        self.len_counter.disable();
+    }
+
+    pub fn enable(&mut self) {
+        self.len_counter.enable();
     }
 }

@@ -69,6 +69,11 @@ impl Status {
         } else {
             self.pulse_2.borrow_mut().enable();
         }
+        if !Self::has_flag(data, TRIANGLE) {
+            self.triangle.borrow_mut().disable();
+        } else {
+            self.triangle.borrow_mut().enable();
+        }
 
         old_val
     }

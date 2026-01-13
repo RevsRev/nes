@@ -174,7 +174,10 @@ impl PPU {
 
         //Now, 0x3F04, 0x3F08 0x3F0C are all mirrors of 0x3F00 (universal background colour)
         match first_mirror {
-            0x3F04 | 0x3f08 | 0x3F0C => 0x3F00,
+            0x3F10 => 0x3F00,
+            0x3F14 => 0x3F04,
+            0x3F18 => 0x3F08,
+            0x3F1C => 0x3F0C,
             v => v,
         }
     }

@@ -36,34 +36,39 @@ pub struct PPU {
 impl Tick for PPU {
     fn tick(&mut self, cycles: u8) {
         self.total_cycles += cycles as u64;
-        self.frame_cycles += cycles as usize;
+        // self.frame_cycles += cycles as usize;
         self.new_frame = false;
 
-        if self.frame_cycles < 341 {
-            return;
-        }
+        for _ in 0..cycles {
+            self.frame_cycles += 1;
 
-        if self.is_sprite_0_hit(self.frame_cycles) {
-            self.status.set_sprite_0_hit(true);
-        }
-
-        self.frame_cycles = self.frame_cycles - 341;
-        self.scanline += 1;
-
-        if self.scanline == 241 {
-            self.status.set_vblank(true);
-            self.status.set_sprite_0_hit(false);
-            if self.ctl.generate_vblank_nmi() {
-                self.interrupt.borrow_mut().set_nmi(true);
+            if self.is_sprite_0_hit(self.frame_cycles) {
+                self.status.set_sprite_0_hit(true);
             }
-        }
 
-        if self.scanline >= 262 {
-            self.scanline = 0;
-            self.interrupt.borrow_mut().set_nmi(false);
-            self.status.set_sprite_0_hit(false);
-            self.status.reset_vblank_status();
-            self.new_frame = true;
+            if self.frame_cycles == 341 {
+                self.frame_cycles = 0;
+                self.scanline += 1;
+            }
+
+            if self.scanline == 241 && self.frame_cycles == 1 {
+                self.status.set_vblank(true);
+                self.status.set_sprite_0_hit(false);
+                if self.ctl.generate_vblank_nmi() {
+                    self.interrupt.borrow_mut().set_nmi(true);
+                }
+            }
+
+            if self.scanline == 261 && self.frame_cycles == 1 {
+                self.status.reset_vblank_status();
+                self.interrupt.borrow_mut().set_nmi(false);
+                self.status.set_sprite_0_hit(false);
+            }
+            if self.scanline == 262 {
+                self.frame_cycles = 0;
+                self.scanline = 0;
+                self.new_frame = true;
+            }
         }
     }
 }

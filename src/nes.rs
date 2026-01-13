@@ -290,8 +290,8 @@ mod test {
 
     #[test]
     fn nestest_blargg_01_len_ctr() {
-        let rom = Rom::from_file("nestest/01.len_ctr.nes");
-        let nes_test_log = read_file("nestest/01_fceux.log");
+        let rom = Rom::from_file("nestest/apu/01.len_ctr.nes");
+        let nes_test_log = read_file("nestest/apu/01_fceux.log");
         should_match_fceux(rom, nes_test_log, 270300);
     }
 
@@ -300,18 +300,22 @@ mod test {
         let regen_logs = std::env::var("REGEN_LOGS").is_ok();
 
         if regen_logs {
-            write_nes_logs("nestest/01.len_ctr.nes", "nestest/01_nes.log", 1_000_000);
+            write_nes_logs(
+                "nestest/apu/01.len_ctr.nes",
+                "nestest/01_nes.log",
+                1_000_000,
+            );
         }
 
-        let rom = Rom::from_file("nestest/01.len_ctr.nes");
-        let nes_test_log = read_file("nestest/01_nes.log");
+        let rom = Rom::from_file("nestest/apu/01.len_ctr.nes");
+        let nes_test_log = read_file("nestest/apu/01_nes.log");
         should_match_nes(rom, nes_test_log, 1_000_000);
     }
 
     #[test]
     fn nestest_blargg_02_len_table() {
-        let rom = Rom::from_file("nestest/02.len_table.nes");
-        let nes_test_log = read_file("nestest/02_fceux.log");
+        let rom = Rom::from_file("nestest/apu/02.len_table.nes");
+        let nes_test_log = read_file("nestest/apu/02_fceux.log");
         should_match_fceux(rom, nes_test_log, 28478);
     }
 
@@ -320,18 +324,22 @@ mod test {
         let regen_logs = std::env::var("REGEN_LOGS").is_ok();
 
         if regen_logs {
-            write_nes_logs("nestest/02.len_table.nes", "nestest/02_nes.log", 1_000_000);
+            write_nes_logs(
+                "nestest/apu/02.len_table.nes",
+                "nestest/02_nes.log",
+                1_000_000,
+            );
         }
 
-        let rom = Rom::from_file("nestest/02.len_table.nes");
-        let nes_test_log = read_file("nestest/02_nes.log");
+        let rom = Rom::from_file("nestest/apu/02.len_table.nes");
+        let nes_test_log = read_file("nestest/apu/02_nes.log");
         should_match_nes(rom, nes_test_log, 1_000_000);
     }
 
     #[test]
     fn nestest_blargg_03_irq_flag() {
-        let rom = Rom::from_file("nestest/03.irq_flag.nes");
-        let nes_test_log = read_file("nestest/03_fceux.log");
+        let rom = Rom::from_file("nestest/apu/03.irq_flag.nes");
+        let nes_test_log = read_file("nestest/apu/03_fceux.log");
         should_match_fceux(rom, nes_test_log, 76674);
     }
 
@@ -340,18 +348,22 @@ mod test {
         let regen_logs = std::env::var("REGEN_LOGS").is_ok();
 
         if regen_logs {
-            write_nes_logs("nestest/03.irq_flag.nes", "nestest/03_nes.log", 1_000_000);
+            write_nes_logs(
+                "nestest/apu/03.irq_flag.nes",
+                "nestest/03_nes.log",
+                1_000_000,
+            );
         }
 
-        let rom = Rom::from_file("nestest/03.irq_flag.nes");
-        let nes_test_log = read_file("nestest/03_nes.log");
+        let rom = Rom::from_file("nestest/apu/03.irq_flag.nes");
+        let nes_test_log = read_file("nestest/apu/03_nes.log");
         should_match_nes(rom, nes_test_log, 1_000_000);
     }
 
     #[test]
     fn nestest_blargg_04_clock_jitter() {
-        let rom = Rom::from_file("nestest/04.clock_jitter.nes");
-        let nes_test_log = read_file("nestest/04_fceux.log");
+        let rom = Rom::from_file("nestest/apu/04.clock_jitter.nes");
+        let nes_test_log = read_file("nestest/apu/04_fceux.log");
         should_match_fceux(rom, nes_test_log, -1);
     }
 
@@ -361,21 +373,21 @@ mod test {
 
         if regen_logs {
             write_nes_logs(
-                "nestest/04.clock_jitter.nes",
-                "nestest/04_nes.log",
+                "nestest/apu/04.clock_jitter.nes",
+                "nestest/apu/04_nes.log",
                 1_000_000,
             );
         }
 
-        let rom = Rom::from_file("nestest/04.clock_jitter.nes");
-        let nes_test_log = read_file("nestest/04_nes.log");
+        let rom = Rom::from_file("nestest/apu/04.clock_jitter.nes");
+        let nes_test_log = read_file("nestest/apu/04_nes.log");
         should_match_nes(rom, nes_test_log, 1_000_000);
     }
 
     #[test]
     fn nestest_blargg_05_len_timing_mode0() {
-        let rom = Rom::from_file("nestest/05.len_timing_mode0.nes");
-        let nes_test_log = read_file("nestest/05_fceux.log");
+        let rom = Rom::from_file("nestest/apu/05.len_timing_mode0.nes");
+        let nes_test_log = read_file("nestest/apu/05_fceux.log");
         should_match_fceux(rom, nes_test_log, 812136);
     }
 

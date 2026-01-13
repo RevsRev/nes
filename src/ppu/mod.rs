@@ -46,11 +46,6 @@ impl Tick for PPU {
                 self.status.set_sprite_0_hit(true);
             }
 
-            if self.frame_cycles == 341 {
-                self.frame_cycles = 0;
-                self.scanline += 1;
-            }
-
             if self.scanline == 241 && self.frame_cycles == 1 {
                 self.status.set_vblank(true);
                 self.status.set_sprite_0_hit(false);
@@ -60,12 +55,17 @@ impl Tick for PPU {
             }
 
             if self.scanline == 261 && self.frame_cycles == 1 {
-                self.status.reset_vblank_status();
+                self.status.set_vblank(false);
                 self.interrupt.borrow_mut().set_nmi(false);
                 self.status.set_sprite_0_hit(false);
             }
-            if self.scanline == 262 {
+
+            if self.frame_cycles == 341 {
                 self.frame_cycles = 0;
+                self.scanline += 1;
+            }
+
+            if self.scanline == 262 {
                 self.scanline = 0;
                 self.new_frame = true;
             }
@@ -205,7 +205,7 @@ impl PPU {
 
     pub fn read_status(&mut self) -> u8 {
         let data = self.status.snapshot();
-        self.status.reset_vblank_status();
+        self.status.set_vblank(false);
         self.addr.reset_latch();
         self.scroll.reset_latch();
         data

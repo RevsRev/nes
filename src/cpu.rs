@@ -961,12 +961,13 @@ impl<T: Bus> CPU<T> {
 
     fn bcc(&mut self, mode: &AddressingMode) -> Result<(), String> {
         let eval = self.evaluate_operand(mode)?;
-        if eval.1 {
-            self.op_cycles += 1;
-        }
 
         if Self::get_flag(self.status, CARRY_FLAG) {
             return Result::Ok(());
+        }
+
+        if eval.1 {
+            self.op_cycles += 1;
         }
 
         self.op_cycles += 1;
@@ -976,12 +977,13 @@ impl<T: Bus> CPU<T> {
 
     fn bcs(&mut self, mode: &AddressingMode) -> Result<(), String> {
         let eval = self.evaluate_operand(mode)?;
-        if eval.1 {
-            self.op_cycles += 1;
-        }
 
         if !Self::get_flag(self.status, CARRY_FLAG) {
             return Result::Ok(());
+        }
+
+        if eval.1 {
+            self.op_cycles += 1;
         }
 
         self.op_cycles += 1;
@@ -991,12 +993,13 @@ impl<T: Bus> CPU<T> {
 
     fn beq(&mut self, mode: &AddressingMode) -> Result<(), String> {
         let eval = self.evaluate_operand(mode)?;
-        if eval.1 {
-            self.op_cycles += 1;
-        }
 
         if !Self::get_flag(self.status, ZERO_FLAG) {
             return Result::Ok(());
+        }
+
+        if eval.1 {
+            self.op_cycles += 1;
         }
 
         self.op_cycles += 1;
@@ -1016,12 +1019,13 @@ impl<T: Bus> CPU<T> {
 
     fn bmi(&mut self, mode: &AddressingMode) -> Result<(), String> {
         let eval = self.evaluate_operand(mode)?;
-        if eval.1 {
-            self.op_cycles += 1;
-        }
 
         if !Self::get_flag(self.status, NEGATIVE_FLAG) {
             return Result::Ok(());
+        }
+
+        if eval.1 {
+            self.op_cycles += 1;
         }
 
         self.op_cycles += 1;
@@ -1031,12 +1035,13 @@ impl<T: Bus> CPU<T> {
 
     fn bne(&mut self, mode: &AddressingMode) -> Result<(), String> {
         let eval = self.evaluate_operand(mode)?;
-        if eval.1 {
-            self.op_cycles += 1;
-        }
 
         if Self::get_flag(self.status, ZERO_FLAG) {
             return Result::Ok(());
+        }
+
+        if eval.1 {
+            self.op_cycles += 1;
         }
 
         self.op_cycles += 1;
@@ -1046,12 +1051,13 @@ impl<T: Bus> CPU<T> {
 
     fn bpl(&mut self, mode: &AddressingMode) -> Result<(), String> {
         let eval = self.evaluate_operand(mode)?;
-        if eval.1 {
-            self.op_cycles += 1;
-        }
 
         if Self::get_flag(self.status, NEGATIVE_FLAG) {
             return Result::Ok(());
+        }
+
+        if eval.1 {
+            self.op_cycles += 1;
         }
 
         self.op_cycles += 1;
@@ -1061,12 +1067,13 @@ impl<T: Bus> CPU<T> {
 
     fn bvc(&mut self, mode: &AddressingMode) -> Result<(), String> {
         let eval = self.evaluate_operand(mode)?;
-        if eval.1 {
-            self.op_cycles += 1;
-        }
 
         if Self::get_flag(self.status, OVERFLOW_FLAG) {
             return Result::Ok(());
+        }
+
+        if eval.1 {
+            self.op_cycles += 1;
         }
 
         self.op_cycles += 1;
@@ -1076,12 +1083,13 @@ impl<T: Bus> CPU<T> {
 
     fn bvs(&mut self, mode: &AddressingMode) -> Result<(), String> {
         let eval = self.evaluate_operand(mode)?;
-        if eval.1 {
-            self.op_cycles += 1;
-        }
 
         if !Self::get_flag(self.status, OVERFLOW_FLAG) {
             return Result::Ok(());
+        }
+
+        if eval.1 {
+            self.op_cycles += 1;
         }
 
         self.op_cycles += 1;

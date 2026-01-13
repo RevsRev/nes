@@ -28,10 +28,6 @@ impl StatusRegister {
         self.set(VBLANK, status);
     }
 
-    pub fn reset_vblank_status(&mut self) {
-        self.set_vblank(false);
-    }
-
     pub fn is_vblank(&self) -> bool {
         self.value & VBLANK != 0
     }

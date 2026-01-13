@@ -288,6 +288,64 @@ mod test {
         );
     }
 
+    /*
+     * BLARGG PPU TESTS
+     */
+    #[test]
+    fn nestest_blargg_palette_ram() {
+        let rom = Rom::from_file("nestest/ppu/palette_ram.nes");
+        let nes_test_log = read_file("nestest/ppu/palette_ram_fceux.log");
+        should_match_fceux(rom, nes_test_log, -1);
+    }
+
+    #[test]
+    fn nestest_blargg_power_up_palette() {
+        let rom = Rom::from_file("nestest/ppu/power_up_palette.nes");
+        let nes_test_log = read_file("nestest/ppu/power_up_palette_fceux.log");
+        should_match_fceux(rom, nes_test_log, -1);
+    }
+
+    #[test]
+    fn nestest_blargg_sprite_ram() {
+        let rom = Rom::from_file("nestest/ppu/sprite_ram.nes");
+        let nes_test_log = read_file("nestest/ppu/sprite_ram_fceux.log");
+        should_match_fceux(rom, nes_test_log, 38315);
+    }
+
+    #[test]
+    fn nestest_regression_sprite_ram() {
+        let regen_logs = std::env::var("REGEN_LOGS").is_ok();
+
+        if regen_logs {
+            write_nes_logs(
+                "nestest/ppu/sprite_ram.nes",
+                "nestest/ppu/sprite_ram_nes.log",
+                1_000_000,
+            );
+        }
+
+        let rom = Rom::from_file("nestest/ppu/sprite_ram.nes");
+        let nes_test_log = read_file("nestest/ppu/sprite_ram_nes.log");
+        should_match_nes(rom, nes_test_log, 1_000_000);
+    }
+
+    #[test]
+    fn nestest_blargg_vbl_clear_time() {
+        let rom = Rom::from_file("nestest/ppu/vbl_clear_time.nes");
+        let nes_test_log = read_file("nestest/ppu/vbl_clear_time_fceux.log");
+        should_match_fceux(rom, nes_test_log, -1);
+    }
+
+    #[test]
+    fn nestest_blargg_vram_access() {
+        let rom = Rom::from_file("nestest/ppu/vram_access.nes");
+        let nes_test_log = read_file("nestest/ppu/vram_access_fceux.log");
+        should_match_fceux(rom, nes_test_log, -1);
+    }
+    /*
+     * BLARGG APU TESTS
+     */
+
     #[test]
     fn nestest_blargg_01_len_ctr() {
         let rom = Rom::from_file("nestest/apu/01.len_ctr.nes");
@@ -302,7 +360,7 @@ mod test {
         if regen_logs {
             write_nes_logs(
                 "nestest/apu/01.len_ctr.nes",
-                "nestest/01_nes.log",
+                "nestest/apu/01_nes.log",
                 1_000_000,
             );
         }
@@ -326,7 +384,7 @@ mod test {
         if regen_logs {
             write_nes_logs(
                 "nestest/apu/02.len_table.nes",
-                "nestest/02_nes.log",
+                "nestest/apu/02_nes.log",
                 1_000_000,
             );
         }
@@ -350,7 +408,7 @@ mod test {
         if regen_logs {
             write_nes_logs(
                 "nestest/apu/03.irq_flag.nes",
-                "nestest/03_nes.log",
+                "nestest/apu/03_nes.log",
                 1_000_000,
             );
         }

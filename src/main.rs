@@ -31,6 +31,7 @@ mod nes;
 mod opp;
 mod ppu;
 mod rom;
+mod trace;
 mod traits;
 
 #[macro_use]

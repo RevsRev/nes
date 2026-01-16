@@ -1,6 +1,25 @@
-use crate::cpu::AddressingMode;
 use std::collections::HashMap;
 use std::fmt;
+
+use strum_macros::Display;
+
+#[derive(Debug, PartialEq, Display, Clone, Copy)]
+#[allow(non_camel_case_types)]
+pub enum AddressingMode {
+    Accumulator,
+    Implied,
+    Immediate,
+    Indirect,
+    Relative,
+    ZeroPage,
+    ZeroPage_X,
+    ZeroPage_Y,
+    Absolute,
+    Absolute_X,
+    Absolute_Y,
+    Indirect_X,
+    Indirect_Y,
+}
 
 #[derive(Clone)]
 pub struct OpCode {

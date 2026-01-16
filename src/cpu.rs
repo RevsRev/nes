@@ -201,218 +201,232 @@ impl<T: Bus> CPU<T> {
         F: FnMut(&mut CPU<T>),
     {
         loop {
-            let nmi = self.interrupt.borrow_mut().take_nmi();
-            if nmi {
-                self.interrupt_nmi();
+            match self.step_with_callback(&mut callback) {
+                Ok(b) => match b {
+                    true => {}
+                    false => break,
+                },
+                Err(s) => {
+                    return Err(s);
+                }
             }
+        }
+        Result::Ok(())
+    }
 
-            let op = self.mem_read(self.program_counter);
+    pub fn step_with_callback<F>(&mut self, callback: &mut F) -> Result<bool, String>
+    where
+        F: FnMut(&mut CPU<T>),
+    {
+        let nmi = self.interrupt.borrow_mut().take_nmi();
+        if nmi {
+            self.interrupt_nmi();
+        }
 
-            let opcode = op.and_then(|o| {
-                let option = opp::OPCODES_MAP.get(&o);
-                match option {
-                    Some(o) => Result::Ok(o),
-                    None => Result::Err(format!("Opcode {:x} is not recognised", o)),
+        let op = self.mem_read(self.program_counter);
+
+        let opcode = op.and_then(|o| {
+            let option = opp::OPCODES_MAP.get(&o);
+            match option {
+                Some(o) => Result::Ok(o),
+                None => Result::Err(format!("Opcode {:x} is not recognised", o)),
+            }
+        })?;
+
+        self.reads.clear();
+        self.writes.clear();
+        self.trace_pc = self.program_counter;
+        self.trace_sp = self.stack_pointer;
+        self.trace_status = self.status;
+        self.trace_reg_a = self.register_a;
+        self.trace_reg_x = self.register_x;
+        self.trace_reg_y = self.register_y;
+
+        self.op_cycles = opcode.cycles;
+        self.program_counter += 1;
+        self.next_program_counter = self.program_counter + (opcode.len - 1) as u16;
+
+        let execution_result: Result<(), String> = match opcode.code {
+            0x69 | 0x65 | 0x75 | 0x6D | 0x7D | 0x79 | 0x61 | 0x71 => self.adc(&opcode.mode),
+
+            0x29 | 0x25 | 0x35 | 0x2D | 0x3D | 0x39 | 0x21 | 0x31 => self.and(&opcode.mode),
+
+            0x0A | 0x06 | 0x16 | 0x0E | 0x1E => self.asl(&opcode.mode),
+
+            0x90 => self.bcc(&opcode.mode),
+
+            0xB0 => self.bcs(&opcode.mode),
+
+            0xF0 => self.beq(&opcode.mode),
+
+            0x24 | 0x2C => self.bit(&opcode.mode),
+
+            0x30 => self.bmi(&opcode.mode),
+
+            0xD0 => self.bne(&opcode.mode),
+
+            0x10 => self.bpl(&opcode.mode),
+
+            0x50 => self.bvc(&opcode.mode),
+
+            0x70 => self.bvs(&opcode.mode),
+
+            0x18 => self.clc(&opcode.mode),
+
+            0xD8 => self.cld(&opcode.mode),
+
+            0x58 => self.cli(&opcode.mode),
+
+            0xB8 => self.clv(&opcode.mode),
+
+            0xC9 | 0xC5 | 0xD5 | 0xCD | 0xDD | 0xD9 | 0xC1 | 0xD1 => self.cmp(&opcode.mode),
+
+            0xE0 | 0xE4 | 0xEC => self.cpx(&opcode.mode),
+
+            0xC0 | 0xC4 | 0xCC => self.cpy(&opcode.mode),
+
+            0xC6 | 0xD6 | 0xCE | 0xDE => self.dec(&opcode.mode),
+
+            0xC7 | 0xD7 | 0xCF | 0xDF | 0xDB | 0xC3 | 0xD3 => self.dcp(&opcode.mode),
+
+            0xCA => self.dex(&opcode.mode),
+
+            0x88 => self.dey(&opcode.mode),
+
+            0x49 | 0x45 | 0x55 | 0x4D | 0x5D | 0x59 | 0x41 | 0x51 => self.eor(&opcode.mode),
+
+            0xE6 | 0xF6 | 0xEE | 0xFE => self.inc(&opcode.mode),
+
+            0xE8 => self.inx(),
+
+            0xC8 => self.iny(&opcode.mode),
+
+            0xE7 | 0xF7 | 0xEF | 0xFF | 0xFB | 0xE3 | 0xF3 => self.isb(&opcode.mode),
+
+            0x4C | 0x6C => self.jmp(&opcode.mode),
+
+            0x20 => self.jsr(&opcode.mode),
+
+            0xa9 | 0xa5 | 0xb5 | 0xad | 0xbd | 0xb9 | 0xa1 | 0xb1 => self.lda(&opcode.mode),
+
+            0xA2 | 0xA6 | 0xB6 | 0xAE | 0xBE => self.ldx(&opcode.mode),
+
+            0xA7 | 0xB7 | 0xAF | 0xBF | 0xA3 | 0xB3 => self.lax(&opcode.mode),
+
+            0xA0 | 0xA4 | 0xB4 | 0xAC | 0xBC => self.ldy(&opcode.mode),
+
+            0x4A | 0x46 | 0x56 | 0x4E | 0x5E => self.lsr(&opcode.mode),
+
+            0xEA | 0x1A | 0x3A | 0x5A | 0x7A | 0xDA | 0xFA => self.nop(&opcode.mode),
+
+            0x04 | 0x14 | 0x34 | 0x44 | 0x54 | 0x64 | 0x74 | 0x80 | 0x82 | 0x89 | 0xC2 | 0xD4
+            | 0xE2 | 0xF4 => self.dop(&opcode.mode),
+
+            0x0C | 0x1C | 0x3C | 0x5C | 0x7C | 0xDC | 0xFC => self.top(&opcode.mode),
+
+            0x09 | 0x05 | 0x15 | 0x0D | 0x1D | 0x19 | 0x01 | 0x11 => self.ora(&opcode.mode),
+
+            0x48 => self.pha(&opcode.mode),
+
+            0x08 => self.php(&opcode.mode),
+
+            0x68 => self.pla(&opcode.mode),
+
+            0x28 => self.plp(&opcode.mode),
+
+            0x2A | 0x26 | 0x36 | 0x2E | 0x3E => self.rol(&opcode.mode),
+
+            0x6A | 0x66 | 0x76 | 0x6E | 0x7E => self.ror(&opcode.mode),
+
+            0x27 | 0x37 | 0x2F | 0x3F | 0x3B | 0x23 | 0x33 => self.rla(&opcode.mode),
+
+            0x67 | 0x77 | 0x6F | 0x7F | 0x7B | 0x63 | 0x73 => self.rra(&opcode.mode),
+
+            0x40 => self.rti(&opcode.mode),
+
+            0x60 => self.rts(&opcode.mode),
+
+            0x87 | 0x97 | 0x83 | 0x8F => self.sax(&opcode.mode),
+
+            0xE9 | 0xE5 | 0xF5 | 0xED | 0xFD | 0xF9 | 0xE1 | 0xF1 | 0xEB => self.sbc(&opcode.mode),
+
+            0x38 => self.sec(&opcode.mode),
+
+            0xF8 => self.sed(&opcode.mode),
+
+            0x78 => self.sei(&opcode.mode),
+
+            0x07 | 0x17 | 0x0F | 0x1F | 0x1B | 0x03 | 0x13 => self.slo(&opcode.mode),
+
+            0x47 | 0x57 | 0x4F | 0x5F | 0x5B | 0x43 | 0x53 => self.sre(&opcode.mode),
+
+            0x85 | 0x95 | 0x8d | 0x9d | 0x99 | 0x81 | 0x91 => self.sta(&opcode.mode),
+
+            0x86 | 0x96 | 0x8E => self.stx(&opcode.mode),
+
+            0x84 | 0x94 | 0x8C => self.sty(&opcode.mode),
+
+            0xAA => self.tax(),
+
+            0xA8 => self.tay(),
+
+            0xBA => self.tsx(),
+
+            0x8A => self.txa(),
+
+            0x9A => self.txs(),
+
+            0x98 => self.tya(),
+
+            0x00 => {
+                let break_result = self.brk(&opcode.mode);
+                break_result.map(|v| {
+                    if v {
+                        self.halt.store(true, Ordering::Relaxed);
+                    }
+                    ()
+                })
+            }
+            _ => todo!(),
+        };
+
+        match execution_result {
+            Ok(_) => {}
+            Err(s) => {
+                return Err(self.format_fatal_error(opcode, s));
+            }
+        }
+
+        self.store_trace(&opcode);
+        callback(self);
+
+        if self.halt.load(Ordering::Relaxed) {
+            return Ok(false);
+        }
+
+        if !Self::get_flag(self.status, INTERRUPT_DISABLE_FLAG)
+            && self.interrupt.borrow_mut().poll_irq()
+        {
+            self.stack_push_u16(self.next_program_counter);
+            self.stack_push((self.status & !BREAK_FLAG) | BREAK2_FLAG);
+
+            let pc = self.mem_read_u16(0xFFFE);
+
+            match pc {
+                Ok(val) => {
+                    self.set_status_flag(INTERRUPT_DISABLE_FLAG, true);
+                    self.program_counter = val;
+                    self.tick(7);
                 }
-            })?;
-
-            self.reads.clear();
-            self.writes.clear();
-            self.trace_pc = self.program_counter;
-            self.trace_sp = self.stack_pointer;
-            self.trace_status = self.status;
-            self.trace_reg_a = self.register_a;
-            self.trace_reg_x = self.register_x;
-            self.trace_reg_y = self.register_y;
-
-            self.op_cycles = opcode.cycles;
-            self.program_counter += 1;
-            self.next_program_counter = self.program_counter + (opcode.len - 1) as u16;
-
-            let execution_result: Result<(), String> = match opcode.code {
-                0x69 | 0x65 | 0x75 | 0x6D | 0x7D | 0x79 | 0x61 | 0x71 => self.adc(&opcode.mode),
-
-                0x29 | 0x25 | 0x35 | 0x2D | 0x3D | 0x39 | 0x21 | 0x31 => self.and(&opcode.mode),
-
-                0x0A | 0x06 | 0x16 | 0x0E | 0x1E => self.asl(&opcode.mode),
-
-                0x90 => self.bcc(&opcode.mode),
-
-                0xB0 => self.bcs(&opcode.mode),
-
-                0xF0 => self.beq(&opcode.mode),
-
-                0x24 | 0x2C => self.bit(&opcode.mode),
-
-                0x30 => self.bmi(&opcode.mode),
-
-                0xD0 => self.bne(&opcode.mode),
-
-                0x10 => self.bpl(&opcode.mode),
-
-                0x50 => self.bvc(&opcode.mode),
-
-                0x70 => self.bvs(&opcode.mode),
-
-                0x18 => self.clc(&opcode.mode),
-
-                0xD8 => self.cld(&opcode.mode),
-
-                0x58 => self.cli(&opcode.mode),
-
-                0xB8 => self.clv(&opcode.mode),
-
-                0xC9 | 0xC5 | 0xD5 | 0xCD | 0xDD | 0xD9 | 0xC1 | 0xD1 => self.cmp(&opcode.mode),
-
-                0xE0 | 0xE4 | 0xEC => self.cpx(&opcode.mode),
-
-                0xC0 | 0xC4 | 0xCC => self.cpy(&opcode.mode),
-
-                0xC6 | 0xD6 | 0xCE | 0xDE => self.dec(&opcode.mode),
-
-                0xC7 | 0xD7 | 0xCF | 0xDF | 0xDB | 0xC3 | 0xD3 => self.dcp(&opcode.mode),
-
-                0xCA => self.dex(&opcode.mode),
-
-                0x88 => self.dey(&opcode.mode),
-
-                0x49 | 0x45 | 0x55 | 0x4D | 0x5D | 0x59 | 0x41 | 0x51 => self.eor(&opcode.mode),
-
-                0xE6 | 0xF6 | 0xEE | 0xFE => self.inc(&opcode.mode),
-
-                0xE8 => self.inx(),
-
-                0xC8 => self.iny(&opcode.mode),
-
-                0xE7 | 0xF7 | 0xEF | 0xFF | 0xFB | 0xE3 | 0xF3 => self.isb(&opcode.mode),
-
-                0x4C | 0x6C => self.jmp(&opcode.mode),
-
-                0x20 => self.jsr(&opcode.mode),
-
-                0xa9 | 0xa5 | 0xb5 | 0xad | 0xbd | 0xb9 | 0xa1 | 0xb1 => self.lda(&opcode.mode),
-
-                0xA2 | 0xA6 | 0xB6 | 0xAE | 0xBE => self.ldx(&opcode.mode),
-
-                0xA7 | 0xB7 | 0xAF | 0xBF | 0xA3 | 0xB3 => self.lax(&opcode.mode),
-
-                0xA0 | 0xA4 | 0xB4 | 0xAC | 0xBC => self.ldy(&opcode.mode),
-
-                0x4A | 0x46 | 0x56 | 0x4E | 0x5E => self.lsr(&opcode.mode),
-
-                0xEA | 0x1A | 0x3A | 0x5A | 0x7A | 0xDA | 0xFA => self.nop(&opcode.mode),
-
-                0x04 | 0x14 | 0x34 | 0x44 | 0x54 | 0x64 | 0x74 | 0x80 | 0x82 | 0x89 | 0xC2
-                | 0xD4 | 0xE2 | 0xF4 => self.dop(&opcode.mode),
-
-                0x0C | 0x1C | 0x3C | 0x5C | 0x7C | 0xDC | 0xFC => self.top(&opcode.mode),
-
-                0x09 | 0x05 | 0x15 | 0x0D | 0x1D | 0x19 | 0x01 | 0x11 => self.ora(&opcode.mode),
-
-                0x48 => self.pha(&opcode.mode),
-
-                0x08 => self.php(&opcode.mode),
-
-                0x68 => self.pla(&opcode.mode),
-
-                0x28 => self.plp(&opcode.mode),
-
-                0x2A | 0x26 | 0x36 | 0x2E | 0x3E => self.rol(&opcode.mode),
-
-                0x6A | 0x66 | 0x76 | 0x6E | 0x7E => self.ror(&opcode.mode),
-
-                0x27 | 0x37 | 0x2F | 0x3F | 0x3B | 0x23 | 0x33 => self.rla(&opcode.mode),
-
-                0x67 | 0x77 | 0x6F | 0x7F | 0x7B | 0x63 | 0x73 => self.rra(&opcode.mode),
-
-                0x40 => self.rti(&opcode.mode),
-
-                0x60 => self.rts(&opcode.mode),
-
-                0x87 | 0x97 | 0x83 | 0x8F => self.sax(&opcode.mode),
-
-                0xE9 | 0xE5 | 0xF5 | 0xED | 0xFD | 0xF9 | 0xE1 | 0xF1 | 0xEB => {
-                    self.sbc(&opcode.mode)
-                }
-
-                0x38 => self.sec(&opcode.mode),
-
-                0xF8 => self.sed(&opcode.mode),
-
-                0x78 => self.sei(&opcode.mode),
-
-                0x07 | 0x17 | 0x0F | 0x1F | 0x1B | 0x03 | 0x13 => self.slo(&opcode.mode),
-
-                0x47 | 0x57 | 0x4F | 0x5F | 0x5B | 0x43 | 0x53 => self.sre(&opcode.mode),
-
-                0x85 | 0x95 | 0x8d | 0x9d | 0x99 | 0x81 | 0x91 => self.sta(&opcode.mode),
-
-                0x86 | 0x96 | 0x8E => self.stx(&opcode.mode),
-
-                0x84 | 0x94 | 0x8C => self.sty(&opcode.mode),
-
-                0xAA => self.tax(),
-
-                0xA8 => self.tay(),
-
-                0xBA => self.tsx(),
-
-                0x8A => self.txa(),
-
-                0x9A => self.txs(),
-
-                0x98 => self.tya(),
-
-                0x00 => {
-                    let break_result = self.brk(&opcode.mode);
-                    break_result.map(|v| {
-                        if v {
-                            self.halt.store(true, Ordering::Relaxed);
-                        }
-                        ()
-                    })
-                }
-                _ => todo!(),
-            };
-
-            match execution_result {
-                Ok(_) => {}
                 Err(s) => {
                     return Err(self.format_fatal_error(opcode, s));
                 }
             }
-
-            self.store_trace(&opcode);
-            callback(self);
-
-            if self.halt.load(Ordering::Relaxed) {
-                break;
-            }
-
-            if !Self::get_flag(self.status, INTERRUPT_DISABLE_FLAG)
-                && self.interrupt.borrow_mut().poll_irq()
-            {
-                self.stack_push_u16(self.next_program_counter);
-                self.stack_push((self.status & !BREAK_FLAG) | BREAK2_FLAG);
-
-                let pc = self.mem_read_u16(0xFFFE);
-
-                match pc {
-                    Ok(val) => {
-                        self.set_status_flag(INTERRUPT_DISABLE_FLAG, true);
-                        self.program_counter = val;
-                        self.tick(7);
-                    }
-                    Err(s) => {
-                        return Err(self.format_fatal_error(opcode, s));
-                    }
-                }
-            } else {
-                self.program_counter = self.next_program_counter;
-                self.tick(self.op_cycles);
-            }
+        } else {
+            self.program_counter = self.next_program_counter;
+            self.tick(self.op_cycles);
         }
-        Result::Ok(())
+        return Ok(true);
     }
 
     fn format_fatal_error(&mut self, opcode: &&OpCode, s: String) -> String {

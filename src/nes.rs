@@ -93,14 +93,14 @@ mod test {
     use crate::rom::{self, Rom};
     use crate::traits::mem::Mem;
     use std::cell::RefCell;
-    use std::collections::{HashMap, VecDeque};
+    use std::collections::HashMap;
     use std::fs::File;
     use std::io::{BufRead, BufReader, BufWriter, Write};
     use std::panic::AssertUnwindSafe;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::{Duration, Instant};
-    use std::{panic, string, thread};
+    use std::{panic, thread};
 
     use super::NES;
 

@@ -6,10 +6,10 @@ use crate::traits::tick::Tick;
 use crate::{opp, traits::mem::Mem};
 use indoc::indoc;
 use std::cell::RefCell;
+use std::fmt;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::{collections::HashMap, fmt};
 
 //Flags
 pub const CARRY_FLAG: u8 = 0b0000_0001;

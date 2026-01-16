@@ -1,6 +1,5 @@
 use crate::apu::{
     channel::sweep::Sweep,
-    mixer,
     registers::{divider::Divider, frame::FrameClock},
 };
 

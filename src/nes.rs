@@ -54,7 +54,7 @@ impl<'call> NES<'call> {
     where
         F: FnMut(&mut CPU<BusImpl>),
     {
-        let combined_callback = |cpu: &mut CPU<BusImpl>| {
+        let mut combined_callback = |cpu: &mut CPU<BusImpl>| {
             if self.tracing {
                 match cpu.get_trace_str() {
                     Option::None => println!("NULL Trace"),
@@ -64,7 +64,18 @@ impl<'call> NES<'call> {
             callback(cpu);
         };
 
-        self.cpu.run_with_callback(combined_callback)
+        loop {
+            match self.cpu.step_with_callback(&mut combined_callback) {
+                Ok(b) => match b {
+                    true => {}
+                    false => break,
+                },
+                Err(s) => {
+                    return Err(s);
+                }
+            }
+        }
+        Result::Ok(())
     }
 }
 

@@ -52,20 +52,21 @@ impl<'call> NES<'call> {
 
     pub fn run_with_callback<F>(&mut self, mut callback: F) -> Result<(), String>
     where
-        F: FnMut(&mut CPU<BusImpl>),
+        F: FnMut(&mut NES),
     {
-        let mut combined_callback = |cpu: &mut CPU<BusImpl>| {
-            if self.tracing {
-                match cpu.get_trace_str() {
+        let tracing = self.tracing;
+        let mut combined_callback = |nes: &mut NES| {
+            if tracing {
+                match nes.cpu.get_trace_str() {
                     Option::None => println!("NULL Trace"),
                     Option::Some(s) => println!("{}", s),
                 };
             }
-            callback(cpu);
+            callback(nes);
         };
 
         loop {
-            match self.cpu.step_with_callback(&mut combined_callback) {
+            match self.cpu.step_with_callback(&mut |_| {}) {
                 Ok(b) => match b {
                     true => {}
                     false => break,
@@ -74,6 +75,7 @@ impl<'call> NES<'call> {
                     return Err(s);
                 }
             }
+            combined_callback(self);
         }
         Result::Ok(())
     }
@@ -148,8 +150,8 @@ mod test {
             halt_share.store(true, Ordering::Relaxed);
         });
 
-        let _ = nes.run_with_callback(|cpu| {
-            let trace = cpu.get_trace_str();
+        let _ = nes.run_with_callback(|nes| {
+            let trace = nes.cpu.get_trace_str();
             match trace {
                 None => println!("WARN: No CPU trace"),
                 Some(tr) => result.push(tr),
@@ -208,8 +210,8 @@ mod test {
             halt_share.store(true, Ordering::Relaxed);
         });
 
-        let _ = nes.run_with_callback(|cpu| {
-            let trace = cpu.get_trace_str();
+        let _ = nes.run_with_callback(|nes| {
+            let trace = nes.cpu.get_trace_str();
             match trace {
                 None => println!("WARN: No CPU trace"),
                 Some(tr) => result.push(tr),
@@ -248,8 +250,8 @@ mod test {
         });
 
         let _runtime_result = panic::catch_unwind(AssertUnwindSafe(|| {
-            let _ = nes.run_with_callback(|cpu| {
-                let trace = cpu.get_trace_str();
+            let _ = nes.run_with_callback(|nes| {
+                let trace = nes.cpu.get_trace_str();
                 match trace {
                     None => println!("WARN: No CPU trace"),
                     Some(tr) => {
@@ -509,8 +511,8 @@ mod test {
         });
 
         let _runtime_result = panic::catch_unwind(AssertUnwindSafe(|| {
-            let _ = nes.run_with_callback(|cpu| {
-                let trace = cpu.get_trace_str();
+            let _ = nes.run_with_callback(|nes| {
+                let trace = nes.cpu.get_trace_str();
                 match trace {
                     None => println!("WARN: No CPU trace"),
                     Some(tr) => {
@@ -519,7 +521,7 @@ mod test {
                     }
                 }
 
-                if max_cycles > 0 && cpu.total_cycles > max_cycles as u64 {
+                if max_cycles > 0 && nes.cpu.total_cycles > max_cycles as u64 {
                     halt.store(true, Ordering::Relaxed);
                 }
             });
@@ -571,8 +573,8 @@ mod test {
         });
 
         let _runtime_result = panic::catch_unwind(AssertUnwindSafe(|| {
-            let _ = nes.run_with_callback(|cpu| {
-                let trace = cpu.get_trace_str();
+            let _ = nes.run_with_callback(|nes| {
+                let trace = nes.cpu.get_trace_str();
                 match trace {
                     None => println!("WARN: No CPU trace"),
                     Some(tr) => {
@@ -581,7 +583,7 @@ mod test {
                     }
                 }
 
-                if max_cycles > 0 && cpu.total_cycles > max_cycles as u64 {
+                if max_cycles > 0 && nes.cpu.total_cycles > max_cycles as u64 {
                     halt.store(true, Ordering::Relaxed);
                 }
             });

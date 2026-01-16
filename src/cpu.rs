@@ -200,8 +200,6 @@ impl<T: Bus> CPU<T> {
     where
         F: FnMut(&mut CPU<T>),
     {
-        let ref opcodes: HashMap<u8, &'static opp::OpCode> = *opp::OPCODES_MAP;
-
         loop {
             let nmi = self.interrupt.borrow_mut().take_nmi();
             if nmi {
@@ -211,7 +209,7 @@ impl<T: Bus> CPU<T> {
             let op = self.mem_read(self.program_counter);
 
             let opcode = op.and_then(|o| {
-                let option = opcodes.get(&o);
+                let option = opp::OPCODES_MAP.get(&o);
                 match option {
                     Some(o) => Result::Ok(o),
                     None => Result::Err(format!("Opcode {:x} is not recognised", o)),

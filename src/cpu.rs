@@ -47,7 +47,14 @@ pub enum AddressingMode {
     Indirect_Y,
 }
 
+#[derive(Clone, Copy)]
+pub struct TraceFormatOptions {
+    pub write_break_2_flag: bool,
+    pub write_cpu_cycles: bool,
+}
+
 struct CpuTrace {
+    pub cpu_cycles: u64,
     pub pc: u16,
     pub op_code: OpCode,
     pub absolute_address: Option<u16>,
@@ -58,12 +65,16 @@ struct CpuTrace {
     pub stack: u8,
     pub reads: Vec<(u16, u8)>,
     pub writes: Vec<(u16, u8)>,
-    pub write_break_2_flag: bool,
+    pub format_options: TraceFormatOptions,
 }
 
 impl fmt::Display for CpuTrace {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let p = if self.write_break_2_flag {
+        if self.format_options.write_cpu_cycles {
+            write!(f, "c{:<10}", self.cpu_cycles)?;
+        }
+
+        let p = if self.format_options.write_break_2_flag {
             self.status
         } else {
             self.status & !BREAK2_FLAG
@@ -308,9 +319,6 @@ impl fmt::Display for CpuTrace {
                     registers_and_pointers
                 )
             }
-            _ => {
-                write!(f, "bla")
-            }
         }
     }
 }
@@ -339,7 +347,7 @@ pub struct CPU<T: Bus> {
     writes: Vec<(u16, u8)>,
 
     halt: Arc<AtomicBool>,
-    pub store_break_2_flag: bool,
+    pub trace_format_options: TraceFormatOptions,
 
     next_program_counter: u16,
     pub total_cycles: u64,
@@ -423,7 +431,10 @@ impl<T: Bus> CPU<T> {
             writes: Vec::new(),
             operand_address: Option::None,
             halt: halt,
-            store_break_2_flag: false,
+            trace_format_options: TraceFormatOptions {
+                write_break_2_flag: false,
+                write_cpu_cycles: false,
+            },
             next_program_counter: 0,
             total_cycles: 0,
             op_cycles: 0,
@@ -454,6 +465,7 @@ impl<T: Bus> CPU<T> {
 
     fn store_trace(&mut self, op: &OpCode) {
         self.trace = Option::Some(CpuTrace {
+            cpu_cycles: self.total_cycles,
             pc: self.trace_pc,
             op_code: (*op).to_owned(),
             absolute_address: self.operand_address,
@@ -464,7 +476,7 @@ impl<T: Bus> CPU<T> {
             stack: self.trace_sp,
             reads: self.reads.clone(),
             writes: self.writes.clone(),
-            write_break_2_flag: self.store_break_2_flag,
+            format_options: self.trace_format_options,
         });
 
         self.operand_address = Option::None;

@@ -226,7 +226,7 @@ mod test {
         let nes_test_log = read_file("assets/nestest.log");
 
         nes.cpu.reset();
-        nes.cpu.store_break_2_flag = true;
+        nes.cpu.trace_format_options.write_break_2_flag = true;
 
         //        nes.setDebug(true);
         nes.cpu.program_counter = 0xC000;
@@ -295,7 +295,7 @@ mod test {
     fn nestest_blargg_palette_ram() {
         let rom = Rom::from_file("nestest/ppu/palette_ram.nes");
         let nes_test_log = read_file("nestest/ppu/palette_ram_fceux.log");
-        should_match_fceux(rom, nes_test_log, -1);
+        should_match_fceux(rom, nes_test_log, 38315);
     }
 
     #[test]
@@ -441,7 +441,7 @@ mod test {
     fn nestest_blargg_04_clock_jitter() {
         let rom = Rom::from_file("nestest/apu/04.clock_jitter.nes");
         let nes_test_log = read_file("nestest/apu/04_fceux.log");
-        should_match_fceux(rom, nes_test_log, -1);
+        should_match_fceux(rom, nes_test_log, 11976);
     }
 
     #[test]
@@ -480,6 +480,8 @@ mod test {
             Arc::clone(&halt),
             |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
         );
+
+        nes.cpu.trace_format_options.write_cpu_cycles = true;
 
         let halt_share = halt.clone();
         let handle = thread::spawn(move || {
@@ -538,6 +540,9 @@ mod test {
             Arc::clone(&halt),
             |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
         );
+
+        nes.cpu.trace_format_options.write_cpu_cycles = true;
+
         let mut result: Vec<String> = Vec::new();
 
         let halt_share = halt.clone();
@@ -670,6 +675,7 @@ mod test {
         sp: String,
         status: String,
         mem_addr: Option<String>,
+        cycles: String,
     }
 
     impl Capture {
@@ -684,6 +690,7 @@ mod test {
                 sp: capture_register(line, sp_string).unwrap(),
                 status: status_extract(line).unwrap(),
                 mem_addr: capture_mem_addr(line),
+                cycles: capture_cycles(line).unwrap(),
             }
         }
     }
@@ -724,5 +731,13 @@ mod test {
         let re = Regex::new(r"([0-9A-Fa-f]{4})").unwrap();
         re.captures(line)
             .and_then(|caps| caps.get(1).map(|m| m.as_str().to_string()))
+    }
+
+    fn capture_cycles(line: &str) -> Option<String> {
+        let re = Regex::new(r"^c(\d+)\s").unwrap();
+
+        re.captures(line)
+            .and_then(|caps| caps.get(1))
+            .map(|m| m.as_str().to_string())
     }
 }

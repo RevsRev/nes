@@ -123,6 +123,7 @@ impl PPU {
             }
 
             0x3F00..=0x3FFF => {
+                self.internal_data_buf = self.vram[self.mirror_vram_addr(addr & 0x2FFF) as usize];
                 Result::Ok(self.palette_table[(self.mirror_pallette_addr(addr) - 0x3F00) as usize])
             }
             _ => Result::Err(format!("Unexpected access to mirrored space {:#04X}", addr)),

@@ -426,7 +426,7 @@ mod test {
     fn nestest_blargg_vram_access() {
         let rom = Rom::from_file("nestest/ppu/vram_access.nes");
         let nes_test_log = read_file("nestest/ppu/vram_access_fceux.log");
-        should_match_fceux(rom, nes_test_log, -1);
+        should_match_fceux(rom, nes_test_log, 38325);
     }
     /*
      * BLARGG APU TESTS

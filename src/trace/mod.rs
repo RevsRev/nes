@@ -3,8 +3,8 @@ use crate::opp::{AddressingMode, OpCode, OpCodeBehaviour};
 use std::fmt;
 
 pub struct NesTrace {
-    cpu_trace: CpuTrace,
-    ppu_trace: PpuTrace,
+    pub cpu_trace: CpuTrace,
+    pub ppu_trace: PpuTrace,
 }
 
 pub struct CpuTrace {
@@ -22,8 +22,8 @@ pub struct CpuTrace {
 }
 
 pub struct PpuTrace {
-    scanline: u16,
-    dot: u16,
+    pub scanline: u16,
+    pub dot: u16,
 }
 
 #[derive(Clone, Copy)]
@@ -37,8 +37,8 @@ pub struct CpuTraceFormatter {
 }
 pub struct PpuTraceFormatter {}
 pub struct NesTraceFormatter {
-    cpu_formatter: CpuTraceFormatter,
-    ppu_formatter: PpuTraceFormatter,
+    pub cpu_formatter: CpuTraceFormatter,
+    pub ppu_formatter: PpuTraceFormatter,
 }
 
 impl NesTraceFormatter {

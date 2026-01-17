@@ -6,6 +6,7 @@ use crate::{
     interrupt::{Interrupt, InterruptImpl},
     ppu::registers::{addr::AddrRegister, ctl::ControlRegister},
     rom::{Mirroring, Rom},
+    trace::PpuTrace,
     traits::tick::Tick,
 };
 
@@ -95,6 +96,13 @@ impl PPU {
             frame_cycles: 0,
             scanline: 0,
             new_frame: false,
+        }
+    }
+
+    pub fn trace(&self) -> PpuTrace {
+        PpuTrace {
+            scanline: self.scanline,
+            dot: self.frame_cycles as u16,
         }
     }
 

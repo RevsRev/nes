@@ -11,11 +11,12 @@ use crate::interrupt::InterruptImpl;
 use crate::io::joypad::Joypad;
 use crate::ppu::PPU;
 use crate::rom::Rom;
-use crate::trace::{CpuTraceFormatOptions, CpuTraceFormatter, NesTraceFormatter};
+use crate::trace::{CpuTraceFormatOptions, CpuTraceFormatter, NesTrace, NesTraceFormatter};
 
 pub struct NES<'call> {
     tracing: bool,
     trace_options: CpuTraceFormatOptions,
+    pub trace: Option<NesTrace>,
 
     pub cpu: CPU<BusImpl<'call>>,
     pub bus: Rc<RefCell<BusImpl<'call>>>,
@@ -47,6 +48,7 @@ impl<'call> NES<'call> {
                 write_break_2_flag: true,
                 write_cpu_cycles: true,
             },
+            trace: Option::None,
             cpu: cpu,
             bus: bus,
         }
@@ -66,9 +68,9 @@ impl<'call> NES<'call> {
         };
         let mut combined_callback = |nes: &mut NES| {
             if tracing {
-                match nes.cpu.trace.as_ref() {
+                match nes.trace.as_ref() {
                     Option::None => println!("NULL Trace"),
-                    Option::Some(s) => println!("{}", trace_formatter.format(&s)),
+                    Option::Some(s) => println!("{}", trace_formatter.format(&s.cpu_trace)),
                 };
             }
             callback(nes);
@@ -84,6 +86,10 @@ impl<'call> NES<'call> {
                     return Err(s);
                 }
             }
+            self.trace = Option::Some(NesTrace {
+                cpu_trace: self.cpu.trace.take().unwrap(),
+                ppu_trace: self.bus.borrow_mut().ppu.trace(),
+            });
             combined_callback(self);
         }
         Result::Ok(())
@@ -100,7 +106,9 @@ mod test {
     use crate::io::joypad::Joypad;
     use crate::ppu::PPU;
     use crate::rom::{self, Rom};
-    use crate::trace::{CpuTraceFormatOptions, CpuTraceFormatter};
+    use crate::trace::{
+        CpuTraceFormatOptions, CpuTraceFormatter, NesTraceFormatter, PpuTraceFormatter,
+    };
     use crate::traits::mem::Mem;
     use std::cell::RefCell;
     use std::collections::HashMap;
@@ -168,11 +176,11 @@ mod test {
         };
 
         let _ = nes.run_with_callback(|nes| {
-            let trace = nes.cpu.trace.as_ref();
+            let trace = nes.trace.as_ref();
             match trace {
                 None => println!("WARN: No CPU trace"),
                 Some(tr) => {
-                    let f = formatter.format(&tr);
+                    let f = formatter.format(&tr.cpu_trace);
                     result.push(f);
                 }
             }
@@ -238,11 +246,11 @@ mod test {
         };
 
         let _ = nes.run_with_callback(|nes| {
-            let trace = nes.cpu.trace.as_ref();
+            let trace = nes.trace.as_ref();
             match trace {
                 None => println!("WARN: No CPU trace"),
                 Some(tr) => {
-                    let f = formatter.format(&tr);
+                    let f = formatter.format(&tr.cpu_trace);
                     result.push(f);
                 }
             }
@@ -288,11 +296,11 @@ mod test {
 
         let _runtime_result = panic::catch_unwind(AssertUnwindSafe(|| {
             let _ = nes.run_with_callback(|nes| {
-                let trace = nes.cpu.trace.as_ref();
+                let trace = nes.trace.as_ref();
                 match trace {
                     None => println!("WARN: No CPU trace"),
                     Some(tr) => {
-                        let f = formatter.format(&tr);
+                        let f = formatter.format(&tr.cpu_trace);
                         result.push(f);
                     }
                 }
@@ -530,8 +538,6 @@ mod test {
             |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
         );
 
-        nes.cpu.trace_format_options.write_cpu_cycles = true;
-
         let halt_share = halt.clone();
         let handle = thread::spawn(move || {
             let timeout = Duration::from_secs(2);
@@ -547,20 +553,23 @@ mod test {
             halt_share.store(true, Ordering::Relaxed);
         });
 
-        let formatter = CpuTraceFormatter {
-            options: CpuTraceFormatOptions {
-                write_break_2_flag: false,
-                write_cpu_cycles: true,
+        let nes_formatter = NesTraceFormatter {
+            cpu_formatter: CpuTraceFormatter {
+                options: CpuTraceFormatOptions {
+                    write_break_2_flag: false,
+                    write_cpu_cycles: true,
+                },
             },
+            ppu_formatter: PpuTraceFormatter {},
         };
 
         let _runtime_result = panic::catch_unwind(AssertUnwindSafe(|| {
             let _ = nes.run_with_callback(|nes| {
-                let trace = nes.cpu.trace.as_ref();
+                let trace = nes.trace.as_ref();
                 match trace {
                     None => println!("WARN: No CPU trace"),
                     Some(tr) => {
-                        let f = formatter.format(&tr);
+                        let f = nes_formatter.format(&tr);
                         writeln!(writer.borrow_mut(), "{}", f)
                             .expect("failed to write trace to log file");
                     }
@@ -616,21 +625,24 @@ mod test {
             halt_share.store(true, Ordering::Relaxed);
         });
 
-        let formatter = CpuTraceFormatter {
-            options: CpuTraceFormatOptions {
-                write_break_2_flag: false,
-                write_cpu_cycles: true,
+        let nes_tr_formatter = NesTraceFormatter {
+            cpu_formatter: CpuTraceFormatter {
+                options: CpuTraceFormatOptions {
+                    write_break_2_flag: false,
+                    write_cpu_cycles: true,
+                },
             },
+            ppu_formatter: PpuTraceFormatter {},
         };
 
         let _runtime_result = panic::catch_unwind(AssertUnwindSafe(|| {
             let _ = nes.run_with_callback(|nes| {
-                let trace = nes.cpu.trace.as_ref();
+                let trace = nes.trace.as_ref();
                 match trace {
                     None => println!("WARN: No CPU trace"),
                     Some(tr) => {
                         // println!("{}", tr);
-                        result.push(formatter.format(tr));
+                        result.push(nes_tr_formatter.format(&tr));
                     }
                 }
 

@@ -210,10 +210,7 @@ impl<T: Bus> CPU<T> {
     where
         F: FnMut(&mut CPU<T>),
     {
-        let nmi = self.interrupt.borrow_mut().take_nmi();
-        if nmi {
-            self.interrupt_nmi();
-        }
+        let should_nmi = self.interrupt.borrow_mut().take_nmi();
 
         let op = self.mem_read(self.program_counter);
 
@@ -418,6 +415,11 @@ impl<T: Bus> CPU<T> {
             self.program_counter = self.next_program_counter;
             self.tick(self.op_cycles);
         }
+
+        if should_nmi {
+            self.interrupt_nmi();
+        }
+
         return Ok(true);
     }
 
@@ -1528,7 +1530,8 @@ impl<T: Bus> CPU<T> {
         self.stack_push(status)?;
         self.status = self.status | INTERRUPT_DISABLE_FLAG;
 
-        self.bus.borrow_mut().tick(2);
+        self.total_cycles = self.total_cycles + 7;
+        self.bus.borrow_mut().tick(7);
         self.program_counter = self.mem_read_u16(NMI_INTERRUPT_ADDRESS)?;
         Result::Ok(())
     }

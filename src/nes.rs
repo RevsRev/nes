@@ -423,10 +423,44 @@ mod test {
     }
 
     #[test]
+    fn nestest_regression_vbl_clear_time() {
+        let regen_logs = std::env::var("REGEN_LOGS").is_ok();
+
+        if regen_logs {
+            write_nes_logs(
+                "nestest/ppu/vbl_clear_time.nes",
+                "nestest/ppu/vbl_clear_time_nes.log",
+                1_000_000,
+            );
+        }
+
+        let rom = Rom::from_file("nestest/ppu/vbl_clear_time.nes");
+        let nes_test_log = read_file("nestest/ppu/vbl_clear_time_nes.log");
+        should_match_nes(rom, nes_test_log, 1_000_000);
+    }
+
+    #[test]
     fn nestest_blargg_vram_access() {
         let rom = Rom::from_file("nestest/ppu/vram_access.nes");
         let nes_test_log = read_file("nestest/ppu/vram_access_fceux.log");
         should_match_fceux(rom, nes_test_log, 38325);
+    }
+
+    #[test]
+    fn nestest_regression_vram_access() {
+        let regen_logs = std::env::var("REGEN_LOGS").is_ok();
+
+        if regen_logs {
+            write_nes_logs(
+                "nestest/ppu/vram_access.nes",
+                "nestest/ppu/vram_access_nes.log",
+                1_000_000,
+            );
+        }
+
+        let rom = Rom::from_file("nestest/ppu/vram_access.nes");
+        let nes_test_log = read_file("nestest/ppu/vram_access_nes.log");
+        should_match_nes(rom, nes_test_log, 1_000_000);
     }
     /*
      * BLARGG APU TESTS

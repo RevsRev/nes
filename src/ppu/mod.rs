@@ -28,9 +28,9 @@ pub struct PPU {
     oam_addr: u8,
     interrupt: Rc<RefCell<InterruptImpl>>,
 
-    frame_cycles: usize,
+    pub frame_cycles: usize,
     total_cycles: u64,
-    scanline: u16,
+    pub scanline: u16,
     pub new_frame: bool,
 }
 

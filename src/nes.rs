@@ -77,6 +77,7 @@ impl<'call> NES<'call> {
         };
 
         loop {
+            let ppu_tr = self.bus.borrow_mut().ppu.trace();
             match self.cpu.step_with_callback(&mut |_| {}) {
                 Ok(b) => match b {
                     true => {}
@@ -88,7 +89,7 @@ impl<'call> NES<'call> {
             }
             self.trace = Option::Some(NesTrace {
                 cpu_trace: self.cpu.trace.take().unwrap(),
-                ppu_trace: self.bus.borrow_mut().ppu.trace(),
+                ppu_trace: ppu_tr,
             });
             combined_callback(self);
         }
@@ -602,6 +603,7 @@ mod test {
                 nes.cpu.register_x = 1;
                 nes.cpu.status = 0x07;
                 nes.cpu.stack_pointer = 0xF4;
+                nes.bus.borrow_mut().ppu.frame_cycles = 27
             },
             |i, fceux_log, nes_log| nes_mesen_line_matches(i, fceux_log, nes_log),
         );
@@ -768,8 +770,9 @@ mod test {
             None => return false,
         };
         let expected_capture =
-            Capture::from_line(expected, "S", |line| capture_register(line, "P"));
-        let actual_capture = Capture::from_line(actual, "SP", |line| capture_register(line, "P"));
+            Capture::from_line(expected, "S", |line| capture_register(line, "P"), true);
+        let actual_capture =
+            Capture::from_line(actual, "SP", |line| capture_register(line, "P"), true);
         if expected_capture != actual_capture {
             println!("Expected: {}", expected_capture);
             println!("Actual: {}", actual_capture);
@@ -787,8 +790,10 @@ mod test {
             Some(v) => v,
             None => return false,
         };
-        let expected_capture = Capture::from_line(expected, "S", |line| extract_fceux_status(line));
-        let actual_capture = Capture::from_line(actual, "SP", |line| capture_register(line, "P"));
+        let expected_capture =
+            Capture::from_line(expected, "S", |line| extract_fceux_status(line), false);
+        let actual_capture =
+            Capture::from_line(actual, "SP", |line| capture_register(line, "P"), false);
         expected_capture == actual_capture
     }
     fn nes_nes_line_matches(i: usize, nes_gold: &[String], nes: &[String]) -> bool {
@@ -811,6 +816,8 @@ mod test {
         status: String,
         mem_addr: Option<String>,
         cycles: String,
+        scanline: Option<String>,
+        dot: Option<String>,
     }
 
     impl fmt::Display for Capture {
@@ -833,10 +840,15 @@ mod test {
     }
 
     impl Capture {
-        fn from_line<F>(line: &str, sp_string: &str, status_extract: F) -> Self
+        fn from_line<F>(line: &str, sp_string: &str, status_extract: F, include_ppu: bool) -> Self
         where
             F: Fn(&str) -> Option<String>,
         {
+            let (scanline, dot) = match include_ppu {
+                false => (None, None),
+                true => (capture_register(line, "V"), capture_register(line, "H")),
+            };
+
             Capture {
                 a: capture_register(line, "A").unwrap(),
                 x: capture_register(line, "X").unwrap(),
@@ -845,6 +857,8 @@ mod test {
                 status: status_extract(line).unwrap(),
                 mem_addr: capture_mem_addr(line),
                 cycles: capture_cycles(line).unwrap(),
+                scanline: scanline,
+                dot: dot,
             }
         }
     }

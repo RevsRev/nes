@@ -412,14 +412,14 @@ mod test {
     fn nestest_blargg_vbl_clear_time() {
         let rom = Rom::from_file("nestest/ppu/vbl_clear_time.nes");
         let nes_test_log = read_file("nestest/ppu/vbl_clear_time_fceux.log");
-        should_match_fceux(rom, nes_test_log, -1);
+        should_match_fceux(rom, nes_test_log, 84393);
     }
 
     #[test]
     fn nestest_blargg_vbl_clear_time_mesen() {
         let rom = Rom::from_file("nestest/ppu/vbl_clear_time.nes");
         let nes_test_log = read_file("nestest/ppu/vbl_clear_time_mesen.log");
-        should_match_mesen(rom, nes_test_log, -1);
+        should_match_mesen(rom, nes_test_log, 104528);
     }
 
     #[test]

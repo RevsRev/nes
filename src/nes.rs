@@ -103,6 +103,7 @@ mod test {
     use regex::Regex;
 
     use crate::apu::APU;
+    use crate::cpu::CPU;
     use crate::io::joypad::Joypad;
     use crate::ppu::PPU;
     use crate::rom::{self, Rom};
@@ -110,6 +111,7 @@ mod test {
         CpuTraceFormatOptions, CpuTraceFormatter, NesTraceFormatter, PpuTraceFormatter,
     };
     use crate::traits::mem::Mem;
+    use core::fmt;
     use std::cell::RefCell;
     use std::collections::HashMap;
     use std::fs::File;
@@ -413,6 +415,13 @@ mod test {
     }
 
     #[test]
+    fn nestest_blargg_vbl_clear_time_mesen() {
+        let rom = Rom::from_file("nestest/ppu/vbl_clear_time.nes");
+        let nes_test_log = read_file("nestest/ppu/vbl_clear_time_mesen.log");
+        should_match_mesen(rom, nes_test_log, -1);
+    }
+
+    #[test]
     fn nestest_blargg_vram_access() {
         let rom = Rom::from_file("nestest/ppu/vram_access.nes");
         let nes_test_log = read_file("nestest/ppu/vram_access_fceux.log");
@@ -583,20 +592,48 @@ mod test {
         let _ = handle.join();
         writer.borrow_mut().flush().unwrap();
     }
+    fn should_match_mesen(rom: Rom, mesen_log: Vec<String>, max_cycles: i64) {
+        should_match(
+            rom,
+            mesen_log,
+            max_cycles,
+            |nes: &mut NES| {
+                nes.cpu.total_cycles = 8;
+                nes.cpu.register_x = 1;
+                nes.cpu.status = 0x07;
+                nes.cpu.stack_pointer = 0xF4;
+            },
+            |i, fceux_log, nes_log| nes_mesen_line_matches(i, fceux_log, nes_log),
+        );
+    }
 
     fn should_match_fceux(rom: Rom, fceux_log: Vec<String>, max_cycles: i64) {
-        should_match(rom, fceux_log, max_cycles, |i, fceux_log, nes_log| {
-            nes_fceux_line_matches(i, fceux_log, nes_log)
-        });
+        should_match(
+            rom,
+            fceux_log,
+            max_cycles,
+            |nes| (),
+            |i, fceux_log, nes_log| nes_fceux_line_matches(i, fceux_log, nes_log),
+        );
     }
     fn should_match_nes(rom: Rom, fceux_log: Vec<String>, max_cycles: i64) {
-        should_match(rom, fceux_log, max_cycles, |i, nes_gold, nes_log| {
-            nes_nes_line_matches(i, nes_gold, nes_log)
-        });
+        should_match(
+            rom,
+            fceux_log,
+            max_cycles,
+            |nes| (),
+            |i, nes_gold, nes_log| nes_nes_line_matches(i, nes_gold, nes_log),
+        );
     }
 
-    fn should_match<F>(rom: Rom, compare_log: Vec<String>, max_cycles: i64, line_matches: F)
-    where
+    fn should_match<T, F>(
+        rom: Rom,
+        compare_log: Vec<String>,
+        max_cycles: i64,
+        nes_init: T,
+        line_matches: F,
+    ) where
+        T: Fn(&mut NES) -> (),
         F: Fn(usize, &[String], &[String]) -> bool,
     {
         let halt = Arc::new(AtomicBool::new(false));
@@ -605,6 +642,8 @@ mod test {
             Arc::clone(&halt),
             |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
         );
+
+        nes_init(&mut nes);
 
         nes.cpu.trace_format_options.write_cpu_cycles = true;
 
@@ -718,6 +757,27 @@ mod test {
 
         first_bad
     }
+
+    fn nes_mesen_line_matches(i: usize, mesen: &[String], nes: &[String]) -> bool {
+        let expected = match mesen.get(i) {
+            Some(v) => v,
+            None => return false,
+        };
+        let actual = match nes.get(i) {
+            Some(v) => v,
+            None => return false,
+        };
+        let expected_capture =
+            Capture::from_line(expected, "S", |line| capture_register(line, "P"));
+        let actual_capture = Capture::from_line(actual, "SP", |line| capture_register(line, "P"));
+        if expected_capture != actual_capture {
+            println!("Expected: {}", expected_capture);
+            println!("Actual: {}", actual_capture);
+            return false;
+        }
+        true
+    }
+
     fn nes_fceux_line_matches(i: usize, fceux: &[String], nes: &[String]) -> bool {
         let expected = match fceux.get(i) {
             Some(v) => v,
@@ -751,6 +811,25 @@ mod test {
         status: String,
         mem_addr: Option<String>,
         cycles: String,
+    }
+
+    impl fmt::Display for Capture {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(
+                f,
+                "A:{} X:{} Y:{} SP:{} P:{} {} C:{}",
+                self.a,
+                self.x,
+                self.y,
+                self.sp,
+                self.status,
+                match &self.mem_addr {
+                    Some(addr) => format!("M:{}", addr),
+                    None => String::from(""),
+                },
+                self.cycles,
+            )
+        }
     }
 
     impl Capture {
@@ -803,13 +882,13 @@ mod test {
     }
 
     fn capture_mem_addr(line: &str) -> Option<String> {
-        let re = Regex::new(r"([0-9A-Fa-f]{4})").unwrap();
+        let re = Regex::new(r"(?i)([^c]|^)([0-9A-F]{4})").unwrap();
         re.captures(line)
             .and_then(|caps| caps.get(1).map(|m| m.as_str().to_string()))
     }
 
     fn capture_cycles(line: &str) -> Option<String> {
-        let re = Regex::new(r"^c(\d+)\s").unwrap();
+        let re = Regex::new(r"c(\d+)\s").unwrap();
 
         re.captures(line)
             .and_then(|caps| caps.get(1))

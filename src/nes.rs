@@ -807,12 +807,12 @@ mod test {
             Capture::from_line(expected, "S", |line| capture_register(line, "P"), true);
         let actual_capture =
             Capture::from_line(actual, "SP", |line| capture_register(line, "P"), true);
-        if expected_capture != actual_capture {
-            println!("Expected: {}", expected_capture);
-            println!("Actual: {}", actual_capture);
-            return false;
-        }
-        true
+        // if expected_capture != actual_capture {
+        //     println!("Expected: {}", expected_capture);
+        //     println!("Actual: {}", actual_capture);
+        //     return false;
+        // }
+        expected_capture == actual_capture
     }
 
     fn nes_fceux_line_matches(i: usize, fceux: &[String], nes: &[String]) -> bool {
@@ -828,6 +828,12 @@ mod test {
             Capture::from_line(expected, "S", |line| extract_fceux_status(line), false);
         let actual_capture =
             Capture::from_line(actual, "SP", |line| capture_register(line, "P"), false);
+
+        // if expected_capture != actual_capture {
+        //     println!("Expected: {}", expected_capture);
+        //     println!("Actual: {}", actual_capture);
+        //     return false;
+        // }
         expected_capture == actual_capture
     }
     fn nes_nes_line_matches(i: usize, nes_gold: &[String], nes: &[String]) -> bool {
@@ -930,7 +936,7 @@ mod test {
     }
 
     fn capture_mem_addr(line: &str) -> Option<String> {
-        let re = Regex::new(r"(?i)([^c]|^)([0-9A-F]{4})").unwrap();
+        let re = Regex::new(r"(?i)\b([0-9A-F]{4})\b").unwrap();
         re.captures(line)
             .and_then(|caps| caps.get(1).map(|m| m.as_str().to_string()))
     }

@@ -1,6 +1,6 @@
 use crate::interrupt::{Interrupt, InterruptImpl};
 use crate::opp::{AddressingMode, OpCode};
-use crate::trace::{CpuTrace, TraceFormatOptions};
+use crate::trace::{CpuTrace, CpuTraceFormatOptions, CpuTraceFormatter};
 use crate::traits::bus::Bus;
 use crate::traits::tick::Tick;
 use crate::{opp, traits::mem::Mem};
@@ -41,7 +41,7 @@ pub struct CPU<T: Bus> {
     interrupt: Rc<RefCell<InterruptImpl>>,
 
     //tracing info
-    trace: Option<CpuTrace>,
+    pub trace: Option<CpuTrace>,
     trace_pc: u16,
     trace_reg_a: u8,
     trace_reg_x: u8,
@@ -53,7 +53,7 @@ pub struct CPU<T: Bus> {
     writes: Vec<(u16, u8)>,
 
     halt: Arc<AtomicBool>,
-    pub trace_format_options: TraceFormatOptions,
+    pub trace_format_options: CpuTraceFormatOptions,
 
     next_program_counter: u16,
     pub total_cycles: u64,
@@ -137,7 +137,7 @@ impl<T: Bus> CPU<T> {
             writes: Vec::new(),
             operand_address: Option::None,
             halt: halt,
-            trace_format_options: TraceFormatOptions {
+            trace_format_options: CpuTraceFormatOptions {
                 write_break_2_flag: false,
                 write_cpu_cycles: false,
             },
@@ -162,13 +162,6 @@ impl<T: Bus> CPU<T> {
         self.mem_write_u16(0xFFFC, start_address);
     }
 
-    pub fn get_trace_str(&self) -> Option<String> {
-        match self.trace.as_ref() {
-            None => Option::None,
-            Some(tr) => Option::Some(tr.to_string()),
-        }
-    }
-
     fn store_trace(&mut self, op: &OpCode) {
         self.trace = Option::Some(CpuTrace {
             cpu_cycles: self.total_cycles,
@@ -182,7 +175,6 @@ impl<T: Bus> CPU<T> {
             stack: self.trace_sp,
             reads: self.reads.clone(),
             writes: self.writes.clone(),
-            format_options: self.trace_format_options,
         });
 
         self.operand_address = Option::None;
@@ -435,7 +427,16 @@ impl<T: Bus> CPU<T> {
             self.register_a, self.register_x, self.register_y, self.status, self.stack_pointer
         );
         let last_cpu_trace = match &self.trace {
-            Some(t) => format!("{}", t),
+            Some(t) => {
+                let fmt_options = CpuTraceFormatOptions {
+                    write_break_2_flag: true,
+                    write_cpu_cycles: true,
+                };
+                let trace_formatter = CpuTraceFormatter {
+                    options: fmt_options,
+                };
+                format!("{}", trace_formatter.format(t))
+            }
             None => format!("NULL"),
         };
         return format!(

@@ -353,8 +353,8 @@ mod test {
      */
     #[test]
     fn nestest_blargg_palette_ram() {
-        let rom = Rom::from_file("nestest/ppu/palette_ram.nes");
-        let nes_test_log = read_file("nestest/ppu/palette_ram_fceux.log");
+        let rom = Rom::from_file("nestest/ppu/blargg/palette_ram.nes");
+        let nes_test_log = read_file("nestest/ppu/blargg/palette_ram_fceux.log");
         should_match_fceux(rom, nes_test_log, 38315);
     }
 
@@ -364,14 +364,14 @@ mod test {
 
         if regen_logs {
             write_nes_logs(
-                "nestest/ppu/palette_ram.nes",
-                "nestest/ppu/palette_ram_nes.log",
+                "nestest/ppu/blargg/palette_ram.nes",
+                "nestest/ppu/blargg/palette_ram_nes.log",
                 1_000_000,
             );
         }
 
-        let rom = Rom::from_file("nestest/ppu/palette_ram.nes");
-        let nes_test_log = read_file("nestest/ppu/palette_ram_nes.log");
+        let rom = Rom::from_file("nestest/ppu/blargg/palette_ram.nes");
+        let nes_test_log = read_file("nestest/ppu/blargg/palette_ram_nes.log");
         should_match_nes(rom, nes_test_log, 1_000_000);
     }
 
@@ -379,15 +379,15 @@ mod test {
     // palette before it's been written to after power up, which we don't care about
     // #[test]
     // fn nestest_blargg_power_up_palette() {
-    //     let rom = Rom::from_file("nestest/ppu/power_up_palette.nes");
-    //     let nes_test_log = read_file("nestest/ppu/power_up_palette_fceux.log");
+    //     let rom = Rom::from_file("nestest/ppu/blargg/power_up_palette.nes");
+    //     let nes_test_log = read_file("nestest/ppu/blargg/power_up_palette_fceux.log");
     //     should_match_fceux(rom, nes_test_log, -1);
     // }
 
     #[test]
     fn nestest_blargg_sprite_ram() {
-        let rom = Rom::from_file("nestest/ppu/sprite_ram.nes");
-        let nes_test_log = read_file("nestest/ppu/sprite_ram_fceux.log");
+        let rom = Rom::from_file("nestest/ppu/blargg/sprite_ram.nes");
+        let nes_test_log = read_file("nestest/ppu/blargg/sprite_ram_fceux.log");
         should_match_fceux(rom, nes_test_log, 38315);
     }
 
@@ -397,28 +397,28 @@ mod test {
 
         if regen_logs {
             write_nes_logs(
-                "nestest/ppu/sprite_ram.nes",
-                "nestest/ppu/sprite_ram_nes.log",
+                "nestest/ppu/blargg/sprite_ram.nes",
+                "nestest/ppu/blargg/sprite_ram_nes.log",
                 1_000_000,
             );
         }
 
-        let rom = Rom::from_file("nestest/ppu/sprite_ram.nes");
-        let nes_test_log = read_file("nestest/ppu/sprite_ram_nes.log");
+        let rom = Rom::from_file("nestest/ppu/blargg/sprite_ram.nes");
+        let nes_test_log = read_file("nestest/ppu/blargg/sprite_ram_nes.log");
         should_match_nes(rom, nes_test_log, 1_000_000);
     }
 
     #[test]
     fn nestest_blargg_vbl_clear_time() {
-        let rom = Rom::from_file("nestest/ppu/vbl_clear_time.nes");
-        let nes_test_log = read_file("nestest/ppu/vbl_clear_time_fceux.log");
+        let rom = Rom::from_file("nestest/ppu/blargg/vbl_clear_time.nes");
+        let nes_test_log = read_file("nestest/ppu/blargg/vbl_clear_time_fceux.log");
         should_match_fceux(rom, nes_test_log, 84393);
     }
 
     #[test]
     fn nestest_blargg_vbl_clear_time_mesen() {
-        let rom = Rom::from_file("nestest/ppu/vbl_clear_time.nes");
-        let nes_test_log = read_file("nestest/ppu/vbl_clear_time_mesen.log");
+        let rom = Rom::from_file("nestest/ppu/blargg/vbl_clear_time.nes");
+        let nes_test_log = read_file("nestest/ppu/blargg/vbl_clear_time_mesen.log");
         should_match_mesen(rom, nes_test_log, 104528);
     }
 
@@ -428,21 +428,21 @@ mod test {
 
         if regen_logs {
             write_nes_logs(
-                "nestest/ppu/vbl_clear_time.nes",
-                "nestest/ppu/vbl_clear_time_nes.log",
+                "nestest/ppu/blargg/vbl_clear_time.nes",
+                "nestest/ppu/blargg/vbl_clear_time_nes.log",
                 1_000_000,
             );
         }
 
-        let rom = Rom::from_file("nestest/ppu/vbl_clear_time.nes");
-        let nes_test_log = read_file("nestest/ppu/vbl_clear_time_nes.log");
+        let rom = Rom::from_file("nestest/ppu/blargg/vbl_clear_time.nes");
+        let nes_test_log = read_file("nestest/ppu/blargg/vbl_clear_time_nes.log");
         should_match_nes(rom, nes_test_log, 1_000_000);
     }
 
     #[test]
     fn nestest_blargg_vram_access() {
-        let rom = Rom::from_file("nestest/ppu/vram_access.nes");
-        let nes_test_log = read_file("nestest/ppu/vram_access_fceux.log");
+        let rom = Rom::from_file("nestest/ppu/blargg/vram_access.nes");
+        let nes_test_log = read_file("nestest/ppu/blargg/vram_access_fceux.log");
         should_match_fceux(rom, nes_test_log, 38325);
     }
 
@@ -452,14 +452,14 @@ mod test {
 
         if regen_logs {
             write_nes_logs(
-                "nestest/ppu/vram_access.nes",
-                "nestest/ppu/vram_access_nes.log",
+                "nestest/ppu/blargg/vram_access.nes",
+                "nestest/ppu/blargg/vram_access_nes.log",
                 1_000_000,
             );
         }
 
-        let rom = Rom::from_file("nestest/ppu/vram_access.nes");
-        let nes_test_log = read_file("nestest/ppu/vram_access_nes.log");
+        let rom = Rom::from_file("nestest/ppu/blargg/vram_access.nes");
+        let nes_test_log = read_file("nestest/ppu/blargg/vram_access_nes.log");
         should_match_nes(rom, nes_test_log, 1_000_000);
     }
     /*

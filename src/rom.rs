@@ -27,6 +27,7 @@ impl fmt::Display for Mirroring {
 pub struct Rom {
     pub prg_rom: Vec<u8>,
     pub chr_rom: Vec<u8>,
+    pub prg_ram: Vec<u8>,
     pub mapper: u8,
     pub screen_mirroring: Mirroring,
     allow_chr_writes: bool,
@@ -85,6 +86,7 @@ impl Rom {
         Ok(Rom {
             prg_rom: raw[prg_rom_start..(prg_rom_start + prg_rom_size)].to_vec(),
             chr_rom: chr_rom,
+            prg_ram: vec![0; 0x2000],
             mapper: mapper,
             screen_mirroring: screen_mirroring,
             allow_chr_writes: allow_chr_rom_writes,

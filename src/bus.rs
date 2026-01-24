@@ -14,6 +14,8 @@ use crate::traits::tick::Tick;
 const RAM: u16 = 0x0000;
 const RAM_MIRRORS_END: u16 = 0x1FFF;
 const PPU_REGISTERS_MIRRORS_END: u16 = 0x3FFF;
+const PRG_RAM_START: u16 = 0x6000;
+const PRG_RAM_END: u16 = 0x7FFF;
 const ROM_START: u16 = 0x8000;
 const ROM_END: u16 = 0xFFFF;
 
@@ -62,6 +64,18 @@ impl<'a> BusImpl<'a> {
             addr = addr % 0x4000;
         }
         self.rom.borrow().prg_rom[addr as usize]
+    }
+
+    fn read_prg_ram(&self, mut addr: u16) -> u8 {
+        addr -= 0x6000;
+        self.rom.borrow().prg_ram[addr as usize]
+    }
+
+    fn write_prg_ram(&self, mut addr: u16, data: u8) -> u8 {
+        addr -= 0x6000;
+        let overwritten = self.rom.borrow().prg_ram[addr as usize];
+        self.rom.borrow_mut().prg_ram[addr as usize] = data;
+        overwritten
     }
 }
 
@@ -113,6 +127,8 @@ impl<'a> Mem for BusImpl<'a> {
                 // ignore joypad 2
                 Result::Ok(0)
             }
+
+            PRG_RAM_START..=PRG_RAM_END => Result::Ok(self.read_prg_ram(addr)),
 
             ROM_START..=ROM_END => Result::Ok(self.read_prg_rom(addr)),
             _ => {
@@ -197,6 +213,8 @@ impl<'a> Mem for BusImpl<'a> {
                 // let add_cycles: u16 = if self.cycles % 2 == 1 { 514 } else { 513 };
                 // self.tick(add_cycles); //todo this will cause weird effects as PPU will have 513/514 * 3 ticks
             }
+
+            PRG_RAM_START..=PRG_RAM_END => Result::Ok(self.write_prg_ram(addr, data)),
 
             ROM_START..=ROM_END => Result::Err(format!(
                 "Attempt to write to Cartridge in ROM space at addr: {:#04X}",

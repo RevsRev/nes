@@ -419,7 +419,15 @@ mod test {
     fn nestest_blargg_vbl_clear_time_mesen() {
         let rom = Rom::from_file("nestest/ppu/blargg/vbl_clear_time.nes");
         let nes_test_log = read_file("nestest/ppu/blargg/vbl_clear_time_mesen.log");
-        should_match_mesen(rom, nes_test_log, 104528);
+
+        let nes_init = |nes: &mut NES| {
+            nes.cpu.total_cycles = 8;
+            nes.cpu.register_x = 1;
+            nes.cpu.status = 0x07;
+            nes.cpu.stack_pointer = 0xF4;
+            nes.bus.borrow_mut().ppu.frame_cycles = 27
+        };
+        should_match_mesen(rom, nes_test_log, nes_init, 104528);
     }
 
     #[test]
@@ -462,6 +470,26 @@ mod test {
         let nes_test_log = read_file("nestest/ppu/blargg/vram_access_nes.log");
         should_match_nes(rom, nes_test_log, 1_000_000);
     }
+
+    /*
+     * OTHER PPU TESTS
+     */
+    #[test]
+    fn nestest_ppu_01_vbl_basics() {
+        let rom = Rom::from_file("nestest/ppu/ppu_vbl_nmi/01-vbl_basics.nes");
+        let nes_test_log = read_file("nestest/ppu/ppu_vbl_nmi/01_mesen.log");
+
+        let nes_init = |nes: &mut NES| {
+            nes.cpu.total_cycles = 8;
+            nes.cpu.register_x = 1;
+            nes.cpu.status = 0x07;
+            nes.cpu.stack_pointer = 0xF4;
+            nes.bus.borrow_mut().ppu.frame_cycles = 27
+        };
+
+        should_match_mesen(rom, nes_test_log, nes_init, -1);
+    }
+
     /*
      * BLARGG APU TESTS
      */
@@ -627,18 +655,15 @@ mod test {
         let _ = handle.join();
         writer.borrow_mut().flush().unwrap();
     }
-    fn should_match_mesen(rom: Rom, mesen_log: Vec<String>, max_cycles: i64) {
+    fn should_match_mesen<T>(rom: Rom, mesen_log: Vec<String>, nes_init: T, max_cycles: i64)
+    where
+        T: Fn(&mut NES) -> (),
+    {
         should_match(
             rom,
             mesen_log,
             max_cycles,
-            |nes: &mut NES| {
-                nes.cpu.total_cycles = 8;
-                nes.cpu.register_x = 1;
-                nes.cpu.status = 0x07;
-                nes.cpu.stack_pointer = 0xF4;
-                nes.bus.borrow_mut().ppu.frame_cycles = 27
-            },
+            nes_init,
             |i, fceux_log, nes_log| nes_mesen_line_matches(i, fceux_log, nes_log),
         );
     }

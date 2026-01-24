@@ -42,6 +42,7 @@ pub struct CPU<T: Bus> {
 
     //tracing info
     pub trace: Option<CpuTrace>,
+    trace_cycles: u64,
     trace_pc: u16,
     trace_reg_a: u8,
     trace_reg_x: u8,
@@ -106,6 +107,10 @@ impl<T: Bus> fmt::Display for CPU<T> {
 
 impl<T: Bus> Tick for CPU<T> {
     fn tick(&mut self, cycles: u8) {
+        if (cycles == 0) {
+            return;
+        }
+
         self.total_cycles += cycles as u64;
         self.bus.borrow_mut().tick(cycles);
     }
@@ -127,6 +132,7 @@ impl<T: Bus> CPU<T> {
             bus: bus,
             interrupt: interrupt,
             trace: Option::None,
+            trace_cycles: 0,
             trace_pc: 0,
             trace_sp: 0,
             trace_status: 0,
@@ -164,7 +170,7 @@ impl<T: Bus> CPU<T> {
 
     fn store_trace(&mut self, op: &OpCode) {
         self.trace = Option::Some(CpuTrace {
-            cpu_cycles: self.total_cycles,
+            cpu_cycles: self.trace_cycles,
             pc: self.trace_pc,
             op_code: (*op).to_owned(),
             absolute_address: self.operand_address,
@@ -224,6 +230,7 @@ impl<T: Bus> CPU<T> {
 
         self.reads.clear();
         self.writes.clear();
+        self.trace_cycles = self.total_cycles;
         self.trace_pc = self.program_counter;
         self.trace_sp = self.stack_pointer;
         self.trace_status = self.status;
@@ -234,6 +241,8 @@ impl<T: Bus> CPU<T> {
         self.op_cycles = opcode.cycles;
         self.program_counter += 1;
         self.next_program_counter = self.program_counter + (opcode.len - 1) as u16;
+
+        self.tick(self.op_cycles);
 
         let execution_result: Result<(), String> = match opcode.code {
             0x69 | 0x65 | 0x75 | 0x6D | 0x7D | 0x79 | 0x61 | 0x71 => self.adc(&opcode.mode),
@@ -413,7 +422,7 @@ impl<T: Bus> CPU<T> {
             }
         } else {
             self.program_counter = self.next_program_counter;
-            self.tick(self.op_cycles);
+            self.tick(self.op_cycles - opcode.cycles);
         }
 
         if should_nmi {
@@ -1761,7 +1770,7 @@ mod test {
         cpu.register_a = 240;
         let _ = cpu.run_with_callback(|_| {});
         assert_eq!(240, cpu.mem_read(0x00A1).unwrap());
-        assert_eq!(7, cpu.bus.borrow().cycles);
+        assert_eq!(14, cpu.bus.borrow().cycles);
     }
 
     #[test]
@@ -1778,7 +1787,7 @@ mod test {
         cpu.register_a = 240;
         let _ = cpu.run_with_callback(|_| {});
         assert_eq!(0, cpu.mem_read(0x00A1).unwrap());
-        assert_eq!(2, cpu.bus.borrow().cycles);
+        assert_eq!(9, cpu.bus.borrow().cycles);
     }
 
     #[test]

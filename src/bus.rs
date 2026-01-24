@@ -150,10 +150,7 @@ impl<'a> Mem for BusImpl<'a> {
             }
             0x2000 => Result::Ok(self.ppu.write_to_ctl(data)),
             0x2001 => Result::Ok(self.ppu.write_to_mask(data)),
-            0x2002 => Result::Err(format!(
-                "Attempt to write to PPU status register at addr: {:#04X}",
-                addr
-            )),
+            0x2002 => Result::Ok(0),
             0x2003 => Result::Ok(self.ppu.write_to_oam_addr(data)),
             0x2004 => Result::Ok(self.ppu.write_to_oam_data(data)),
             0x2005 => Result::Ok(self.ppu.write_to_scroll(data)),

@@ -481,9 +481,9 @@ mod test {
 
         let nes_init = |nes: &mut NES| {
             nes.cpu.total_cycles = 8;
-            nes.cpu.register_x = 1;
-            nes.cpu.status = 0x07;
-            nes.cpu.stack_pointer = 0xF4;
+            nes.cpu.register_a = 0x1A;
+            nes.cpu.status = 0x05;
+            nes.cpu.stack_pointer = 0xEF;
             nes.bus.borrow_mut().ppu.frame_cycles = 27
         };
 
@@ -800,6 +800,30 @@ mod test {
     where
         F: Fn(usize, &[String], &[String]) -> bool,
     {
+        let slow_match = std::env::var("SLOW_MATCH").is_ok();
+        if slow_match {
+            return linear_match(fceux, nes, line_matches);
+        }
+
+        fast_flakey_matcher(fceux, nes, line_matches)
+    }
+
+    fn linear_match<F>(fceux: &[String], nes: &[String], line_matches: F) -> Option<usize>
+    where
+        F: Fn(usize, &[String], &[String]) -> bool,
+    {
+        for i in 0..nes.len() {
+            if !line_matches(i, fceux, nes) {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    fn fast_flakey_matcher<F>(fceux: &[String], nes: &[String], line_matches: F) -> Option<usize>
+    where
+        F: Fn(usize, &[String], &[String]) -> bool,
+    {
         let mut low = 0;
         let mut high = nes.len();
 
@@ -889,7 +913,7 @@ mod test {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             write!(
                 f,
-                "A:{} X:{} Y:{} SP:{} P:{} {} C:{}",
+                "A:{} X:{} Y:{} SP:{} P:{} {} C:{} V:{} H:{}",
                 self.a,
                 self.x,
                 self.y,
@@ -900,6 +924,14 @@ mod test {
                     None => String::from(""),
                 },
                 self.cycles,
+                match &self.scanline {
+                    Some(sl) => format!("V:{}", sl),
+                    None => String::from("n/a"),
+                },
+                match &self.dot {
+                    Some(dot) => format!("H:{}", dot),
+                    None => String::from("n/a"),
+                },
             )
         }
     }
@@ -911,7 +943,10 @@ mod test {
         {
             let (scanline, dot) = match include_ppu {
                 false => (None, None),
-                true => (capture_register(line, "V"), capture_register(line, "H")),
+                true => (
+                    capture_scanline(line).map(|v| if v == "-1" { "261".to_string() } else { v }),
+                    capture_dot(line),
+                ),
             };
 
             Capture {
@@ -946,6 +981,28 @@ mod test {
         Some(format!("{:02X}", status))
     }
 
+    fn capture_scanline(line: &str) -> Option<String> {
+        let re = {
+            let mut cache = REGEX_CACHE.lock().unwrap();
+            cache
+                .entry("SCANLINE".to_string())
+                .or_insert_with(|| Regex::new(r"V:(-?\d+)(?:\s|$)").unwrap())
+                .clone()
+        };
+        re.captures(line).map(|caps| caps[1].to_string())
+    }
+
+    fn capture_dot(line: &str) -> Option<String> {
+        let re = {
+            let mut cache = REGEX_CACHE.lock().unwrap();
+            cache
+                .entry("DOT".to_string())
+                .or_insert_with(|| Regex::new(r"H:(\d+)(?:\s|$)").unwrap())
+                .clone()
+        };
+        re.captures(line).map(|caps| caps[1].to_string())
+    }
+
     fn capture_register(line: &str, reg: &str) -> Option<String> {
         let pattern = format!(r"{}:([0-9A-F]{{2}})", reg);
 
@@ -961,13 +1018,26 @@ mod test {
     }
 
     fn capture_mem_addr(line: &str) -> Option<String> {
-        let re = Regex::new(r"(?i)\b([0-9A-F]{4})\b").unwrap();
+        let re = {
+            let mut cache = REGEX_CACHE.lock().unwrap();
+            cache
+                .entry("MEM_ADDR".to_string())
+                .or_insert_with(|| Regex::new(r"\b([0-9A-F]{4})\b").unwrap())
+                .clone()
+        };
+
         re.captures(line)
             .and_then(|caps| caps.get(1).map(|m| m.as_str().to_string()))
     }
 
     fn capture_cycles(line: &str) -> Option<String> {
-        let re = Regex::new(r"c(\d+)\s").unwrap();
+        let re = {
+            let mut cache = REGEX_CACHE.lock().unwrap();
+            cache
+                .entry("CYCLE".to_string())
+                .or_insert_with(|| Regex::new(r"c(\d+)\s").unwrap())
+                .clone()
+        };
 
         re.captures(line)
             .and_then(|caps| caps.get(1))

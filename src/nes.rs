@@ -12,6 +12,7 @@ use crate::io::joypad::Joypad;
 use crate::ppu::PPU;
 use crate::rom::Rom;
 use crate::trace::{CpuTraceFormatOptions, CpuTraceFormatter, NesTrace, NesTraceFormatter};
+use crate::traits::mos_65902::MOS6502;
 use crate::traits::tracing::Tracing;
 
 pub struct NES<'call> {

@@ -63,7 +63,7 @@ pub struct CPU<T: Bus> {
     op_cycles: u8,
 }
 
-impl<T: Bus> MOS6502 for CPU<T> {
+impl<T: Bus> MOS6502<T> for CPU<T> {
     fn get_cycles(&self) -> u64 {
         self.total_cycles
     }
@@ -71,214 +71,10 @@ impl<T: Bus> MOS6502 for CPU<T> {
     fn set_cycles(&mut self, value: u64) {
         self.total_cycles = value;
     }
-}
 
-impl<T: Bus> Registers for CPU<T> {
-    fn get_register_a(&self) -> u8 {
-        self.register_a
-    }
-
-    fn set_register_a(&mut self, value: u8) {
-        self.register_a = value;
-    }
-
-    fn get_register_x(&self) -> u8 {
-        self.register_x
-    }
-
-    fn set_register_x(&mut self, value: u8) {
-        self.register_x = value;
-    }
-
-    fn get_register_y(&self) -> u8 {
-        self.register_y
-    }
-
-    fn set_register_y(&mut self, value: u8) {
-        self.register_y = value;
-    }
-
-    fn get_status(&self) -> u8 {
-        self.status
-    }
-
-    fn set_status(&mut self, value: u8) {
-        self.status = value;
-    }
-
-    fn get_program_counter(&self) -> u16 {
-        self.program_counter
-    }
-
-    fn set_program_counter(&mut self, value: u16) {
-        self.program_counter = value;
-    }
-
-    fn get_stack_pointer(&self) -> u8 {
-        self.stack_pointer
-    }
-
-    fn set_stack_pointer(&mut self, value: u8) {
-        self.stack_pointer = value;
-    }
-}
-
-impl<T: Bus> Tracing for CPU<T> {
-    fn take_trace(&mut self) -> Option<CpuTrace> {
-        self.trace.take()
-    }
-}
-
-impl<T: Bus> Mem for CPU<T> {
-    fn mem_read(&mut self, addr: u16) -> Result<u8, std::string::String> {
-        let read = self.bus.borrow_mut().mem_read(addr)?;
-        self.reads.push((addr, read));
-        Result::Ok(read)
-    }
-
-    fn mem_write(&mut self, addr: u16, data: u8) -> Result<u8, std::string::String> {
-        let retval = self.bus.borrow_mut().mem_write(addr, data)?;
-        self.writes.push((addr, retval));
-        Result::Ok(retval)
-    }
-
-    fn mem_read_u16(&mut self, addr: u16) -> Result<u16, std::string::String> {
-        let lo = self.mem_read(addr)? as u16;
-        let hi = self.mem_read(addr + 1)? as u16;
-        Result::Ok((hi << 8) | lo)
-    }
-
-    fn mem_write_u16(&mut self, addr: u16, data: u16) -> Result<u16, std::string::String> {
-        let mut hi = (data >> 8) as u8;
-        let mut lo = (data & 0xFF) as u8;
-        lo = self.mem_write(addr, lo)?;
-        hi = self.mem_write(addr + 1, hi)?;
-        Result::Ok(((hi as u16) << 8) | (lo as u16))
-    }
-}
-
-impl<T: Bus> fmt::Display for CPU<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{:#04x}\t{:#04x}\t A:{:#04x} X:{:#04x} Y:{:#04x} P{:#04x} SP:{:#04x}",
-            self.program_counter,
-            self.program_counter,
-            self.register_a,
-            self.register_x,
-            self.register_y,
-            self.status,
-            self.stack_pointer
-        )
-    }
-}
-
-impl<T: Bus> Tick for CPU<T> {
-    fn tick(&mut self, cycles: u8) {
-        if (cycles == 0) {
-            return;
-        }
-
-        self.total_cycles += cycles as u64;
-        self.bus.borrow_mut().tick(cycles);
-    }
-}
-
-impl<T: Bus> CPU<T> {
-    pub fn new(
-        bus: Rc<RefCell<T>>,
-        interrupt: Rc<RefCell<InterruptImpl>>,
-        halt: Arc<AtomicBool>,
-    ) -> Self {
-        CPU {
-            register_a: 0,
-            register_x: 0,
-            register_y: 0,
-            status: 0,
-            program_counter: 0,
-            stack_pointer: STACK_RESET,
-            bus: bus,
-            interrupt: interrupt,
-            trace: Option::None,
-            trace_cycles: 0,
-            trace_pc: 0,
-            trace_sp: 0,
-            trace_status: 0,
-            trace_reg_a: 0,
-            trace_reg_x: 0,
-            trace_reg_y: 0,
-            reads: Vec::new(),
-            writes: Vec::new(),
-            operand_address: Option::None,
-            halt: halt,
-            next_program_counter: 0,
-            total_cycles: 0,
-            op_cycles: 0,
-        }
-    }
-
-    pub fn reset(&mut self) {
-        self.register_a = 0;
-        self.register_x = 0;
-        self.register_y = 0;
-        self.status = INTERRUPT_DISABLE_FLAG | BREAK2_FLAG;
-        self.stack_pointer = STACK_RESET;
-        self.program_counter = self.mem_read_u16(PC_START_ADDRESS).unwrap();
-        self.total_cycles = 0;
-    }
-
-    pub fn load_with_start_address(&mut self, start_address: u16, program: Vec<u8>) {
-        self.mem_write_vec(start_address, &program);
-        self.mem_write_u16(0xFFFC, start_address);
-    }
-
-    fn store_trace(&mut self, op: &OpCode) {
-        self.trace = Option::Some(CpuTrace {
-            cpu_cycles: self.trace_cycles,
-            pc: self.trace_pc,
-            op_code: (*op).to_owned(),
-            absolute_address: self.operand_address,
-            register_a: self.trace_reg_a,
-            register_x: self.trace_reg_x,
-            register_y: self.trace_reg_y,
-            status: self.trace_status,
-            stack: self.trace_sp,
-            reads: self.reads.clone(),
-            writes: self.writes.clone(),
-        });
-
-        self.operand_address = Option::None;
-        self.reads.clear();
-        self.writes.clear();
-        self.trace_sp = 0;
-        self.trace_pc = 0;
-        self.trace_status = 0;
-        self.trace_reg_a = 0;
-        self.trace_reg_x = 0;
-        self.trace_reg_y = 0;
-    }
-
-    pub fn run_with_callback<F>(&mut self, mut callback: F) -> Result<(), String>
+    fn step_with_callback<F>(&mut self, mut callback: &mut F) -> Result<bool, String>
     where
-        F: FnMut(&mut CPU<T>),
-    {
-        loop {
-            match self.step_with_callback(&mut callback) {
-                Ok(b) => match b {
-                    true => {}
-                    false => break,
-                },
-                Err(s) => {
-                    return Err(s);
-                }
-            }
-        }
-        Result::Ok(())
-    }
-
-    pub fn step_with_callback<F>(&mut self, callback: &mut F) -> Result<bool, String>
-    where
-        F: FnMut(&mut CPU<T>),
+        F: for<'a> FnMut(&'a Self),
     {
         let should_nmi = self.interrupt.borrow_mut().take_nmi();
 
@@ -494,6 +290,210 @@ impl<T: Bus> CPU<T> {
         }
 
         return Ok(true);
+    }
+
+    fn run_with_callback<F>(&mut self, mut callback: F) -> Result<(), String>
+    where
+        F: for<'a> FnMut(&'a Self),
+    {
+        loop {
+            match self.step_with_callback(&mut callback) {
+                Ok(b) => match b {
+                    true => {}
+                    false => break,
+                },
+                Err(s) => {
+                    return Err(s);
+                }
+            }
+        }
+        Result::Ok(())
+    }
+
+    fn load_with_start_address(&mut self, start_address: u16, program: Vec<u8>) {
+        self.mem_write_vec(start_address, &program);
+        self.mem_write_u16(0xFFFC, start_address);
+    }
+
+    fn reset(&mut self) {
+        self.register_a = 0;
+        self.register_x = 0;
+        self.register_y = 0;
+        self.status = INTERRUPT_DISABLE_FLAG | BREAK2_FLAG;
+        self.stack_pointer = STACK_RESET;
+        self.program_counter = self.mem_read_u16(PC_START_ADDRESS).unwrap();
+        self.total_cycles = 0;
+    }
+}
+
+impl<T: Bus> Registers for CPU<T> {
+    fn get_register_a(&self) -> u8 {
+        self.register_a
+    }
+
+    fn set_register_a(&mut self, value: u8) {
+        self.register_a = value;
+    }
+
+    fn get_register_x(&self) -> u8 {
+        self.register_x
+    }
+
+    fn set_register_x(&mut self, value: u8) {
+        self.register_x = value;
+    }
+
+    fn get_register_y(&self) -> u8 {
+        self.register_y
+    }
+
+    fn set_register_y(&mut self, value: u8) {
+        self.register_y = value;
+    }
+
+    fn get_status(&self) -> u8 {
+        self.status
+    }
+
+    fn set_status(&mut self, value: u8) {
+        self.status = value;
+    }
+
+    fn get_program_counter(&self) -> u16 {
+        self.program_counter
+    }
+
+    fn set_program_counter(&mut self, value: u16) {
+        self.program_counter = value;
+    }
+
+    fn get_stack_pointer(&self) -> u8 {
+        self.stack_pointer
+    }
+
+    fn set_stack_pointer(&mut self, value: u8) {
+        self.stack_pointer = value;
+    }
+}
+
+impl<T: Bus> Tracing for CPU<T> {
+    fn take_trace(&mut self) -> Option<CpuTrace> {
+        self.trace.take()
+    }
+}
+
+impl<T: Bus> Mem for CPU<T> {
+    fn mem_read(&mut self, addr: u16) -> Result<u8, std::string::String> {
+        let read = self.bus.borrow_mut().mem_read(addr)?;
+        self.reads.push((addr, read));
+        Result::Ok(read)
+    }
+
+    fn mem_write(&mut self, addr: u16, data: u8) -> Result<u8, std::string::String> {
+        let retval = self.bus.borrow_mut().mem_write(addr, data)?;
+        self.writes.push((addr, retval));
+        Result::Ok(retval)
+    }
+
+    fn mem_read_u16(&mut self, addr: u16) -> Result<u16, std::string::String> {
+        let lo = self.mem_read(addr)? as u16;
+        let hi = self.mem_read(addr + 1)? as u16;
+        Result::Ok((hi << 8) | lo)
+    }
+
+    fn mem_write_u16(&mut self, addr: u16, data: u16) -> Result<u16, std::string::String> {
+        let mut hi = (data >> 8) as u8;
+        let mut lo = (data & 0xFF) as u8;
+        lo = self.mem_write(addr, lo)?;
+        hi = self.mem_write(addr + 1, hi)?;
+        Result::Ok(((hi as u16) << 8) | (lo as u16))
+    }
+}
+
+impl<T: Bus> fmt::Display for CPU<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{:#04x}\t{:#04x}\t A:{:#04x} X:{:#04x} Y:{:#04x} P{:#04x} SP:{:#04x}",
+            self.program_counter,
+            self.program_counter,
+            self.register_a,
+            self.register_x,
+            self.register_y,
+            self.status,
+            self.stack_pointer
+        )
+    }
+}
+
+impl<T: Bus> Tick for CPU<T> {
+    fn tick(&mut self, cycles: u8) {
+        if (cycles == 0) {
+            return;
+        }
+
+        self.total_cycles += cycles as u64;
+        self.bus.borrow_mut().tick(cycles);
+    }
+}
+
+impl<T: Bus> CPU<T> {
+    pub fn new(
+        bus: Rc<RefCell<T>>,
+        interrupt: Rc<RefCell<InterruptImpl>>,
+        halt: Arc<AtomicBool>,
+    ) -> Self {
+        CPU {
+            register_a: 0,
+            register_x: 0,
+            register_y: 0,
+            status: 0,
+            program_counter: 0,
+            stack_pointer: STACK_RESET,
+            bus: bus,
+            interrupt: interrupt,
+            trace: Option::None,
+            trace_cycles: 0,
+            trace_pc: 0,
+            trace_sp: 0,
+            trace_status: 0,
+            trace_reg_a: 0,
+            trace_reg_x: 0,
+            trace_reg_y: 0,
+            reads: Vec::new(),
+            writes: Vec::new(),
+            operand_address: Option::None,
+            halt: halt,
+            next_program_counter: 0,
+            total_cycles: 0,
+            op_cycles: 0,
+        }
+    }
+
+    fn store_trace(&mut self, op: &OpCode) {
+        self.trace = Option::Some(CpuTrace {
+            cpu_cycles: self.trace_cycles,
+            pc: self.trace_pc,
+            op_code: (*op).to_owned(),
+            absolute_address: self.operand_address,
+            register_a: self.trace_reg_a,
+            register_x: self.trace_reg_x,
+            register_y: self.trace_reg_y,
+            status: self.trace_status,
+            stack: self.trace_sp,
+            reads: self.reads.clone(),
+            writes: self.writes.clone(),
+        });
+
+        self.operand_address = Option::None;
+        self.reads.clear();
+        self.writes.clear();
+        self.trace_sp = 0;
+        self.trace_pc = 0;
+        self.trace_status = 0;
+        self.trace_reg_a = 0;
+        self.trace_reg_x = 0;
+        self.trace_reg_y = 0;
     }
 
     fn format_fatal_error(&mut self, opcode: &&OpCode, s: String) -> String {

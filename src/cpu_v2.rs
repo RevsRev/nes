@@ -776,8 +776,6 @@ impl<T: Bus> CpuV2<T> {
             return Result::Ok(());
         }
 
-        println!("Jumping to {:X}", eval);
-
         self.tick(1);
         self.program_counter = eval;
         Result::Ok(())

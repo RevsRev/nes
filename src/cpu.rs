@@ -2,6 +2,8 @@ use crate::interrupt::{Interrupt, InterruptImpl};
 use crate::opp::{AddressingMode, OpCode};
 use crate::trace::{CpuTrace, CpuTraceFormatOptions, CpuTraceFormatter};
 use crate::traits::bus::Bus;
+use crate::traits::mos_6502_registers::Registers;
+use crate::traits::mos_65902::MOS6502;
 use crate::traits::tick::Tick;
 use crate::{opp, traits::mem::Mem};
 use indoc::indoc;
@@ -30,13 +32,13 @@ const PC_START_ADDRESS: u16 = 0xFFFC;
 const HALT_VALUE: u16 = 0x00FF;
 
 pub struct CPU<T: Bus> {
-    pub register_a: u8,
-    pub register_x: u8,
-    pub register_y: u8,
-    pub status: u8,
-    pub program_counter: u16,
-    pub stack_pointer: u8,
-    pub bus: Rc<RefCell<T>>,
+    register_a: u8,
+    register_x: u8,
+    register_y: u8,
+    status: u8,
+    program_counter: u16,
+    stack_pointer: u8,
+    bus: Rc<RefCell<T>>,
 
     interrupt: Rc<RefCell<InterruptImpl>>,
 
@@ -54,11 +56,70 @@ pub struct CPU<T: Bus> {
     writes: Vec<(u16, u8)>,
 
     halt: Arc<AtomicBool>,
-    pub trace_format_options: CpuTraceFormatOptions,
 
     next_program_counter: u16,
     pub total_cycles: u64,
     op_cycles: u8,
+}
+
+impl<T: Bus> MOS6502 for CPU<T> {
+    fn get_cycles(self) -> u64 {
+        self.total_cycles
+    }
+
+    fn set_cycles(&mut self, value: u64) {
+        self.total_cycles = value;
+    }
+}
+
+impl<T: Bus> Registers for CPU<T> {
+    fn get_register_a(self) -> u8 {
+        self.register_a
+    }
+
+    fn set_register_a(&mut self, value: u8) {
+        self.register_a = value;
+    }
+
+    fn get_register_x(self) -> u8 {
+        self.register_x
+    }
+
+    fn set_register_x(&mut self, value: u8) {
+        self.register_x = value;
+    }
+
+    fn get_register_y(self) -> u8 {
+        self.register_y
+    }
+
+    fn set_register_y(&mut self, value: u8) {
+        self.register_y = value;
+    }
+
+    fn get_status(self) -> u8 {
+        self.status
+    }
+
+    fn set_status(&mut self, value: u8) {
+        self.status = value;
+    }
+
+    fn get_program_counter(self) -> u16 {
+        self.program_counter
+    }
+
+    fn set_program_counter(&mut self, value: u16) {
+        self.program_counter = value;
+    }
+
+    fn get_stack_pointer(self) -> u8 {
+        self.stack_pointer
+    }
+
+    fn set_stack_pointer(&mut self, value: u8) {
+        self.stack_pointer = value;
+    }
 }
 
 impl<T: Bus> Mem for CPU<T> {
@@ -143,10 +204,6 @@ impl<T: Bus> CPU<T> {
             writes: Vec::new(),
             operand_address: Option::None,
             halt: halt,
-            trace_format_options: CpuTraceFormatOptions {
-                write_break_2_flag: false,
-                write_cpu_cycles: false,
-            },
             next_program_counter: 0,
             total_cycles: 0,
             op_cycles: 0,

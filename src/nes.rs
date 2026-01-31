@@ -112,6 +112,8 @@ mod test {
         CpuTraceFormatOptions, CpuTraceFormatter, NesTraceFormatter, PpuTraceFormatter,
     };
     use crate::traits::mem::Mem;
+    use crate::traits::mos_6502_registers::Registers;
+    use crate::traits::mos_65902::MOS6502;
     use core::fmt;
     use std::cell::RefCell;
     use std::collections::HashMap;
@@ -160,10 +162,10 @@ mod test {
         nes.bus.borrow_mut().mem_write(103, 0x88);
         nes.bus.borrow_mut().mem_write(104, 0x00);
 
-        nes.cpu.program_counter = 0x64;
-        nes.cpu.register_a = 1;
-        nes.cpu.register_x = 2;
-        nes.cpu.register_y = 3;
+        nes.cpu.set_program_counter(0x64);
+        nes.cpu.set_register_a(1);
+        nes.cpu.set_register_x(2);
+        nes.cpu.set_register_y(3);
 
         let halt_share = halt.clone();
         let handle = thread::spawn(move || {
@@ -232,8 +234,8 @@ mod test {
         //target cell
         nes.bus.borrow_mut().mem_write(0x400, 0xAA);
 
-        nes.cpu.program_counter = 0x64;
-        nes.cpu.register_y = 0;
+        nes.cpu.set_program_counter(0x64);
+        nes.cpu.set_register_y(0);
 
         let halt_share = halt.clone();
         let handle = thread::spawn(move || {
@@ -279,10 +281,8 @@ mod test {
         let nes_test_log = read_file("assets/nestest.log");
 
         nes.cpu.reset();
-        nes.cpu.trace_format_options.write_break_2_flag = true;
 
-        //        nes.setDebug(true);
-        nes.cpu.program_counter = 0xC000;
+        nes.cpu.set_program_counter(0xC000);
 
         let halt_share = halt.clone();
         let handle = thread::spawn(move || {
@@ -421,10 +421,10 @@ mod test {
         let nes_test_log = read_file("nestest/ppu/blargg/vbl_clear_time_mesen.log");
 
         let nes_init = |nes: &mut NES| {
-            nes.cpu.total_cycles = 8;
-            nes.cpu.register_x = 1;
-            nes.cpu.status = 0x07;
-            nes.cpu.stack_pointer = 0xF4;
+            nes.cpu.set_cycles(8);
+            nes.cpu.set_register_x(1);
+            nes.cpu.set_status(0x07);
+            nes.cpu.set_stack_pointer(0xF4);
             nes.bus.borrow_mut().ppu.frame_cycles = 27
         };
         should_match_mesen(rom, nes_test_log, nes_init, 104528);
@@ -480,10 +480,10 @@ mod test {
         let nes_test_log = read_file("nestest/ppu/ppu_vbl_nmi/01_mesen.log");
 
         let nes_init = |nes: &mut NES| {
-            nes.cpu.total_cycles = 8;
-            nes.cpu.register_a = 0x1A;
-            nes.cpu.status = 0x05;
-            nes.cpu.stack_pointer = 0xEF;
+            nes.cpu.set_cycles(8);
+            nes.cpu.set_register_a(0x1A);
+            nes.cpu.set_status(0x05);
+            nes.cpu.set_stack_pointer(0xEF);
             nes.bus.borrow_mut().ppu.frame_cycles = 27
         };
 
@@ -705,8 +705,6 @@ mod test {
         );
 
         nes_init(&mut nes);
-
-        nes.cpu.trace_format_options.write_cpu_cycles = true;
 
         let mut result: Vec<String> = Vec::new();
 

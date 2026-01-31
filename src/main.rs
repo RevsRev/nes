@@ -25,6 +25,7 @@ use crate::{apu::APU, io::audio::sound_frame::SoundFrame};
 mod apu;
 mod bus;
 mod cpu_v1;
+mod cpu_v2;
 mod interrupt;
 mod io;
 mod nes;

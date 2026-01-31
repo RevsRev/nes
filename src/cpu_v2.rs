@@ -45,9 +45,7 @@ pub struct CpuV2<T: Bus> {
 
     halt: Arc<AtomicBool>,
 
-    next_program_counter: u16,
     total_cycles: u64,
-    op_cycles: u8,
 }
 
 impl<T: Bus> Cpu<T> for CpuV2<T> {}
@@ -67,16 +65,6 @@ impl<T: Bus> MOS6502<T> for CpuV2<T> {
     {
         let should_nmi = self.interrupt.borrow_mut().take_nmi();
 
-        let op = self.mem_read(self.program_counter);
-
-        let opcode = op.and_then(|o| {
-            let option = opp::OPCODES_MAP.get(&o);
-            match option {
-                Some(o) => Result::Ok(o),
-                None => Result::Err(format!("Opcode {:x} is not recognised", o)),
-            }
-        })?;
-
         self.reads.clear();
         self.writes.clear();
         self.trace_cycles = self.total_cycles;
@@ -87,11 +75,17 @@ impl<T: Bus> MOS6502<T> for CpuV2<T> {
         self.trace_reg_x = self.register_x;
         self.trace_reg_y = self.register_y;
 
-        self.op_cycles = opcode.cycles;
-        self.program_counter += 1;
-        self.next_program_counter = self.program_counter + (opcode.len - 1) as u16;
+        //FETCH
+        let op = self.mem_read(self.program_counter);
+        self.program_counter = self.program_counter + 1;
 
-        self.tick(self.op_cycles);
+        let opcode = op.and_then(|o| {
+            let option = opp::OPCODES_MAP.get(&o);
+            match option {
+                Some(o) => Result::Ok(o),
+                None => Result::Err(format!("Opcode {:x} is not recognised", o)),
+            }
+        })?;
 
         let execution_result: Result<(), String> = match opcode.code {
             0x69 | 0x65 | 0x75 | 0x6D | 0x7D | 0x79 | 0x61 | 0x71 => self.adc(&opcode.mode),
@@ -254,7 +248,7 @@ impl<T: Bus> MOS6502<T> for CpuV2<T> {
         if !Self::get_flag(self.status, INTERRUPT_DISABLE_FLAG)
             && self.interrupt.borrow_mut().poll_irq()
         {
-            self.stack_push_u16(self.next_program_counter);
+            self.stack_push_u16(self.program_counter);
             self.stack_push((self.status & !BREAK_FLAG) | BREAK2_FLAG);
 
             let pc = self.mem_read_u16(0xFFFE);
@@ -269,9 +263,6 @@ impl<T: Bus> MOS6502<T> for CpuV2<T> {
                     return Err(self.format_fatal_error(opcode, s));
                 }
             }
-        } else {
-            self.program_counter = self.next_program_counter;
-            self.tick(self.op_cycles - opcode.cycles);
         }
 
         if should_nmi {
@@ -369,17 +360,23 @@ impl<T: Bus> Tracing for CpuV2<T> {
     fn take_trace(&mut self) -> Option<CpuTrace> {
         self.trace.take()
     }
+
+    fn peek_trace(&self) -> Option<&CpuTrace> {
+        self.trace.as_ref()
+    }
 }
 
 impl<T: Bus> Mem for CpuV2<T> {
     fn mem_read(&mut self, addr: u16) -> Result<u8, std::string::String> {
         let read = self.bus.borrow_mut().mem_read(addr)?;
+        self.tick(1);
         self.reads.push((addr, read));
         Result::Ok(read)
     }
 
     fn mem_write(&mut self, addr: u16, data: u8) -> Result<u8, std::string::String> {
         let retval = self.bus.borrow_mut().mem_write(addr, data)?;
+        self.tick(1);
         self.writes.push((addr, retval));
         Result::Ok(retval)
     }
@@ -417,10 +414,6 @@ impl<T: Bus> fmt::Display for CpuV2<T> {
 
 impl<T: Bus> Tick for CpuV2<T> {
     fn tick(&mut self, cycles: u8) {
-        if (cycles == 0) {
-            return;
-        }
-
         self.total_cycles += cycles as u64;
         self.bus.borrow_mut().tick(cycles);
     }
@@ -453,9 +446,7 @@ impl<T: Bus> CpuV2<T> {
             writes: Vec::new(),
             operand_address: Option::None,
             halt: halt,
-            next_program_counter: 0,
             total_cycles: 0,
-            op_cycles: 0,
         }
     }
 
@@ -580,61 +571,93 @@ impl<T: Bus> CpuV2<T> {
         return register & flag == flag;
     }
 
-    fn evaluate_operand(&mut self, mode: &AddressingMode) -> Result<(u16, bool), String> {
-        self.evaluate_operand_at_address(mode, self.program_counter)
-    }
-
-    fn evaluate_operand_at_address(
-        &mut self,
-        mode: &AddressingMode,
-        begin: u16,
-    ) -> Result<(u16, bool), String> {
-        let result = match mode {
-            AddressingMode::Immediate | AddressingMode::Implied => (begin, false),
-            AddressingMode::Relative => {
-                let value = self.mem_read(begin)? as i8;
-                let addr = begin.wrapping_add(1).wrapping_add(value as u16);
-                (addr, Self::page_boundary_crossed(begin, addr))
+    fn evaluate_operand_at_address(&mut self, mode: &AddressingMode) -> Result<u16, String> {
+        let result: u16 = match mode {
+            AddressingMode::Immediate | AddressingMode::Implied => {
+                let addr = self.program_counter;
+                self.program_counter = self.program_counter + 1;
+                addr
             }
-            AddressingMode::ZeroPage => (self.mem_read(begin)? as u16, false),
-            AddressingMode::Absolute => (self.mem_read_u16(begin)?, false),
+            AddressingMode::Relative => {
+                let value = self.mem_read(self.program_counter)? as i8;
+                let addr = self
+                    .program_counter
+                    .wrapping_add(1)
+                    .wrapping_add(value as u16);
+
+                self.program_counter = self.program_counter + 1;
+                if Self::page_boundary_crossed(self.program_counter, addr) {
+                    self.tick(1);
+                }
+
+                addr
+            }
+            AddressingMode::ZeroPage => {
+                let addr = self.mem_read(self.program_counter)? as u16;
+                self.program_counter = self.program_counter + 1;
+                addr
+            }
+            AddressingMode::Absolute => {
+                let addr = self.mem_read_u16(self.program_counter)?;
+                self.program_counter = self.program_counter + 2;
+                addr
+            }
             AddressingMode::ZeroPage_X => {
-                let pos = self.mem_read(begin)?;
+                let pos = self.mem_read(self.program_counter)?;
+                self.program_counter = self.program_counter + 1;
                 let addr = pos.wrapping_add(self.register_x) as u16;
-                (addr, false)
+                addr
             }
             AddressingMode::ZeroPage_Y => {
-                let pos = self.mem_read(begin)?;
+                let pos = self.mem_read(self.program_counter)?;
+                self.program_counter = self.program_counter + 1;
                 let addr = pos.wrapping_add(self.register_y) as u16;
-                (addr, false)
+                addr
             }
             AddressingMode::Absolute_X => {
-                let base = self.mem_read_u16(begin)?;
+                let base = self.mem_read_u16(self.program_counter)?;
+                self.program_counter = self.program_counter + 1;
                 let addr = base.wrapping_add(self.register_x as u16);
-                (addr, Self::page_boundary_crossed(base, addr))
+
+                if Self::page_boundary_crossed(self.program_counter, addr) {
+                    self.tick(1);
+                }
+                addr
             }
             AddressingMode::Absolute_Y => {
-                let base = self.mem_read_u16(begin)?;
+                let base = self.mem_read_u16(self.program_counter)?;
+                self.program_counter = self.program_counter + 2;
                 let addr = base.wrapping_add(self.register_y as u16);
-                (addr, Self::page_boundary_crossed(base, addr))
+
+                if Self::page_boundary_crossed(self.program_counter, addr) {
+                    self.tick(1);
+                }
+                addr
             }
             AddressingMode::Indirect_X => {
-                let base = self.mem_read(begin)?;
+                let base = self.mem_read(self.program_counter)?;
+                self.program_counter = self.program_counter + 1;
                 let ptr: u8 = base.wrapping_add(self.register_x);
                 let lo = self.mem_read(ptr as u16)?;
                 let hi = self.mem_read(ptr.wrapping_add(1) as u16)?;
-                ((hi as u16) << 8 | (lo as u16), false)
+                (hi as u16) << 8 | (lo as u16)
             }
             AddressingMode::Indirect_Y => {
-                let base = self.mem_read(begin)?;
+                let base = self.mem_read(self.program_counter)?;
+                self.program_counter = self.program_counter + 1;
                 let lo = self.mem_read(base as u16)?;
                 let hi = self.mem_read(base.wrapping_add(1) as u16)?;
                 let deref_base = (hi as u16) << 8 | (lo as u16);
                 let deref = deref_base.wrapping_add(self.register_y as u16);
-                (deref, Self::page_boundary_crossed(deref, deref_base))
+
+                if Self::page_boundary_crossed(deref, deref_base) {
+                    self.tick(1);
+                }
+                deref
             }
             AddressingMode::Indirect => {
-                let target_addr = self.mem_read_u16(begin)?;
+                let target_addr = self.mem_read_u16(self.program_counter)?;
+                self.program_counter = self.program_counter + 2;
 
                 //Nasty bug for indirect reads on a page boundary!
                 //If we are at a page boundry e.g. 0x02FF, then we read the lo from 0x02FF and the hi
@@ -649,11 +672,11 @@ impl<T: Bus> CpuV2<T> {
                 let hi = self.mem_read(second)? as u16;
 
                 // let target_addr = self.mem_read_u16(begin);
-                ((hi << 8) | lo, false)
+                (hi << 8) | lo
             }
             AddressingMode::Accumulator => panic!("Unsupported op code 'Accumulator'"),
         };
-        self.operand_address = Option::Some(result.0);
+        self.operand_address = Option::Some(result);
         Result::Ok(result)
     }
 
@@ -664,13 +687,9 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn adc(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand(mode)?;
-        let addr = eval.0;
+        let eval = self.evaluate_operand_at_address(mode)?;
+        let addr = eval;
         let value = self.mem_read(addr)?;
-
-        if eval.1 {
-            self.op_cycles += 1;
-        }
 
         let mut result = self.register_a;
         let mut carry = match result.checked_add(value) {
@@ -704,13 +723,9 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn and(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand(mode)?;
-        let addr = eval.0;
+        let eval = self.evaluate_operand_at_address(mode)?;
+        let addr = eval;
         let value = self.mem_read(addr)?;
-
-        if eval.1 {
-            self.op_cycles += 1;
-        }
 
         self.register_a = self.register_a & value;
         self.set_status_flag(ZERO_FLAG, self.register_a == 0);
@@ -735,7 +750,7 @@ impl<T: Bus> CpuV2<T> {
             return Result::Ok(());
         }
 
-        let addr = self.evaluate_operand(mode)?.0;
+        let addr = self.evaluate_operand_at_address(mode)?;
         let old = self.mem_read(addr)?;
 
         let value = old << 1;
@@ -749,61 +764,53 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn sta(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let addr = self.evaluate_operand(mode)?.0;
+        let addr = self.evaluate_operand_at_address(mode)?;
         self.mem_write(addr, self.register_a)?;
         Result::Ok(())
     }
 
     fn bcc(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand(mode)?;
+        let eval = self.evaluate_operand_at_address(mode)?;
 
         if Self::get_flag(self.status, CARRY_FLAG) {
             return Result::Ok(());
         }
 
-        if eval.1 {
-            self.op_cycles += 1;
-        }
+        println!("Jumping to {:X}", eval);
 
-        self.op_cycles += 1;
-        self.next_program_counter = eval.0;
+        self.tick(1);
+        self.program_counter = eval;
         Result::Ok(())
     }
 
     fn bcs(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand(mode)?;
+        let eval = self.evaluate_operand_at_address(mode)?;
 
         if !Self::get_flag(self.status, CARRY_FLAG) {
             return Result::Ok(());
         }
 
-        if eval.1 {
-            self.op_cycles += 1;
-        }
+        self.tick(1);
 
-        self.op_cycles += 1;
-        self.next_program_counter = eval.0;
+        self.program_counter = eval;
         Result::Ok(())
     }
 
     fn beq(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand(mode)?;
+        let eval = self.evaluate_operand_at_address(mode)?;
 
         if !Self::get_flag(self.status, ZERO_FLAG) {
             return Result::Ok(());
         }
 
-        if eval.1 {
-            self.op_cycles += 1;
-        }
+        self.tick(1);
 
-        self.op_cycles += 1;
-        self.next_program_counter = eval.0;
+        self.program_counter = eval;
         Result::Ok(())
     }
 
     fn bit(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let addr = self.evaluate_operand(mode)?.0;
+        let addr = self.evaluate_operand_at_address(mode)?;
         let value = self.mem_read(addr)?;
 
         self.set_status_flag(ZERO_FLAG, value & self.register_a == 0);
@@ -813,82 +820,62 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn bmi(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand(mode)?;
+        let eval = self.evaluate_operand_at_address(mode)?;
 
         if !Self::get_flag(self.status, NEGATIVE_FLAG) {
             return Result::Ok(());
         }
 
-        if eval.1 {
-            self.op_cycles += 1;
-        }
-
-        self.op_cycles += 1;
-        self.next_program_counter = eval.0;
+        self.tick(1);
+        self.program_counter = eval;
         Result::Ok(())
     }
 
     fn bne(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand(mode)?;
+        let eval = self.evaluate_operand_at_address(mode)?;
 
         if Self::get_flag(self.status, ZERO_FLAG) {
             return Result::Ok(());
         }
 
-        if eval.1 {
-            self.op_cycles += 1;
-        }
-
-        self.op_cycles += 1;
-        self.next_program_counter = eval.0;
+        self.tick(1);
+        self.program_counter = eval;
         Result::Ok(())
     }
 
     fn bpl(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand(mode)?;
+        let eval = self.evaluate_operand_at_address(mode)?;
 
         if Self::get_flag(self.status, NEGATIVE_FLAG) {
             return Result::Ok(());
         }
 
-        if eval.1 {
-            self.op_cycles += 1;
-        }
-
-        self.op_cycles += 1;
-        self.next_program_counter = eval.0;
+        self.tick(1);
+        self.program_counter = eval;
         Result::Ok(())
     }
 
     fn bvc(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand(mode)?;
+        let eval = self.evaluate_operand_at_address(mode)?;
 
         if Self::get_flag(self.status, OVERFLOW_FLAG) {
             return Result::Ok(());
         }
 
-        if eval.1 {
-            self.op_cycles += 1;
-        }
-
-        self.op_cycles += 1;
-        self.next_program_counter = eval.0;
+        self.tick(1);
+        self.program_counter = eval;
         Result::Ok(())
     }
 
     fn bvs(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand(mode)?;
+        let eval = self.evaluate_operand_at_address(mode)?;
 
         if !Self::get_flag(self.status, OVERFLOW_FLAG) {
             return Result::Ok(());
         }
 
-        if eval.1 {
-            self.op_cycles += 1;
-        }
-
-        self.op_cycles += 1;
-        self.next_program_counter = eval.0;
+        self.tick(1);
+        self.program_counter = eval;
         Result::Ok(())
     }
 
@@ -913,13 +900,9 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn cmp(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand(mode)?;
-        let addr = eval.0;
+        let eval = self.evaluate_operand_at_address(mode)?;
+        let addr = eval;
         let value = self.mem_read(addr)?;
-
-        if eval.1 {
-            self.op_cycles += 1;
-        }
 
         let sub = self.register_a.wrapping_sub(value);
 
@@ -930,7 +913,7 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn cpx(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let address = self.evaluate_operand(mode)?.0;
+        let address = self.evaluate_operand_at_address(mode)?;
         let value = self.mem_read(address)?;
 
         let sub = self.register_x.wrapping_sub(value);
@@ -942,7 +925,7 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn cpy(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let address = self.evaluate_operand(mode)?.0;
+        let address = self.evaluate_operand_at_address(mode)?;
         let value = self.mem_read(address)?;
 
         let sub = self.register_y.wrapping_sub(value);
@@ -954,7 +937,7 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn dec(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let address = self.evaluate_operand(mode)?.0;
+        let address = self.evaluate_operand_at_address(mode)?;
         let value = self.mem_read(address)?;
 
         let sub = value.wrapping_sub(1);
@@ -967,7 +950,7 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn dcp(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let address = self.evaluate_operand(mode)?.0;
+        let address = self.evaluate_operand_at_address(mode)?;
         let value = self.mem_read(address)?;
 
         let sub = value.wrapping_sub(1);
@@ -1005,13 +988,9 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn eor(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand(mode)?;
-        let addr = eval.0;
+        let eval = self.evaluate_operand_at_address(mode)?;
+        let addr = eval;
         let value = self.mem_read(addr)?;
-
-        if eval.1 {
-            self.op_cycles += 1;
-        }
 
         self.register_a = self.register_a ^ value;
 
@@ -1024,7 +1003,7 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn inc(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let address = self.evaluate_operand(mode)?.0;
+        let address = self.evaluate_operand_at_address(mode)?;
         let value = self.mem_read(address)?.wrapping_add(1);
         self.mem_write(address, value)?;
 
@@ -1054,7 +1033,7 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn isb(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let address = self.evaluate_operand(mode)?.0;
+        let address = self.evaluate_operand_at_address(mode)?;
         let value = self.mem_read(address)?.wrapping_add(1);
         self.mem_write(address, value)?;
 
@@ -1088,28 +1067,24 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn jmp(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let pc_jump = self.evaluate_operand(mode)?.0;
-        self.next_program_counter = pc_jump;
+        let pc_jump = self.evaluate_operand_at_address(mode)?;
+        self.program_counter = pc_jump;
         Result::Ok(())
     }
 
     fn jsr(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let pc_jump = self.evaluate_operand(mode)?.0;
+        let pc_jump = self.evaluate_operand_at_address(mode)?;
 
-        self.stack_push_u16(self.program_counter + 2 - 1)?;
+        self.stack_push_u16(self.program_counter)?;
 
-        self.next_program_counter = pc_jump;
+        self.program_counter = pc_jump;
         Result::Ok(())
     }
 
     fn lda(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand(mode)?;
-        let addr = eval.0;
+        let eval = self.evaluate_operand_at_address(mode)?;
+        let addr = eval;
         let value = self.mem_read(addr)?;
-
-        if eval.1 {
-            self.op_cycles += 1;
-        }
 
         self.register_a = value;
         self.set_status_flag(ZERO_FLAG, self.register_a == 0);
@@ -1121,14 +1096,9 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn ldx(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand(mode)?;
-        let addr = eval.0;
+        let eval = self.evaluate_operand_at_address(mode)?;
+        let addr = eval;
         let value = self.mem_read(addr)?;
-
-        if eval.1 {
-            self.op_cycles += 1;
-        }
-
         self.register_x = value;
 
         self.set_status_flag(ZERO_FLAG, self.register_x == 0);
@@ -1140,14 +1110,9 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn lax(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand(mode)?;
-        let addr = eval.0;
+        let eval = self.evaluate_operand_at_address(mode)?;
+        let addr = eval;
         let value = self.mem_read(addr)?;
-
-        if eval.1 {
-            self.op_cycles += 1;
-        }
-
         self.register_a = value;
         self.register_x = value;
 
@@ -1157,14 +1122,9 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn ldy(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand(mode)?;
-        let addr = eval.0;
+        let eval = self.evaluate_operand_at_address(mode)?;
+        let addr = eval;
         let value = self.mem_read(addr)?;
-
-        if eval.1 {
-            self.op_cycles += 1;
-        }
-
         self.register_y = value;
 
         self.set_status_flag(ZERO_FLAG, self.register_y == 0);
@@ -1189,7 +1149,7 @@ impl<T: Bus> CpuV2<T> {
             return Result::Ok(());
         }
 
-        let addr = self.evaluate_operand(mode)?.0;
+        let addr = self.evaluate_operand_at_address(mode)?;
         let old = self.mem_read(addr)?;
 
         let value = old >> 1;
@@ -1203,34 +1163,27 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn nop(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let addr = self.evaluate_operand(mode)?.0;
+        let addr = self.evaluate_operand_at_address(mode)?;
         self.mem_read(addr)?;
         Result::Ok(())
     }
 
     fn dop(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let addr = self.evaluate_operand(mode)?.0;
+        let addr = self.evaluate_operand_at_address(mode)?;
         self.mem_read(addr)?;
         Result::Ok(())
     }
 
     fn top(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let addr = self.evaluate_operand(mode)?;
-        self.mem_read(addr.0)?;
-        if addr.1 {
-            self.op_cycles += 1
-        }
+        let addr = self.evaluate_operand_at_address(mode)?;
+        self.mem_read(addr)?;
         Result::Ok(())
     }
 
     fn ora(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand(mode)?;
-        let addr = eval.0;
+        let eval = self.evaluate_operand_at_address(mode)?;
+        let addr = eval;
         let value = self.mem_read(addr)?;
-
-        if eval.1 {
-            self.op_cycles += 1;
-        }
 
         self.register_a = self.register_a | value;
 
@@ -1286,7 +1239,7 @@ impl<T: Bus> CpuV2<T> {
             return Result::Ok(());
         }
 
-        let address = self.evaluate_operand(mode)?.0;
+        let address = self.evaluate_operand_at_address(mode)?;
         let old_value = self.mem_read(address)?;
         let carry = Self::get_flag(self.status, CARRY_FLAG);
 
@@ -1322,7 +1275,7 @@ impl<T: Bus> CpuV2<T> {
             return Result::Ok(());
         }
 
-        let address = self.evaluate_operand(mode)?.0;
+        let address = self.evaluate_operand_at_address(mode)?;
         let old_value = self.mem_read(address)?;
         let carry = Self::get_flag(self.status, CARRY_FLAG);
 
@@ -1340,7 +1293,7 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn rla(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let address = self.evaluate_operand(mode)?.0;
+        let address = self.evaluate_operand_at_address(mode)?;
         let orig_value = self.mem_read(address)?;
         let value = (orig_value << 1) | (self.status & CARRY_FLAG);
 
@@ -1357,7 +1310,7 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn rra(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let address = self.evaluate_operand(mode)?.0;
+        let address = self.evaluate_operand_at_address(mode)?;
         let orig_value = self.mem_read(address)?;
 
         let should_carry = Self::get_flag(orig_value, CARRY_FLAG);
@@ -1398,21 +1351,21 @@ impl<T: Bus> CpuV2<T> {
 
     fn rti(&mut self, _mode: &AddressingMode) -> Result<(), String> {
         self.status = self.stack_pop()? | BREAK2_FLAG;
-        self.next_program_counter = self.stack_pop_u16()?;
+        self.program_counter = self.stack_pop_u16()?;
         Result::Ok(())
     }
 
     fn rts(&mut self, _mode: &AddressingMode) -> Result<(), String> {
-        self.next_program_counter = self.stack_pop_u16()? + 1;
+        self.program_counter = self.stack_pop_u16()?;
         Result::Ok(())
     }
 
     fn brk(&mut self, _mode: &AddressingMode) -> Result<bool, String> {
-        self.stack_push_u16(self.program_counter.wrapping_add(1))?;
+        self.stack_push_u16(self.program_counter)?;
         self.stack_push(self.status | (BREAK_FLAG & BREAK2_FLAG))?;
 
-        self.next_program_counter = self.mem_read_u16(BRK_INTERRUPT_ADDRESS)?;
-        if self.next_program_counter == HALT_VALUE {
+        self.program_counter = self.mem_read_u16(BRK_INTERRUPT_ADDRESS)?;
+        if self.program_counter == HALT_VALUE {
             return Result::Ok(true);
         }
 
@@ -1423,7 +1376,7 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn sax(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let address = self.evaluate_operand(mode)?.0;
+        let address = self.evaluate_operand_at_address(mode)?;
         let value = self.register_x & self.register_a;
 
         self.mem_write(address, value)?;
@@ -1441,13 +1394,9 @@ impl<T: Bus> CpuV2<T> {
         };
 
         let a = self.register_a;
-        let eval = self.evaluate_operand(mode)?;
-        let address = eval.0;
+        let eval = self.evaluate_operand_at_address(mode)?;
+        let address = eval;
         let value = self.mem_read(address)?;
-
-        if eval.1 {
-            self.op_cycles += 1;
-        }
 
         let clear_carry = match a.checked_sub(value) {
             Some(_sub) => match _sub.checked_sub(1 - c) {
@@ -1487,7 +1436,7 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn slo(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let address = self.evaluate_operand(mode)?.0;
+        let address = self.evaluate_operand_at_address(mode)?;
         let original = self.mem_read(address)?;
         let value = original << 1;
         self.mem_write(address, value)?;
@@ -1503,7 +1452,7 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn sre(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let address = self.evaluate_operand(mode)?.0;
+        let address = self.evaluate_operand_at_address(mode)?;
         let original = self.mem_read(address)?;
         let value = original >> 1;
 
@@ -1519,13 +1468,13 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn stx(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let address = self.evaluate_operand(mode)?.0;
+        let address = self.evaluate_operand_at_address(mode)?;
         self.mem_write(address, self.register_x)?;
         Result::Ok(())
     }
 
     fn sty(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let address = self.evaluate_operand(mode)?.0;
+        let address = self.evaluate_operand_at_address(mode)?;
         self.mem_write(address, self.register_y)?;
         Result::Ok(())
     }
@@ -1602,9 +1551,12 @@ impl<T: Bus> CpuV2<T> {
 #[cfg(test)]
 #[allow(non_snake_case)]
 mod test {
-    use crate::traits::{
-        mos_65902::{BRK_INTERRUPT_ADDRESS, HALT_VALUE, STACK},
-        tick::Tick,
+    use crate::{
+        bus::BusImpl,
+        traits::{
+            mos_65902::{BRK_INTERRUPT_ADDRESS, HALT_VALUE, STACK},
+            tick::Tick,
+        },
     };
 
     use super::*;
@@ -1623,6 +1575,17 @@ mod test {
             BusStub {
                 memory: mem,
                 cycles: 0,
+            }
+        }
+
+        fn load_with_start_address(&mut self, start_address: u16, program: Vec<u8>) {
+            self.mem_write_vec(start_address, &program);
+            self.mem_write_u16(0xFFFC, start_address);
+        }
+
+        fn mem_write_vec(&mut self, addr: u16, program: &Vec<u8>) {
+            for i in 0..(program.len() as u16) {
+                self.mem_write(addr + i, program[i as usize]);
             }
         }
     }
@@ -1644,6 +1607,21 @@ mod test {
             self.memory[addr as usize] = data;
             Result::Ok(0)
         }
+    }
+
+    fn tracing_callback(cpu: &CpuV2<BusStub>) {
+        let formatter = CpuTraceFormatter {
+            options: CpuTraceFormatOptions {
+                write_break_2_flag: false,
+                write_cpu_cycles: true,
+            },
+        };
+        match &cpu.peek_trace() {
+            None => println!("NULL Trace"),
+            Some(s) => {
+                println!("{}", formatter.format(&s))
+            }
+        };
     }
 
     #[test]
@@ -1813,37 +1791,39 @@ mod test {
 
     #[test]
     fn test_bcc_0x90_absolute_addr_carry_flag_not_set() {
-        let bus = BusStub::new();
+        let bus = Rc::new(RefCell::new(BusStub::new()));
         let mut cpu = CpuV2::new(
-            Rc::new(RefCell::new(bus)),
+            bus.clone(),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
         );
         //Jump forward by 4 (to a STA instruction, check that we do in fact store)
-        cpu.load_with_start_address(0x80F0, vec![0x90, 0x0E]);
-        cpu.mem_write_vec(0x8100, &vec![0x85, 0xA1]);
+        bus.borrow_mut()
+            .load_with_start_address(0x80F0, vec![0x90, 0x0E]);
+        bus.borrow_mut().mem_write_vec(0x8100, &vec![0x85, 0xA1]);
         cpu.reset();
         cpu.register_a = 240;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = cpu.run_with_callback(|cpu| tracing_callback(cpu));
         assert_eq!(240, cpu.mem_read(0x00A1).unwrap());
-        assert_eq!(14, cpu.bus.borrow().cycles);
+        assert_eq!(16, cpu.bus.borrow().cycles);
     }
 
     #[test]
     fn test_bcc_0x90_absolute_addr_carry_flag_set() {
-        let bus = BusStub::new();
+        let bus = Rc::new(RefCell::new(BusStub::new()));
         let mut cpu = CpuV2::new(
-            Rc::new(RefCell::new(bus)),
+            bus.clone(),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
         );
-        cpu.load_with_start_address(0x8000, vec![0x90, 0x04, 0x00, 0x00, 0x00, 0x00, 0x85, 0xA1]);
+        bus.borrow_mut()
+            .load_with_start_address(0x8000, vec![0x90, 0x04, 0x00, 0x00, 0x00, 0x00, 0x85, 0xA1]);
         cpu.reset();
         cpu.status = cpu.status | CARRY_FLAG;
         cpu.register_a = 240;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = cpu.run_with_callback(|cpu| tracing_callback(cpu));
         assert_eq!(0, cpu.mem_read(0x00A1).unwrap());
-        assert_eq!(9, cpu.bus.borrow().cycles);
+        assert_eq!(11, cpu.bus.borrow().cycles);
     }
 
     #[test]
@@ -2469,22 +2449,25 @@ mod test {
 
     #[test]
     fn test_jsr_0x20() {
-        let bus = BusStub::new();
+        let bus = Rc::new(RefCell::new(BusStub::new()));
         let mut cpu = CpuV2::new(
-            Rc::new(RefCell::new(bus)),
+            bus.clone(),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
         );
-        cpu.load_with_start_address(0x8000, vec![0x20, 0xAB, 0xBC]);
-        cpu.mem_write(0xBCAB, 0xE8); // INX
-        cpu.mem_write(0xBCAC, 0xE8); // INX
-        cpu.mem_write(0xBCAD, 0x00); // BRK
+        bus.borrow_mut()
+            .load_with_start_address(0x8000, vec![0x20, 0xAB, 0xBC]);
+        bus.borrow_mut().mem_write(0xBCAB, 0xE8); // INX
+        bus.borrow_mut().mem_write(0xBCAC, 0xE8); // INX
+        bus.borrow_mut().mem_write(0xBCAD, 0x00); // BRK
         cpu.reset();
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = cpu.run_with_callback(|cpu| {
+            tracing_callback(cpu);
+        });
 
         assert_eq!(STACK_RESET.wrapping_sub(5) as u8, cpu.stack_pointer); // 2 (jsr) + 3 (brk)
         assert_eq!(
-            0x8002,
+            0x8003,
             cpu.mem_read_u16((STACK_RESET as u16) + STACK - 1).unwrap()
         );
         assert_eq!(2, cpu.register_x);
@@ -2809,18 +2792,21 @@ mod test {
 
     #[test]
     fn test_rts_0x60() {
-        let bus = BusStub::new();
+        let bus = Rc::new(RefCell::new(BusStub::new()));
         let mut cpu = CpuV2::new(
-            Rc::new(RefCell::new(bus)),
+            bus.clone(),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
         );
-        cpu.load_with_start_address(0x8000, vec![0x20, 0xAB, 0xBC, 0xE8]);
-        cpu.mem_write(0xBCAB, 0xE8); // INX
-        cpu.mem_write(0xBCAC, 0xE8); // INX
-        cpu.mem_write(0xBCAD, 0x60); // RTS, what we are testing
+        bus.borrow_mut()
+            .load_with_start_address(0x8000, vec![0x20, 0xAB, 0xBC, 0xE8]);
+        bus.borrow_mut().mem_write(0xBCAB, 0xE8); // INX
+        bus.borrow_mut().mem_write(0xBCAC, 0xE8); // INX
+        bus.borrow_mut().mem_write(0xBCAD, 0x60); // RTS, what we are testing
         cpu.reset();
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = cpu.run_with_callback(|cpu| {
+            tracing_callback(cpu);
+        });
 
         assert_eq!((STACK_RESET as u8).wrapping_sub(3), cpu.stack_pointer); //3 because the BRK
         //instruction adds sp (2) and status (1) to the stack before we quit
@@ -2869,17 +2855,18 @@ mod test {
 
     #[test]
     fn test_sbc_0xe9_negative_flag_no_overflow() {
-        let bus = BusStub::new();
+        let bus = Rc::new(RefCell::new(BusStub::new()));
         let mut cpu = CpuV2::new(
-            Rc::new(RefCell::new(bus)),
+            bus.clone(),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
         );
-        cpu.load_with_start_address(0x8000, vec![0xE9, 0x03, 0x00]);
+        bus.borrow_mut()
+            .load_with_start_address(0x8000, vec![0xE9, 0x03, 0x00]);
         cpu.reset();
         cpu.register_a = 0x8F;
         cpu.set_status_flag(CARRY_FLAG, true);
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = cpu.run_with_callback(|cpu| tracing_callback(cpu));
         assert_eq!(0x8C, cpu.register_a);
         assert!(CARRY_FLAG & cpu.status == CARRY_FLAG);
         assert!(OVERFLOW_FLAG & cpu.status == 0);
@@ -2980,7 +2967,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x85, 0xa1, 0x00]);
         cpu.reset();
         cpu.register_a = 240;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = cpu.run_with_callback(|cpu| tracing_callback(cpu));
         assert!(cpu.mem_read(0x00a1).unwrap() == 240);
     }
 

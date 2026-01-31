@@ -369,6 +369,10 @@ impl<T: Bus> Tracing for CpuV1<T> {
     fn take_trace(&mut self) -> Option<CpuTrace> {
         self.trace.take()
     }
+
+    fn peek_trace(&self) -> Option<&CpuTrace> {
+        self.trace.as_ref()
+    }
 }
 
 impl<T: Bus> Mem for CpuV1<T> {

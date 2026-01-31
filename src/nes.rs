@@ -172,7 +172,16 @@ mod test {
     use std::time::{Duration, Instant};
     use std::{panic, thread};
 
-    use super::NES;
+    use super::{NES, nes_with_cpu_v2};
+
+    struct NesInit {
+        cycles: u64,
+        register_a: u8,
+        register_x: u8,
+        status: u8,
+        stack_pointer: u8,
+        ppu_frame_cycles: usize,
+    }
 
     fn read_file(path: &str) -> Vec<String> {
         let file_result = std::fs::File::open(path);
@@ -185,6 +194,22 @@ mod test {
         let reader = BufReader::new(file);
         reader.lines().filter_map(Result::ok).collect()
     }
+
+    fn construct_nes(rom: Rom, halt: &Arc<AtomicBool>) -> NES<'_, impl Cpu<BusImpl<'_>>> {
+        //rust doesn't like polymorphism at runtime, so switch here to run different tests :(
+        // return nes_with_cpu_v2(
+        //     rom,
+        //     Arc::clone(halt),
+        //     |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
+        // );
+
+        return nes_with_cpu_v1(
+            rom,
+            Arc::clone(halt),
+            |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
+        );
+    }
+
     #[test]
     fn test_format_string() {
         let mut program = vec![];
@@ -195,11 +220,7 @@ mod test {
         let rom = crate::rom::test::test_rom(program);
 
         let halt = Arc::new(AtomicBool::new(false));
-        let mut nes = nes_with_cpu_v1(
-            rom,
-            Arc::clone(&halt),
-            |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
-        );
+        let mut nes = construct_nes(rom, &halt);
         let mut result: Vec<String> = Vec::new();
 
         // nes.setDebug(true);
@@ -264,11 +285,8 @@ mod test {
         let rom = crate::rom::test::test_rom(program);
 
         let halt = Arc::new(AtomicBool::new(false));
-        let mut nes = nes_with_cpu_v1(
-            rom,
-            Arc::clone(&halt),
-            |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
-        );
+
+        let mut nes = construct_nes(rom, &halt);
         let mut result: Vec<String> = Vec::new();
 
         nes.bus.borrow_mut().mem_write(100, 0x11);
@@ -319,11 +337,9 @@ mod test {
     #[test]
     fn test_nestest() {
         let halt = Arc::new(AtomicBool::new(false));
-        let mut nes = nes_with_cpu_v1(
-            Rom::from_file("assets/nestest.nes"),
-            Arc::clone(&halt),
-            |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
-        );
+        let rom = Rom::from_file("assets/nestest.nes");
+
+        let mut nes = construct_nes(rom, &halt);
         let mut result: Vec<String> = Vec::new();
         let nes_test_log = read_file("assets/nestest.log");
 
@@ -467,14 +483,15 @@ mod test {
         let rom = Rom::from_file("nestest/ppu/blargg/vbl_clear_time.nes");
         let nes_test_log = read_file("nestest/ppu/blargg/vbl_clear_time_mesen.log");
 
-        let nes_init = |nes: &mut NES<CpuV1<BusImpl>>| {
-            nes.cpu.set_cycles(8);
-            nes.cpu.set_register_x(1);
-            nes.cpu.set_status(0x07);
-            nes.cpu.set_stack_pointer(0xF4);
-            nes.bus.borrow_mut().ppu.frame_cycles = 27
+        let nes_init = NesInit {
+            cycles: 8,
+            register_a: 0,
+            register_x: 1,
+            status: 0x07,
+            stack_pointer: 0xF4,
+            ppu_frame_cycles: 27,
         };
-        should_match_mesen(rom, nes_test_log, nes_init, 104528);
+        should_match_mesen(rom, nes_test_log, Some(nes_init), 104528);
     }
 
     #[test]
@@ -526,15 +543,16 @@ mod test {
         let rom = Rom::from_file("nestest/ppu/ppu_vbl_nmi/01-vbl_basics.nes");
         let nes_test_log = read_file("nestest/ppu/ppu_vbl_nmi/01_mesen.log");
 
-        let nes_init = |nes: &mut NES<CpuV1<BusImpl>>| {
-            nes.cpu.set_cycles(8);
-            nes.cpu.set_register_a(0x1A);
-            nes.cpu.set_status(0x05);
-            nes.cpu.set_stack_pointer(0xEF);
-            nes.bus.borrow_mut().ppu.frame_cycles = 27
+        let nes_init = NesInit {
+            cycles: 8,
+            register_a: 0x1A,
+            register_x: 0,
+            status: 0x05,
+            stack_pointer: 0xEF,
+            ppu_frame_cycles: 27,
         };
 
-        should_match_mesen(rom, nes_test_log, nes_init, -1);
+        should_match_mesen(rom, nes_test_log, Some(nes_init), -1);
     }
 
     /*
@@ -703,10 +721,12 @@ mod test {
         writer.borrow_mut().flush().unwrap();
     }
 
-    fn should_match_mesen<T>(rom: Rom, mesen_log: Vec<String>, nes_init: T, max_cycles: i64)
-    where
-        T: Fn(&mut NES<CpuV1<BusImpl>>) -> (),
-    {
+    fn should_match_mesen(
+        rom: Rom,
+        mesen_log: Vec<String>,
+        nes_init: Option<NesInit>,
+        max_cycles: i64,
+    ) {
         should_match(
             rom,
             mesen_log,
@@ -717,42 +737,40 @@ mod test {
     }
 
     fn should_match_fceux(rom: Rom, fceux_log: Vec<String>, max_cycles: i64) {
-        should_match(
-            rom,
-            fceux_log,
-            max_cycles,
-            |nes| (),
-            |i, fceux_log, nes_log| nes_fceux_line_matches(i, fceux_log, nes_log),
-        );
+        should_match(rom, fceux_log, max_cycles, None, |i, fceux_log, nes_log| {
+            nes_fceux_line_matches(i, fceux_log, nes_log)
+        });
     }
     fn should_match_nes(rom: Rom, fceux_log: Vec<String>, max_cycles: i64) {
-        should_match(
-            rom,
-            fceux_log,
-            max_cycles,
-            |nes| (),
-            |i, nes_gold, nes_log| nes_nes_line_matches(i, nes_gold, nes_log),
-        );
+        should_match(rom, fceux_log, max_cycles, None, |i, nes_gold, nes_log| {
+            nes_nes_line_matches(i, nes_gold, nes_log)
+        });
     }
 
-    fn should_match<T, F>(
+    fn should_match<F>(
         rom: Rom,
         compare_log: Vec<String>,
         max_cycles: i64,
-        nes_init: T,
+        nes_init: Option<NesInit>,
         line_matches: F,
     ) where
-        T: Fn(&mut NES<CpuV1<BusImpl>>) -> (),
         F: Fn(usize, &[String], &[String]) -> bool,
     {
         let halt = Arc::new(AtomicBool::new(false));
-        let mut nes = nes_with_cpu_v1(
-            rom,
-            Arc::clone(&halt),
-            |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
-        );
 
-        nes_init(&mut nes);
+        let mut nes = construct_nes(rom, &halt);
+
+        match nes_init {
+            Some(init) => {
+                nes.cpu.set_cycles(init.cycles);
+                nes.cpu.set_register_a(init.register_a);
+                nes.cpu.set_register_x(init.register_x);
+                nes.cpu.set_status(init.status);
+                nes.cpu.set_stack_pointer(init.stack_pointer);
+                nes.bus.borrow_mut().ppu.frame_cycles = init.ppu_frame_cycles;
+            }
+            None => {}
+        }
 
         let mut result: Vec<String> = Vec::new();
 

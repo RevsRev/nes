@@ -46,7 +46,7 @@ struct Args {
     debug: bool,
     #[arg(short = 'f', long = "file")]
     file_path: Option<String>,
-    #[arg(short = 'v', long = "version", default_value = "1")]
+    #[arg(short = 'v', long = "version", default_value = "2")]
     version: u8,
 }
 

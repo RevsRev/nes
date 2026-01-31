@@ -200,17 +200,17 @@ mod test {
 
     fn construct_nes(rom: Rom, halt: &Arc<AtomicBool>) -> NES<'_, impl Cpu<BusImpl<'_>>> {
         //rust doesn't like polymorphism at runtime, so switch here to run different tests :(
-        // return nes_with_cpu_v2(
-        //     rom,
-        //     Arc::clone(halt),
-        //     |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
-        // );
-
-        return nes_with_cpu_v1(
+        return nes_with_cpu_v2(
             rom,
             Arc::clone(halt),
             |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
         );
+
+        // return nes_with_cpu_v1(
+        //     rom,
+        //     Arc::clone(halt),
+        //     |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
+        // );
     }
 
     #[test]

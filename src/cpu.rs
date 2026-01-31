@@ -5,6 +5,7 @@ use crate::traits::bus::Bus;
 use crate::traits::mos_6502_registers::Registers;
 use crate::traits::mos_65902::MOS6502;
 use crate::traits::tick::Tick;
+use crate::traits::tracing::Tracing;
 use crate::{opp, traits::mem::Mem};
 use indoc::indoc;
 use std::cell::RefCell;
@@ -43,7 +44,7 @@ pub struct CPU<T: Bus> {
     interrupt: Rc<RefCell<InterruptImpl>>,
 
     //tracing info
-    pub trace: Option<CpuTrace>,
+    trace: Option<CpuTrace>,
     trace_cycles: u64,
     trace_pc: u16,
     trace_reg_a: u8,
@@ -58,12 +59,12 @@ pub struct CPU<T: Bus> {
     halt: Arc<AtomicBool>,
 
     next_program_counter: u16,
-    pub total_cycles: u64,
+    total_cycles: u64,
     op_cycles: u8,
 }
 
 impl<T: Bus> MOS6502 for CPU<T> {
-    fn get_cycles(self) -> u64 {
+    fn get_cycles(&self) -> u64 {
         self.total_cycles
     }
 
@@ -73,7 +74,7 @@ impl<T: Bus> MOS6502 for CPU<T> {
 }
 
 impl<T: Bus> Registers for CPU<T> {
-    fn get_register_a(self) -> u8 {
+    fn get_register_a(&self) -> u8 {
         self.register_a
     }
 
@@ -81,7 +82,7 @@ impl<T: Bus> Registers for CPU<T> {
         self.register_a = value;
     }
 
-    fn get_register_x(self) -> u8 {
+    fn get_register_x(&self) -> u8 {
         self.register_x
     }
 
@@ -89,7 +90,7 @@ impl<T: Bus> Registers for CPU<T> {
         self.register_x = value;
     }
 
-    fn get_register_y(self) -> u8 {
+    fn get_register_y(&self) -> u8 {
         self.register_y
     }
 
@@ -97,7 +98,7 @@ impl<T: Bus> Registers for CPU<T> {
         self.register_y = value;
     }
 
-    fn get_status(self) -> u8 {
+    fn get_status(&self) -> u8 {
         self.status
     }
 
@@ -105,7 +106,7 @@ impl<T: Bus> Registers for CPU<T> {
         self.status = value;
     }
 
-    fn get_program_counter(self) -> u16 {
+    fn get_program_counter(&self) -> u16 {
         self.program_counter
     }
 
@@ -113,12 +114,18 @@ impl<T: Bus> Registers for CPU<T> {
         self.program_counter = value;
     }
 
-    fn get_stack_pointer(self) -> u8 {
+    fn get_stack_pointer(&self) -> u8 {
         self.stack_pointer
     }
 
     fn set_stack_pointer(&mut self, value: u8) {
         self.stack_pointer = value;
+    }
+}
+
+impl<T: Bus> Tracing for CPU<T> {
+    fn take_trace(&mut self) -> Option<CpuTrace> {
+        self.trace.take()
     }
 }
 

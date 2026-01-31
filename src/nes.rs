@@ -12,6 +12,7 @@ use crate::io::joypad::Joypad;
 use crate::ppu::PPU;
 use crate::rom::Rom;
 use crate::trace::{CpuTraceFormatOptions, CpuTraceFormatter, NesTrace, NesTraceFormatter};
+use crate::traits::tracing::Tracing;
 
 pub struct NES<'call> {
     tracing: bool,
@@ -88,7 +89,8 @@ impl<'call> NES<'call> {
                 }
             }
             self.trace = Option::Some(NesTrace {
-                cpu_trace: self.cpu.trace.take().unwrap(),
+                cpu_trace: self.cpu.take_trace().take().unwrap(),
+
                 ppu_trace: ppu_tr,
             });
             combined_callback(self);
@@ -646,7 +648,7 @@ mod test {
                             .expect("failed to write trace to log file");
                     }
                 }
-                if max_cycles > 0 && nes.cpu.total_cycles > max_cycles as u64 {
+                if max_cycles > 0 && nes.cpu.get_cycles() > max_cycles as u64 {
                     halt.store(true, Ordering::Relaxed);
                 }
             });
@@ -744,7 +746,7 @@ mod test {
                     }
                 }
 
-                if max_cycles > 0 && nes.cpu.total_cycles > max_cycles as u64 {
+                if max_cycles > 0 && nes.cpu.get_cycles() > max_cycles as u64 {
                     halt.store(true, Ordering::Relaxed);
                 }
             });

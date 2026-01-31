@@ -15,7 +15,7 @@ use io::{
     joypad::{BUTTON_A, BUTTON_B, DOWN, Joypad, LEFT, RIGHT, SELECT, START, UP},
     render::frame::Frame,
 };
-use nes::{NES, nes_with_cpu_v1};
+use nes::{NES, nes_with_cpu_v1, nes_with_cpu_v2};
 use ppu::PPU;
 use rom::Rom;
 use sdl2::{event::Event, keyboard::Keycode, pixels::PixelFormatEnum};
@@ -46,6 +46,8 @@ struct Args {
     debug: bool,
     #[arg(short = 'f', long = "file")]
     file_path: Option<String>,
+    #[arg(short = 'v', long = "version", default_value = "1")]
+    version: u8,
 }
 
 impl fmt::Display for Args {
@@ -102,41 +104,36 @@ fn main() {
     let mut event_loop_sound_frame = Arc::new(Mutex::new(SoundFrame::new()));
     let audio_sound_frame = event_loop_sound_frame.clone();
     let halt = Arc::new(AtomicBool::new(false));
-    let mut nes = nes_with_cpu_v1(
-        rom,
-        halt,
-        move |ppu: &PPU, apu: &APU, joypad: &mut Joypad| {
-            io::render::render(&mut frame, ppu);
-            io::audio::sound(&mut event_loop_sound_frame, apu);
 
-            texture.update(None, &frame.data, 256 * 3).unwrap();
-            canvas.copy(&texture, None, None).unwrap();
-            canvas.present();
+    let gameloop_callback = move |ppu: &PPU, apu: &APU, joypad: &mut Joypad| {
+        io::render::render(&mut frame, ppu);
+        io::audio::sound(&mut event_loop_sound_frame, apu);
 
-            for event in event_pump.poll_iter() {
-                match event {
-                    Event::Quit { .. }
-                    | Event::KeyDown {
-                        keycode: Some(Keycode::Escape),
-                        ..
-                    } => std::process::exit(0),
-                    Event::KeyDown { keycode, .. } => {
-                        if let Some(key) = KEY_MAP.get(&keycode.unwrap_or(Keycode::Ampersand)) {
-                            joypad.set_button_pressed_status(*key, true);
-                        }
+        texture.update(None, &frame.data, 256 * 3).unwrap();
+        canvas.copy(&texture, None, None).unwrap();
+        canvas.present();
+
+        for event in event_pump.poll_iter() {
+            match event {
+                Event::Quit { .. }
+                | Event::KeyDown {
+                    keycode: Some(Keycode::Escape),
+                    ..
+                } => std::process::exit(0),
+                Event::KeyDown { keycode, .. } => {
+                    if let Some(key) = KEY_MAP.get(&keycode.unwrap_or(Keycode::Ampersand)) {
+                        joypad.set_button_pressed_status(*key, true);
                     }
-                    Event::KeyUp { keycode, .. } => {
-                        if let Some(key) = KEY_MAP.get(&keycode.unwrap_or(Keycode::Ampersand)) {
-                            joypad.set_button_pressed_status(*key, false);
-                        }
-                    }
-                    _ => { /* do nothing */ }
                 }
+                Event::KeyUp { keycode, .. } => {
+                    if let Some(key) = KEY_MAP.get(&keycode.unwrap_or(Keycode::Ampersand)) {
+                        joypad.set_button_pressed_status(*key, false);
+                    }
+                }
+                _ => { /* do nothing */ }
             }
-        },
-    );
-
-    nes.set_tracing(args.trace);
+        }
+    };
 
     let host = cpal::default_host();
 
@@ -171,7 +168,21 @@ fn main() {
 
     stream.play().unwrap();
 
-    let result = nes.run_with_callback(move |_| {});
+    let result = match args.version {
+        1 => {
+            let mut nes = nes_with_cpu_v1(rom, halt, gameloop_callback);
+            nes.set_tracing(args.trace);
+
+            nes.run_with_callback(move |_| {})
+        }
+        2 => {
+            let mut nes = nes_with_cpu_v2(rom, halt, gameloop_callback);
+            nes.set_tracing(args.trace);
+
+            nes.run_with_callback(move |_| {})
+        }
+        v => panic!("Unknown NES Emulator CPU version {}", v),
+    };
 
     match result {
         Ok(_) => {}

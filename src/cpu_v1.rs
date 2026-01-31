@@ -373,6 +373,18 @@ impl<T: Bus> Tracing for CpuV1<T> {
     fn peek_trace(&self) -> Option<&CpuTrace> {
         self.trace.as_ref()
     }
+
+    fn format_options(
+        &self,
+        write_break_2_flag: bool,
+        write_cycles: bool,
+    ) -> CpuTraceFormatOptions {
+        CpuTraceFormatOptions {
+            write_break_2_flag,
+            write_cpu_cycles: write_cycles,
+            reads_offset: 0,
+        }
+    }
 }
 
 impl<T: Bus> Mem for CpuV1<T> {
@@ -499,6 +511,7 @@ impl<T: Bus> CpuV1<T> {
                 let fmt_options = CpuTraceFormatOptions {
                     write_break_2_flag: true,
                     write_cpu_cycles: true,
+                    reads_offset: 0,
                 };
                 let trace_formatter = CpuTraceFormatter {
                     options: fmt_options,

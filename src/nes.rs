@@ -57,6 +57,7 @@ where
         trace_options: CpuTraceFormatOptions {
             write_break_2_flag: true,
             write_cpu_cycles: true,
+            reads_offset: 0,
         },
         trace: None,
     }
@@ -87,6 +88,7 @@ where
         trace_options: CpuTraceFormatOptions {
             write_break_2_flag: true,
             write_cpu_cycles: true,
+            reads_offset: 1,
         },
         trace: None,
     }
@@ -161,6 +163,7 @@ mod test {
     use crate::traits::mem::Mem;
     use crate::traits::mos_6502_registers::Registers;
     use crate::traits::mos_65902::MOS6502;
+    use crate::traits::tracing::Tracing;
     use core::fmt;
     use std::cell::RefCell;
     use std::collections::HashMap;
@@ -242,10 +245,7 @@ mod test {
         });
 
         let formatter = CpuTraceFormatter {
-            options: CpuTraceFormatOptions {
-                write_break_2_flag: false,
-                write_cpu_cycles: false,
-            },
+            options: nes.cpu.format_options(false, false),
         };
 
         let _ = nes.run_with_callback(|nes| {
@@ -309,10 +309,7 @@ mod test {
         });
 
         let formatter = CpuTraceFormatter {
-            options: CpuTraceFormatOptions {
-                write_break_2_flag: false,
-                write_cpu_cycles: false,
-            },
+            options: nes.cpu.format_options(false, false),
         };
 
         let _ = nes.run_with_callback(|nes| {
@@ -354,10 +351,7 @@ mod test {
         });
 
         let formatter = CpuTraceFormatter {
-            options: CpuTraceFormatOptions {
-                write_break_2_flag: true,
-                write_cpu_cycles: false,
-            },
+            options: nes.cpu.format_options(true, false),
         };
 
         let _runtime_result = panic::catch_unwind(AssertUnwindSafe(|| {
@@ -692,10 +686,7 @@ mod test {
 
         let nes_formatter = NesTraceFormatter {
             cpu_formatter: CpuTraceFormatter {
-                options: CpuTraceFormatOptions {
-                    write_break_2_flag: false,
-                    write_cpu_cycles: true,
-                },
+                options: nes.cpu.format_options(false, true),
             },
             ppu_formatter: PpuTraceFormatter {},
         };
@@ -791,10 +782,7 @@ mod test {
 
         let nes_tr_formatter = NesTraceFormatter {
             cpu_formatter: CpuTraceFormatter {
-                options: CpuTraceFormatOptions {
-                    write_break_2_flag: false,
-                    write_cpu_cycles: true,
-                },
+                options: nes.cpu.format_options(false, true),
             },
             ppu_formatter: PpuTraceFormatter {},
         };

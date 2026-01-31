@@ -364,6 +364,18 @@ impl<T: Bus> Tracing for CpuV2<T> {
     fn peek_trace(&self) -> Option<&CpuTrace> {
         self.trace.as_ref()
     }
+
+    fn format_options(
+        &self,
+        write_break_2_flag: bool,
+        write_cycles: bool,
+    ) -> CpuTraceFormatOptions {
+        CpuTraceFormatOptions {
+            write_break_2_flag,
+            write_cpu_cycles: write_cycles,
+            reads_offset: 1,
+        }
+    }
 }
 
 impl<T: Bus> Mem for CpuV2<T> {
@@ -486,6 +498,7 @@ impl<T: Bus> CpuV2<T> {
                 let fmt_options = CpuTraceFormatOptions {
                     write_break_2_flag: true,
                     write_cpu_cycles: true,
+                    reads_offset: 1,
                 };
                 let trace_formatter = CpuTraceFormatter {
                     options: fmt_options,
@@ -573,7 +586,8 @@ impl<T: Bus> CpuV2<T> {
 
     fn evaluate_operand_at_address(&mut self, mode: &AddressingMode) -> Result<u16, String> {
         let result: u16 = match mode {
-            AddressingMode::Immediate | AddressingMode::Implied => {
+            AddressingMode::Implied => self.program_counter,
+            AddressingMode::Immediate => {
                 let addr = self.program_counter;
                 self.program_counter = self.program_counter + 1;
                 addr
@@ -616,7 +630,7 @@ impl<T: Bus> CpuV2<T> {
             }
             AddressingMode::Absolute_X => {
                 let base = self.mem_read_u16(self.program_counter)?;
-                self.program_counter = self.program_counter + 1;
+                self.program_counter = self.program_counter + 2;
                 let addr = base.wrapping_add(self.register_x as u16);
 
                 if Self::page_boundary_crossed(self.program_counter, addr) {
@@ -1073,7 +1087,7 @@ impl<T: Bus> CpuV2<T> {
     fn jsr(&mut self, mode: &AddressingMode) -> Result<(), String> {
         let pc_jump = self.evaluate_operand_at_address(mode)?;
 
-        self.stack_push_u16(self.program_counter)?;
+        self.stack_push_u16(self.program_counter - 1)?;
 
         self.program_counter = pc_jump;
         Result::Ok(())
@@ -1354,7 +1368,7 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn rts(&mut self, _mode: &AddressingMode) -> Result<(), String> {
-        self.program_counter = self.stack_pop_u16()?;
+        self.program_counter = self.stack_pop_u16()? + 1;
         Result::Ok(())
     }
 
@@ -1612,6 +1626,7 @@ mod test {
             options: CpuTraceFormatOptions {
                 write_break_2_flag: false,
                 write_cpu_cycles: true,
+                reads_offset: 1,
             },
         };
         match &cpu.peek_trace() {
@@ -2465,7 +2480,7 @@ mod test {
 
         assert_eq!(STACK_RESET.wrapping_sub(5) as u8, cpu.stack_pointer); // 2 (jsr) + 3 (brk)
         assert_eq!(
-            0x8003,
+            0x8002,
             cpu.mem_read_u16((STACK_RESET as u16) + STACK - 1).unwrap()
         );
         assert_eq!(2, cpu.register_x);

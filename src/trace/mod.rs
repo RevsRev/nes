@@ -32,6 +32,7 @@ pub struct PpuTrace {
 pub struct CpuTraceFormatOptions {
     pub write_break_2_flag: bool,
     pub write_cpu_cycles: bool,
+    pub reads_offset: u8,
 }
 
 pub struct CpuTraceFormatter {
@@ -89,12 +90,15 @@ impl CpuTraceFormatter {
 
         match cpu_trace.op_code.mode {
             AddressingMode::Absolute => {
-                let first_read = cpu_trace.reads[0].1;
-                let second_read = cpu_trace.reads[1].1;
+                let first_read = cpu_trace.reads[0 + self.options.reads_offset as usize].1;
+                let second_read = cpu_trace.reads[1 + self.options.reads_offset as usize].1;
 
                 let overwritten_value = match cpu_trace.op_code.behaviour {
                     OpCodeBehaviour::MemoryWrite => format!(" = {:02X}", cpu_trace.writes[0].1),
-                    OpCodeBehaviour::MemoryRead => format!(" = {:02X}", cpu_trace.reads[2].1),
+                    OpCodeBehaviour::MemoryRead => format!(
+                        " = {:02X}",
+                        cpu_trace.reads[2 + self.options.reads_offset as usize].1
+                    ),
                     _ => format!(""),
                 };
 
@@ -113,12 +117,15 @@ impl CpuTraceFormatter {
                 );
             }
             AddressingMode::Absolute_X => {
-                let first_read = cpu_trace.reads[0].1;
-                let second_read = cpu_trace.reads[1].1;
+                let first_read = cpu_trace.reads[0 + self.options.reads_offset as usize].1;
+                let second_read = cpu_trace.reads[1 + self.options.reads_offset as usize].1;
 
                 let overwritten_value = match cpu_trace.op_code.behaviour {
                     OpCodeBehaviour::MemoryWrite => format!(" = {:02X}", cpu_trace.writes[0].1),
-                    OpCodeBehaviour::MemoryRead => format!(" = {:02X}", cpu_trace.reads[2].1),
+                    OpCodeBehaviour::MemoryRead => format!(
+                        " = {:02X}",
+                        cpu_trace.reads[2 + self.options.reads_offset as usize].1
+                    ),
                     _ => format!(""),
                 };
 
@@ -138,12 +145,15 @@ impl CpuTraceFormatter {
                 );
             }
             AddressingMode::Absolute_Y => {
-                let first_read = cpu_trace.reads[0].1;
-                let second_read = cpu_trace.reads[1].1;
+                let first_read = cpu_trace.reads[0 + self.options.reads_offset as usize].1;
+                let second_read = cpu_trace.reads[1 + self.options.reads_offset as usize].1;
 
                 let overwritten_value = match cpu_trace.op_code.behaviour {
                     OpCodeBehaviour::MemoryWrite => format!(" = {:02X}", cpu_trace.writes[0].1),
-                    OpCodeBehaviour::MemoryRead => format!(" = {:02X}", cpu_trace.reads[2].1),
+                    OpCodeBehaviour::MemoryRead => format!(
+                        " = {:02X}",
+                        cpu_trace.reads[2 + self.options.reads_offset as usize].1
+                    ),
                     _ => format!(""),
                 };
 
@@ -163,7 +173,7 @@ impl CpuTraceFormatter {
                 );
             }
             AddressingMode::Immediate => {
-                let first_read = cpu_trace.reads[0].1;
+                let first_read = cpu_trace.reads[0 + self.options.reads_offset as usize].1;
                 write!(
                     out,
                     "{:04X}  {:02X} {:02X}    {:>4} #${:02X}{:>49}",
@@ -176,9 +186,11 @@ impl CpuTraceFormatter {
                 );
             }
             AddressingMode::ZeroPage => {
-                let first_read = cpu_trace.reads[0].1;
+                let first_read = cpu_trace.reads[0 + self.options.reads_offset as usize].1;
                 let param = match cpu_trace.op_code.behaviour {
-                    OpCodeBehaviour::MemoryRead => cpu_trace.reads[1].1,
+                    OpCodeBehaviour::MemoryRead => {
+                        cpu_trace.reads[1 + self.options.reads_offset as usize].1
+                    }
                     OpCodeBehaviour::MemoryWrite => cpu_trace.writes[0].1,
                     _ => 0,
                 };
@@ -195,9 +207,11 @@ impl CpuTraceFormatter {
                 );
             }
             AddressingMode::ZeroPage_X => {
-                let first_read = cpu_trace.reads[0].1;
+                let first_read = cpu_trace.reads[0 + self.options.reads_offset as usize].1;
                 let param = match cpu_trace.op_code.behaviour {
-                    OpCodeBehaviour::MemoryRead => cpu_trace.reads[1].1,
+                    OpCodeBehaviour::MemoryRead => {
+                        cpu_trace.reads[1 + self.options.reads_offset as usize].1
+                    }
                     OpCodeBehaviour::MemoryWrite => cpu_trace.writes[0].1,
                     _ => 0,
                 };
@@ -215,9 +229,11 @@ impl CpuTraceFormatter {
                 );
             }
             AddressingMode::ZeroPage_Y => {
-                let first_read = cpu_trace.reads[0].1;
+                let first_read = cpu_trace.reads[0 + self.options.reads_offset as usize].1;
                 let param = match cpu_trace.op_code.behaviour {
-                    OpCodeBehaviour::MemoryRead => cpu_trace.reads[1].1,
+                    OpCodeBehaviour::MemoryRead => {
+                        cpu_trace.reads[1 + self.options.reads_offset as usize].1
+                    }
                     OpCodeBehaviour::MemoryWrite => cpu_trace.writes[0].1,
                     _ => 0,
                 };
@@ -245,7 +261,7 @@ impl CpuTraceFormatter {
                 );
             }
             AddressingMode::Relative => {
-                let first_read = cpu_trace.reads[0].1;
+                let first_read = cpu_trace.reads[0 + self.options.reads_offset as usize].1;
                 write!(
                     out,
                     "{:04X}  {:02X} {:02X}     {} ${:02X}{:>48}",
@@ -268,10 +284,12 @@ impl CpuTraceFormatter {
                 );
             }
             AddressingMode::Indirect_X => {
-                let first_read = cpu_trace.reads[0].1;
+                let first_read = cpu_trace.reads[0 + self.options.reads_offset as usize].1;
                 let read_value = match cpu_trace.op_code.behaviour {
                     OpCodeBehaviour::MemoryWrite => cpu_trace.writes[0].1,
-                    OpCodeBehaviour::MemoryRead => cpu_trace.reads[3].1,
+                    OpCodeBehaviour::MemoryRead => {
+                        cpu_trace.reads[3 + self.options.reads_offset as usize].1
+                    }
                     _ => 0,
                 };
                 write!(
@@ -289,10 +307,12 @@ impl CpuTraceFormatter {
                 );
             }
             AddressingMode::Indirect_Y => {
-                let first_read = cpu_trace.reads[0].1;
+                let first_read = cpu_trace.reads[0 + self.options.reads_offset as usize].1;
                 let read_value = match cpu_trace.op_code.behaviour {
                     OpCodeBehaviour::MemoryWrite => cpu_trace.writes[0].1,
-                    OpCodeBehaviour::MemoryRead => cpu_trace.reads[3].1,
+                    OpCodeBehaviour::MemoryRead => {
+                        cpu_trace.reads[3 + self.options.reads_offset as usize].1
+                    }
                     _ => 0,
                 };
                 write!(
@@ -313,8 +333,8 @@ impl CpuTraceFormatter {
                 );
             }
             AddressingMode::Indirect => {
-                let first_read = cpu_trace.reads[0].1;
-                let second_read = cpu_trace.reads[1].1;
+                let first_read = cpu_trace.reads[0 + self.options.reads_offset as usize].1;
+                let second_read = cpu_trace.reads[1 + self.options.reads_offset as usize].1;
                 write!(
                     out,
                     "{:04X}  {:02X} {:02X} {:02X}  {} (${:02X}{:02X}) = {:04X}  {:>37}",

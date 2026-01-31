@@ -6,7 +6,7 @@ use std::sync::atomic::AtomicBool;
 
 use crate::apu::APU;
 use crate::bus::BusImpl;
-use crate::cpu::CPU;
+use crate::cpu_v1::CpuV1;
 use crate::interrupt::InterruptImpl;
 use crate::io::joypad::Joypad;
 use crate::ppu::PPU;
@@ -20,7 +20,7 @@ pub struct NES<'call> {
     trace_options: CpuTraceFormatOptions,
     pub trace: Option<NesTrace>,
 
-    pub cpu: CPU<BusImpl<'call>>,
+    pub cpu: CpuV1<BusImpl<'call>>,
     pub bus: Rc<RefCell<BusImpl<'call>>>,
 }
 
@@ -42,7 +42,7 @@ impl<'call> NES<'call> {
             interrupt,
             gameloop_callback,
         )));
-        let mut cpu = CPU::new(Rc::clone(&bus), interrupt_cpu, halt);
+        let mut cpu = CpuV1::new(Rc::clone(&bus), interrupt_cpu, halt);
         cpu.reset();
         NES {
             tracing: false,
@@ -107,7 +107,7 @@ mod test {
     use regex::Regex;
 
     use crate::apu::APU;
-    use crate::cpu::CPU;
+    use crate::cpu_v1::CpuV1;
     use crate::io::joypad::Joypad;
     use crate::ppu::PPU;
     use crate::rom::{self, Rom};

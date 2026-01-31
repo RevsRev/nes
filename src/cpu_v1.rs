@@ -32,7 +32,7 @@ const BRK_INTERRUPT_ADDRESS: u16 = 0xFFFE;
 const PC_START_ADDRESS: u16 = 0xFFFC;
 const HALT_VALUE: u16 = 0x00FF;
 
-pub struct CPU<T: Bus> {
+pub struct CpuV1<T: Bus> {
     register_a: u8,
     register_x: u8,
     register_y: u8,
@@ -63,7 +63,7 @@ pub struct CPU<T: Bus> {
     op_cycles: u8,
 }
 
-impl<T: Bus> MOS6502<T> for CPU<T> {
+impl<T: Bus> MOS6502<T> for CpuV1<T> {
     fn get_cycles(&self) -> u64 {
         self.total_cycles
     }
@@ -326,7 +326,7 @@ impl<T: Bus> MOS6502<T> for CPU<T> {
     }
 }
 
-impl<T: Bus> Registers for CPU<T> {
+impl<T: Bus> Registers for CpuV1<T> {
     fn get_register_a(&self) -> u8 {
         self.register_a
     }
@@ -376,13 +376,13 @@ impl<T: Bus> Registers for CPU<T> {
     }
 }
 
-impl<T: Bus> Tracing for CPU<T> {
+impl<T: Bus> Tracing for CpuV1<T> {
     fn take_trace(&mut self) -> Option<CpuTrace> {
         self.trace.take()
     }
 }
 
-impl<T: Bus> Mem for CPU<T> {
+impl<T: Bus> Mem for CpuV1<T> {
     fn mem_read(&mut self, addr: u16) -> Result<u8, std::string::String> {
         let read = self.bus.borrow_mut().mem_read(addr)?;
         self.reads.push((addr, read));
@@ -410,7 +410,7 @@ impl<T: Bus> Mem for CPU<T> {
     }
 }
 
-impl<T: Bus> fmt::Display for CPU<T> {
+impl<T: Bus> fmt::Display for CpuV1<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
@@ -426,7 +426,7 @@ impl<T: Bus> fmt::Display for CPU<T> {
     }
 }
 
-impl<T: Bus> Tick for CPU<T> {
+impl<T: Bus> Tick for CpuV1<T> {
     fn tick(&mut self, cycles: u8) {
         if (cycles == 0) {
             return;
@@ -437,13 +437,13 @@ impl<T: Bus> Tick for CPU<T> {
     }
 }
 
-impl<T: Bus> CPU<T> {
+impl<T: Bus> CpuV1<T> {
     pub fn new(
         bus: Rc<RefCell<T>>,
         interrupt: Rc<RefCell<InterruptImpl>>,
         halt: Arc<AtomicBool>,
     ) -> Self {
-        CPU {
+        CpuV1 {
             register_a: 0,
             register_x: 0,
             register_y: 0,
@@ -1657,7 +1657,7 @@ mod test {
     #[test]
     fn test_adc_0x69_carry_no_overflow_or_negative() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -1676,7 +1676,7 @@ mod test {
     #[test]
     fn test_adc_0x69_overflow_and_negative_flag() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -1695,7 +1695,7 @@ mod test {
     #[test]
     fn test_adc_0x69_negative_flag_no_overflow() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -1714,7 +1714,7 @@ mod test {
     #[test]
     fn test_adc_0x69_zero_flag() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -1733,7 +1733,7 @@ mod test {
     #[test]
     fn test_adc_0x69_with_carry_pre_set() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -1752,7 +1752,7 @@ mod test {
     #[test]
     fn test_and_0x29() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -1768,7 +1768,7 @@ mod test {
     #[test]
     fn test_and_0x3d_absolute_addr() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -1786,7 +1786,7 @@ mod test {
     #[test]
     fn test_asl_0x0a_accumulator_addr() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -1804,7 +1804,7 @@ mod test {
     #[test]
     fn test_asl_0x0e_absolute_addr() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -1822,7 +1822,7 @@ mod test {
     #[test]
     fn test_bcc_0x90_absolute_addr_carry_flag_not_set() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -1840,7 +1840,7 @@ mod test {
     #[test]
     fn test_bcc_0x90_absolute_addr_carry_flag_set() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -1857,7 +1857,7 @@ mod test {
     #[test]
     fn test_bcs_0xb0_absolute_addr_carry_flag_not_set() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -1873,7 +1873,7 @@ mod test {
     #[test]
     fn test_bcs_0xb0_absolute_addr_carry_flag_set() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -1890,7 +1890,7 @@ mod test {
     #[test]
     fn test_beq_0xf0_absolute_addr_zero_flag_not_set() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -1906,7 +1906,7 @@ mod test {
     #[test]
     fn test_beq_0xf0_absolute_addr_zero_flag_set() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -1923,7 +1923,7 @@ mod test {
     #[test]
     fn test_bit_0x24_zero_page() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -1942,7 +1942,7 @@ mod test {
     #[test]
     fn test_bit_0x2c_absolute() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -1961,7 +1961,7 @@ mod test {
     #[test]
     fn test_bmi_0x30_negative_flag_not_set() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -1977,7 +1977,7 @@ mod test {
     #[test]
     fn test_bmi_0x30_negative_flag_set() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -1994,7 +1994,7 @@ mod test {
     #[test]
     fn test_bne_0xd0_zero_flag_not_set() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2010,7 +2010,7 @@ mod test {
     #[test]
     fn test_bne_0xd0_zero_flag_set() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2027,7 +2027,7 @@ mod test {
     #[test]
     fn test_bpl_0x10_negative_flag_not_set() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2043,7 +2043,7 @@ mod test {
     #[test]
     fn test_bpl_0x10_negative_flag_set() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2060,7 +2060,7 @@ mod test {
     #[test]
     fn test_bvc_0x50_overflow_flag_set() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2077,7 +2077,7 @@ mod test {
     #[test]
     fn test_bvc_0x50_overflow_flag_not_set() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2093,7 +2093,7 @@ mod test {
     #[test]
     fn test_bvs_0x70_overflow_flag_set() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2110,7 +2110,7 @@ mod test {
     #[test]
     fn test_bvs_0x70_overflow_flag_not_set() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2126,7 +2126,7 @@ mod test {
     #[test]
     fn test_clc_0x18() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2141,7 +2141,7 @@ mod test {
     #[test]
     fn test_cld_0xd8() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2156,7 +2156,7 @@ mod test {
     #[test]
     fn test_cli_0x58() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2171,7 +2171,7 @@ mod test {
     #[test]
     fn test_clv_0xb8() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2186,7 +2186,7 @@ mod test {
     #[test]
     fn test_cmp_0xcd_carry_and_zero() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2204,7 +2204,7 @@ mod test {
     #[test]
     fn test_cmp_0xcd_overflow() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2222,7 +2222,7 @@ mod test {
     #[test]
     fn test_cpx_0xec_carry_and_zero() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2240,7 +2240,7 @@ mod test {
     #[test]
     fn test_cpx_0xec_overflow() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2257,7 +2257,7 @@ mod test {
     #[test]
     fn test_cpy_0xcc_carry_and_zero() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2275,7 +2275,7 @@ mod test {
     #[test]
     fn test_cpy_0xcc_overflow() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2293,7 +2293,7 @@ mod test {
     #[test]
     fn test_dec_0xce() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2310,7 +2310,7 @@ mod test {
     #[test]
     fn test_dex_0xca() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2327,7 +2327,7 @@ mod test {
     #[test]
     fn test_dey_0x88() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2344,7 +2344,7 @@ mod test {
     #[test]
     fn test_eor_0x4d_neg_flag() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2363,7 +2363,7 @@ mod test {
     #[test]
     fn test_eor_0x4d_zero_flag() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2382,7 +2382,7 @@ mod test {
     #[test]
     fn test_inc_0xee() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2401,7 +2401,7 @@ mod test {
     #[test]
     fn test_iny_0xc8() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2419,7 +2419,7 @@ mod test {
     #[test]
     fn test_jmp_0x4c_absolute() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2437,7 +2437,7 @@ mod test {
     #[test]
     fn test_jmp_0x6c_indirect() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2457,7 +2457,7 @@ mod test {
     #[test]
     fn test_jmp_0x6c_indirect_loop() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2478,7 +2478,7 @@ mod test {
     #[test]
     fn test_jsr_0x20() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2501,7 +2501,7 @@ mod test {
     #[test]
     fn test_0xa2_ldx_immediate() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2516,7 +2516,7 @@ mod test {
     #[test]
     fn test_0xa0_ldy_immediate() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2531,7 +2531,7 @@ mod test {
     #[test]
     fn test_lsr_0x4a_accumulator_addr() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2549,7 +2549,7 @@ mod test {
     #[test]
     fn test_lsr_0x4e_absolute_addr() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2567,7 +2567,7 @@ mod test {
     #[test]
     fn test_ora_0x0d_absolute_addr() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2585,7 +2585,7 @@ mod test {
     #[test]
     fn test_pha_0x48_absolute_addr() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2600,7 +2600,7 @@ mod test {
     #[test]
     fn test_php_0x08_absolute_addr() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2618,7 +2618,7 @@ mod test {
     #[test]
     fn test_pla_0x68_absolute_addr() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2635,7 +2635,7 @@ mod test {
     #[test]
     fn test_php_pla() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2653,7 +2653,7 @@ mod test {
     #[test]
     fn test_plp_0x28_absolute_addr() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2668,7 +2668,7 @@ mod test {
     #[test]
     fn test_nop_0xea() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2682,7 +2682,7 @@ mod test {
     #[test]
     fn test_rol_0x2a_accumulator() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2701,7 +2701,7 @@ mod test {
     #[test]
     fn test_rol_0x2e_absolute() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2719,7 +2719,7 @@ mod test {
     #[test]
     fn test_ror_0x6a_accumulator() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2738,7 +2738,7 @@ mod test {
     #[test]
     fn test_ror_0x6e_absolute() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2756,7 +2756,7 @@ mod test {
     #[test]
     fn test_brk_0x00() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2790,7 +2790,7 @@ mod test {
     #[test]
     fn test_rti_0x40() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2818,7 +2818,7 @@ mod test {
     #[test]
     fn test_rts_0x60() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2838,7 +2838,7 @@ mod test {
     #[test]
     fn test_sbc_0xe9_carry_no_overflow_or_negative() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2858,7 +2858,7 @@ mod test {
     #[test]
     fn test_sbc_0xe9_overflow() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2878,7 +2878,7 @@ mod test {
     #[test]
     fn test_sbc_0xe9_negative_flag_no_overflow() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2898,7 +2898,7 @@ mod test {
     #[test]
     fn test_sbc_0xe9_zero_flag() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2918,7 +2918,7 @@ mod test {
     #[test]
     fn test_sbc_0xe9_with_carry_cleared() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2938,7 +2938,7 @@ mod test {
     #[test]
     fn test_sec_0x38() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2952,7 +2952,7 @@ mod test {
     #[test]
     fn test_sed_0xF8() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2966,7 +2966,7 @@ mod test {
     #[test]
     fn test_sei_0x78() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2980,7 +2980,7 @@ mod test {
     #[test]
     fn test_0x85_sta_zero_page() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -2995,7 +2995,7 @@ mod test {
     #[test]
     fn test_0x95_sta_zero_page_X() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3011,7 +3011,7 @@ mod test {
     #[test]
     fn test_0x8d_sta_absolute() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3026,7 +3026,7 @@ mod test {
     #[test]
     fn test_0x9d_sta_absolute_X() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3042,7 +3042,7 @@ mod test {
     #[test]
     fn test_0x99_sta_absolute_Y() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3058,7 +3058,7 @@ mod test {
     #[test]
     fn test_0x81_sta_indirect_X() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3076,7 +3076,7 @@ mod test {
     #[test]
     fn test_0x91_sta_indirect_Y() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3094,7 +3094,7 @@ mod test {
     #[test]
     fn test_stx_0x8e() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3109,7 +3109,7 @@ mod test {
     #[test]
     fn test_sty_0x8c() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3124,7 +3124,7 @@ mod test {
     #[test]
     fn test_0xaa_tax_immediate_load_data() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3141,7 +3141,7 @@ mod test {
     #[test]
     fn test_0xaa_tax_zero_flag() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3156,7 +3156,7 @@ mod test {
     #[test]
     fn test_0xaa_tax_negative_flag() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3171,7 +3171,7 @@ mod test {
     #[test]
     fn test_0xA8_tay_immediate_load_data() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3188,7 +3188,7 @@ mod test {
     #[test]
     fn test_0xA8_tay_zero_flag() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3203,7 +3203,7 @@ mod test {
     #[test]
     fn test_0xA8_tay_negative_flag() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3218,7 +3218,7 @@ mod test {
     #[test]
     fn test_0xba_tsx() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3232,7 +3232,7 @@ mod test {
     #[test]
     fn test_0x8a_txa() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3247,7 +3247,7 @@ mod test {
     #[test]
     fn test_0x9a_txs() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3272,7 +3272,7 @@ mod test {
     #[test]
     fn test_0x98_txy() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3287,7 +3287,7 @@ mod test {
     #[test]
     fn test_0xa9_lda_immediate_load_data() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3303,7 +3303,7 @@ mod test {
     #[test]
     fn test_0xa9_lda_zero_flag() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3317,7 +3317,7 @@ mod test {
     #[test]
     fn test_0xa9_lda_negative_flag() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3331,7 +3331,7 @@ mod test {
     #[test]
     fn test_0xa5_lda_zero_page() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3346,7 +3346,7 @@ mod test {
     #[test]
     fn test_0xb5_lda_zero_page_X() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3362,7 +3362,7 @@ mod test {
     #[test]
     fn test_0xad_lda_absolute() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3377,7 +3377,7 @@ mod test {
     #[test]
     fn test_0xbd_lda_absolute_X() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3393,7 +3393,7 @@ mod test {
     #[test]
     fn test_0xb9_lda_absolute_Y() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3409,7 +3409,7 @@ mod test {
     #[test]
     fn test_0xa1_lda_indirect_X() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3427,7 +3427,7 @@ mod test {
     #[test]
     fn test_0xb1_lda_indirect_Y() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3445,7 +3445,7 @@ mod test {
     #[test]
     fn test_0xe8_inx() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3462,7 +3462,7 @@ mod test {
     #[test]
     fn test_0xe8_inx_zero_flag() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3477,7 +3477,7 @@ mod test {
     #[test]
     fn test_0xe8_inx_negative_flag() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3492,7 +3492,7 @@ mod test {
     #[test]
     fn test_5_ops_working_together() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
@@ -3506,7 +3506,7 @@ mod test {
     #[test]
     fn test_inx_overflow() {
         let bus = BusStub::new();
-        let mut cpu = CPU::new(
+        let mut cpu = CpuV1::new(
             Rc::new(RefCell::new(bus)),
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),

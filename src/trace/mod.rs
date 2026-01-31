@@ -1,4 +1,4 @@
-use crate::cpu::BREAK2_FLAG;
+use crate::cpu_v1::BREAK2_FLAG;
 use crate::opp::{AddressingMode, OpCode, OpCodeBehaviour};
 use std::fmt;
 

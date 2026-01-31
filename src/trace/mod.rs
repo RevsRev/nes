@@ -1,5 +1,7 @@
-use crate::cpu_v1::BREAK2_FLAG;
-use crate::opp::{AddressingMode, OpCode, OpCodeBehaviour};
+use crate::{
+    opp::{AddressingMode, OpCode, OpCodeBehaviour},
+    traits::mos_65902::BREAK2_FLAG,
+};
 use std::fmt;
 
 pub struct NesTrace {

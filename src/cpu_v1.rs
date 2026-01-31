@@ -4,7 +4,11 @@ use crate::trace::{CpuTrace, CpuTraceFormatOptions, CpuTraceFormatter};
 use crate::traits::bus::Bus;
 use crate::traits::cpu::Cpu;
 use crate::traits::mos_6502_registers::Registers;
-use crate::traits::mos_65902::MOS6502;
+use crate::traits::mos_65902::{
+    BREAK_FLAG, BREAK2_FLAG, BRK_INTERRUPT_ADDRESS, CARRY_FLAG, DECIMAL_MODE_FLAG, HALT_VALUE,
+    INTERRUPT_DISABLE_FLAG, MOS6502, NEGATIVE_FLAG, NMI_INTERRUPT_ADDRESS, OVERFLOW_FLAG,
+    PC_START_ADDRESS, STACK, STACK_RESET, ZERO_FLAG,
+};
 use crate::traits::tick::Tick;
 use crate::traits::tracing::Tracing;
 use crate::{opp, traits::mem::Mem};
@@ -14,24 +18,6 @@ use std::fmt;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-
-//Flags
-pub const CARRY_FLAG: u8 = 0b0000_0001;
-pub const ZERO_FLAG: u8 = 0b0000_0010;
-pub const INTERRUPT_DISABLE_FLAG: u8 = 0b0000_0100;
-pub const DECIMAL_MODE_FLAG: u8 = 0b0000_1000;
-pub const BREAK_FLAG: u8 = 0b0001_0000;
-pub const BREAK2_FLAG: u8 = 0b0010_0000;
-pub const OVERFLOW_FLAG: u8 = 0b0100_0000;
-pub const NEGATIVE_FLAG: u8 = 0b1000_0000;
-
-const STACK: u16 = 0x0100;
-const STACK_RESET: u8 = 0xfd;
-
-const NMI_INTERRUPT_ADDRESS: u16 = 0xFFFA;
-const BRK_INTERRUPT_ADDRESS: u16 = 0xFFFE;
-const PC_START_ADDRESS: u16 = 0xFFFC;
-const HALT_VALUE: u16 = 0x00FF;
 
 pub struct CpuV1<T: Bus> {
     register_a: u8,
@@ -1616,7 +1602,10 @@ impl<T: Bus> CpuV1<T> {
 #[cfg(test)]
 #[allow(non_snake_case)]
 mod test {
-    use crate::traits::tick::Tick;
+    use crate::traits::{
+        mos_65902::{BRK_INTERRUPT_ADDRESS, HALT_VALUE, STACK},
+        tick::Tick,
+    };
 
     use super::*;
 
@@ -1629,7 +1618,7 @@ mod test {
         pub fn new() -> Self {
             let mut mem = [0; 0x0001_0000];
             mem[BRK_INTERRUPT_ADDRESS as usize] = (HALT_VALUE & 0xFF) as u8;
-            mem[(BRK_INTERRUPT_ADDRESS + 1) as usize] = (HALT_VALUE >> 8) as u8;
+            mem[(65534 + 1) as usize] = (HALT_VALUE >> 8) as u8;
 
             BusStub {
                 memory: mem,

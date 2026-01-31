@@ -593,6 +593,7 @@ impl<T: Bus> CpuV2<T> {
                 addr
             }
             AddressingMode::Relative => {
+                let begin = self.program_counter;
                 let value = self.mem_read(self.program_counter)? as i8;
                 let addr = self
                     .program_counter
@@ -600,7 +601,7 @@ impl<T: Bus> CpuV2<T> {
                     .wrapping_add(value as u16);
 
                 self.program_counter = self.program_counter + 1;
-                if Self::page_boundary_crossed(self.program_counter, addr) {
+                if Self::page_boundary_crossed(begin, addr) {
                     self.tick(1);
                 }
 
@@ -633,7 +634,7 @@ impl<T: Bus> CpuV2<T> {
                 self.program_counter = self.program_counter + 2;
                 let addr = base.wrapping_add(self.register_x as u16);
 
-                if Self::page_boundary_crossed(self.program_counter, addr) {
+                if Self::page_boundary_crossed(base, addr) {
                     self.tick(1);
                 }
                 addr
@@ -643,7 +644,7 @@ impl<T: Bus> CpuV2<T> {
                 self.program_counter = self.program_counter + 2;
                 let addr = base.wrapping_add(self.register_y as u16);
 
-                if Self::page_boundary_crossed(self.program_counter, addr) {
+                if Self::page_boundary_crossed(base, addr) {
                     self.tick(1);
                 }
                 addr

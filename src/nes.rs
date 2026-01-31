@@ -12,70 +12,79 @@ use crate::io::joypad::Joypad;
 use crate::ppu::PPU;
 use crate::rom::Rom;
 use crate::trace::{CpuTraceFormatOptions, CpuTraceFormatter, NesTrace, NesTraceFormatter};
+use crate::traits::cpu::Cpu;
 use crate::traits::mos_65902::MOS6502;
 use crate::traits::tracing::Tracing;
 
-pub struct NES<'call> {
+pub struct NES<'call, T: Cpu<BusImpl<'call>>> {
     tracing: bool,
     trace_options: CpuTraceFormatOptions,
     pub trace: Option<NesTrace>,
 
-    pub cpu: CpuV1<BusImpl<'call>>,
+    pub cpu: T,
     pub bus: Rc<RefCell<BusImpl<'call>>>,
 }
 
-impl<'call> fmt::Display for NES<'call> {
+impl<'call, T: Cpu<BusImpl<'call>>> fmt::Display for NES<'call, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "\ncpu: {}, \nbus: {}", self.cpu, self.bus.borrow())
     }
 }
 
-impl<'call> NES<'call> {
-    pub fn new<'cl, F>(rom: Rom, halt: Arc<AtomicBool>, gameloop_callback: F) -> NES<'cl>
-    where
-        F: FnMut(&PPU, &APU, &mut Joypad) + 'cl,
-    {
-        let interrupt = Rc::new(RefCell::new(InterruptImpl::new()));
-        let interrupt_cpu = interrupt.clone();
-        let bus = Rc::new(RefCell::new(BusImpl::new(
-            rom,
-            interrupt,
-            gameloop_callback,
-        )));
-        let mut cpu = CpuV1::new(Rc::clone(&bus), interrupt_cpu, halt);
-        cpu.reset();
-        NES {
-            tracing: false,
-            trace_options: CpuTraceFormatOptions {
-                write_break_2_flag: true,
-                write_cpu_cycles: true,
-            },
-            trace: Option::None,
-            cpu: cpu,
-            bus: bus,
-        }
-    }
+pub fn nes_with_cpu_v1<'call, F>(
+    rom: Rom,
+    halt: Arc<AtomicBool>,
+    gameloop_callback: F,
+) -> NES<'call, CpuV1<BusImpl<'call>>>
+where
+    F: FnMut(&PPU, &APU, &mut Joypad) + 'call,
+{
+    let interrupt = Rc::new(RefCell::new(InterruptImpl::new()));
+    let interrupt_cpu = interrupt.clone();
+    let bus = Rc::new(RefCell::new(BusImpl::new(
+        rom,
+        interrupt,
+        gameloop_callback,
+    )));
+    let mut cpu = CpuV1::new(Rc::clone(&bus), interrupt_cpu, halt);
+    cpu.reset();
 
+    NES {
+        cpu,
+        bus,
+        tracing: false,
+        trace_options: CpuTraceFormatOptions {
+            write_break_2_flag: true,
+            write_cpu_cycles: true,
+        },
+        trace: None,
+    }
+}
+
+impl<'call, T: Cpu<BusImpl<'call>>> NES<'call, T> {
     pub fn set_tracing(&mut self, tracing: bool) {
         self.tracing = tracing;
     }
 
     pub fn run_with_callback<F>(&mut self, mut callback: F) -> Result<(), String>
     where
-        F: FnMut(&mut NES),
+        F: FnMut(&mut NES<T>),
     {
         let tracing = self.tracing;
-        let trace_formatter = CpuTraceFormatter {
-            options: self.trace_options,
-        };
-        let mut combined_callback = |nes: &mut NES| {
+        let trace_options = self.trace_options;
+
+        let tracing_callback = |nes: &mut NES<T>| {
             if tracing {
                 match nes.trace.as_ref() {
                     Option::None => println!("NULL Trace"),
-                    Option::Some(s) => println!("{}", trace_formatter.format(&s.cpu_trace)),
+                    Option::Some(s) => {
+                        let trace_formatter = CpuTraceFormatter {
+                            options: trace_options,
+                        };
+                        println!("{}", trace_formatter.format(&s.cpu_trace))
+                    }
                 };
             }
-            callback(nes);
         };
 
         loop {
@@ -94,7 +103,8 @@ impl<'call> NES<'call> {
 
                 ppu_trace: ppu_tr,
             });
-            combined_callback(self);
+            tracing_callback(self);
+            callback(self);
         }
         Result::Ok(())
     }
@@ -107,13 +117,16 @@ mod test {
     use regex::Regex;
 
     use crate::apu::APU;
+    use crate::bus::BusImpl;
     use crate::cpu_v1::CpuV1;
     use crate::io::joypad::Joypad;
+    use crate::nes::nes_with_cpu_v1;
     use crate::ppu::PPU;
     use crate::rom::{self, Rom};
     use crate::trace::{
         CpuTraceFormatOptions, CpuTraceFormatter, NesTraceFormatter, PpuTraceFormatter,
     };
+    use crate::traits::cpu::Cpu;
     use crate::traits::mem::Mem;
     use crate::traits::mos_6502_registers::Registers;
     use crate::traits::mos_65902::MOS6502;
@@ -151,7 +164,7 @@ mod test {
         let rom = crate::rom::test::test_rom(program);
 
         let halt = Arc::new(AtomicBool::new(false));
-        let mut nes = NES::new(
+        let mut nes = nes_with_cpu_v1(
             rom,
             Arc::clone(&halt),
             |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
@@ -220,7 +233,7 @@ mod test {
         let rom = crate::rom::test::test_rom(program);
 
         let halt = Arc::new(AtomicBool::new(false));
-        let mut nes = NES::new(
+        let mut nes = nes_with_cpu_v1(
             rom,
             Arc::clone(&halt),
             |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
@@ -275,7 +288,7 @@ mod test {
     #[test]
     fn test_nestest() {
         let halt = Arc::new(AtomicBool::new(false));
-        let mut nes = NES::new(
+        let mut nes = nes_with_cpu_v1(
             Rom::from_file("assets/nestest.nes"),
             Arc::clone(&halt),
             |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
@@ -423,7 +436,7 @@ mod test {
         let rom = Rom::from_file("nestest/ppu/blargg/vbl_clear_time.nes");
         let nes_test_log = read_file("nestest/ppu/blargg/vbl_clear_time_mesen.log");
 
-        let nes_init = |nes: &mut NES| {
+        let nes_init = |nes: &mut NES<CpuV1<BusImpl>>| {
             nes.cpu.set_cycles(8);
             nes.cpu.set_register_x(1);
             nes.cpu.set_status(0x07);
@@ -482,7 +495,7 @@ mod test {
         let rom = Rom::from_file("nestest/ppu/ppu_vbl_nmi/01-vbl_basics.nes");
         let nes_test_log = read_file("nestest/ppu/ppu_vbl_nmi/01_mesen.log");
 
-        let nes_init = |nes: &mut NES| {
+        let nes_init = |nes: &mut NES<CpuV1<BusImpl>>| {
             nes.cpu.set_cycles(8);
             nes.cpu.set_register_a(0x1A);
             nes.cpu.set_status(0x05);
@@ -607,7 +620,7 @@ mod test {
         let rom = Rom::from_file(rom_path);
         let halt = Arc::new(AtomicBool::new(false));
 
-        let mut nes = NES::new(
+        let mut nes = nes_with_cpu_v1(
             rom,
             Arc::clone(&halt),
             |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
@@ -658,9 +671,10 @@ mod test {
         let _ = handle.join();
         writer.borrow_mut().flush().unwrap();
     }
+
     fn should_match_mesen<T>(rom: Rom, mesen_log: Vec<String>, nes_init: T, max_cycles: i64)
     where
-        T: Fn(&mut NES) -> (),
+        T: Fn(&mut NES<CpuV1<BusImpl>>) -> (),
     {
         should_match(
             rom,
@@ -697,11 +711,11 @@ mod test {
         nes_init: T,
         line_matches: F,
     ) where
-        T: Fn(&mut NES) -> (),
+        T: Fn(&mut NES<CpuV1<BusImpl>>) -> (),
         F: Fn(usize, &[String], &[String]) -> bool,
     {
         let halt = Arc::new(AtomicBool::new(false));
-        let mut nes = NES::new(
+        let mut nes = nes_with_cpu_v1(
             rom,
             Arc::clone(&halt),
             |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},

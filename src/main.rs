@@ -15,7 +15,7 @@ use io::{
     joypad::{BUTTON_A, BUTTON_B, DOWN, Joypad, LEFT, RIGHT, SELECT, START, UP},
     render::frame::Frame,
 };
-use nes::NES;
+use nes::{NES, nes_with_cpu_v1};
 use ppu::PPU;
 use rom::Rom;
 use sdl2::{event::Event, keyboard::Keycode, pixels::PixelFormatEnum};
@@ -101,7 +101,7 @@ fn main() {
     let mut event_loop_sound_frame = Arc::new(Mutex::new(SoundFrame::new()));
     let audio_sound_frame = event_loop_sound_frame.clone();
     let halt = Arc::new(AtomicBool::new(false));
-    let mut nes = NES::new(
+    let mut nes = nes_with_cpu_v1(
         rom,
         halt,
         move |ppu: &PPU, apu: &APU, joypad: &mut Joypad| {

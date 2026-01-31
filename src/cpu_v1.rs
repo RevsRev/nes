@@ -2,6 +2,7 @@ use crate::interrupt::{Interrupt, InterruptImpl};
 use crate::opp::{AddressingMode, OpCode};
 use crate::trace::{CpuTrace, CpuTraceFormatOptions, CpuTraceFormatter};
 use crate::traits::bus::Bus;
+use crate::traits::cpu::Cpu;
 use crate::traits::mos_6502_registers::Registers;
 use crate::traits::mos_65902::MOS6502;
 use crate::traits::tick::Tick;
@@ -62,6 +63,8 @@ pub struct CpuV1<T: Bus> {
     total_cycles: u64,
     op_cycles: u8,
 }
+
+impl<T: Bus> Cpu<T> for CpuV1<T> {}
 
 impl<T: Bus> MOS6502<T> for CpuV1<T> {
     fn get_cycles(&self) -> u64 {

@@ -255,7 +255,7 @@ impl<T: Bus> MOS6502<T> for CpuV2<T> {
 
             match pc {
                 Ok(val) => {
-                    self.set_status_flag(INTERRUPT_DISABLE_FLAG, true);
+                    self.set_status_flags(&[(INTERRUPT_DISABLE_FLAG, true)]);
                     self.program_counter = val;
                     self.tick(7);
                 }
@@ -533,13 +533,19 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn stack_pop(&mut self) -> Result<u8, String> {
+        self.mem_read(self.program_counter)?;
+        self.stack_pop_no_dummy_fetch()
+    }
+
+    fn stack_pop_no_dummy_fetch(&mut self) -> Result<u8, String> {
         self.stack_pointer = self.stack_pointer.wrapping_add(1);
         self.mem_read((STACK as u16) + (self.stack_pointer as u16))
     }
 
     fn stack_pop_u16(&mut self) -> Result<u16, String> {
-        let lo = self.stack_pop()? as u16;
-        let hi = self.stack_pop()? as u16;
+        self.mem_read(self.program_counter)?;
+        let lo = self.stack_pop_no_dummy_fetch()? as u16;
+        let hi = self.stack_pop_no_dummy_fetch()? as u16;
         Result::Ok(hi << 8 | lo)
     }
 
@@ -560,23 +566,6 @@ impl<T: Bus> CpuV2<T> {
     fn mem_write_vec(&mut self, addr: u16, program: &Vec<u8>) {
         for i in 0..(program.len() as u16) {
             self.mem_write(addr + i, program[i as usize]);
-        }
-    }
-
-    fn copy_bit_to_status(&mut self, data: u8, source_flag: u8, status_flag: u8) {
-        let mut set = self.status;
-        set = set & !status_flag; //clear the flag bit
-        if data & source_flag == source_flag {
-            set = set | status_flag;
-        }
-        self.status = set;
-    }
-
-    fn set_status_flag(&mut self, flag: u8, set: bool) {
-        if set {
-            self.status = self.status | flag;
-        } else {
-            self.status = self.status & (!flag);
         }
     }
 
@@ -701,6 +690,36 @@ impl<T: Bus> CpuV2<T> {
         old_high != new_high
     }
 
+    fn assign_status(&mut self, value: u8) {
+        self.status = value;
+        self.tick(1);
+    }
+
+    fn assign_program_counter(&mut self, value: u16) {
+        self.program_counter = value;
+        self.tick(1);
+    }
+
+    fn assign_register_a(&mut self, value: u8) {
+        self.register_a = value;
+        self.tick(1);
+    }
+
+    fn set_status_flags(&mut self, flags: &[(u8, bool)]) {
+        let mut set = 0;
+        let mut clear = 0;
+
+        for &(flag, value) in flags {
+            match value {
+                true => set |= flag,
+                false => clear |= flag,
+            }
+        }
+
+        self.status = (self.status | set) & !clear;
+        self.tick(1);
+    }
+
     fn adc(&mut self, mode: &AddressingMode) -> Result<(), String> {
         let eval = self.evaluate_operand_at_address(mode)?;
         let addr = eval;
@@ -727,13 +746,16 @@ impl<T: Bus> CpuV2<T> {
 
         self.register_a = result;
 
-        self.set_status_flag(OVERFLOW_FLAG, set_overflow);
-        self.set_status_flag(CARRY_FLAG, carry);
-        self.set_status_flag(ZERO_FLAG, self.register_a == 0);
-        self.set_status_flag(
-            NEGATIVE_FLAG,
-            Self::get_flag(self.register_a, NEGATIVE_FLAG),
-        );
+        self.set_status_flags(&[
+            (OVERFLOW_FLAG, set_overflow),
+            (CARRY_FLAG, carry),
+            (ZERO_FLAG, self.register_a == 0),
+            (
+                NEGATIVE_FLAG,
+                Self::get_flag(self.register_a, NEGATIVE_FLAG),
+            ),
+        ]);
+
         Result::Ok(())
     }
 
@@ -743,11 +765,15 @@ impl<T: Bus> CpuV2<T> {
         let value = self.mem_read(addr)?;
 
         self.register_a = self.register_a & value;
-        self.set_status_flag(ZERO_FLAG, self.register_a == 0);
-        self.set_status_flag(
-            NEGATIVE_FLAG,
-            Self::get_flag(self.register_a, NEGATIVE_FLAG),
-        );
+
+        self.set_status_flags(&[
+            (ZERO_FLAG, self.register_a == 0),
+            (
+                NEGATIVE_FLAG,
+                Self::get_flag(self.register_a, NEGATIVE_FLAG),
+            ),
+        ]);
+
         Result::Ok(())
     }
 
@@ -756,12 +782,15 @@ impl<T: Bus> CpuV2<T> {
             let old = self.register_a;
             self.register_a = self.register_a << 1;
 
-            self.set_status_flag(ZERO_FLAG, self.register_a == 0);
-            self.copy_bit_to_status(old, NEGATIVE_FLAG, CARRY_FLAG);
-            self.set_status_flag(
-                NEGATIVE_FLAG,
-                Self::get_flag(self.register_a, NEGATIVE_FLAG),
-            );
+            self.set_status_flags(&[
+                (ZERO_FLAG, self.register_a == 0),
+                (CARRY_FLAG, old & NEGATIVE_FLAG == NEGATIVE_FLAG),
+                (
+                    NEGATIVE_FLAG,
+                    Self::get_flag(self.register_a, NEGATIVE_FLAG),
+                ),
+            ]);
+
             return Result::Ok(());
         }
 
@@ -772,9 +801,12 @@ impl<T: Bus> CpuV2<T> {
 
         self.mem_write(addr, value)?;
 
-        self.set_status_flag(ZERO_FLAG, value == 0);
-        self.copy_bit_to_status(old, NEGATIVE_FLAG, CARRY_FLAG);
-        self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG));
+        self.set_status_flags(&[
+            (ZERO_FLAG, value == 0),
+            (CARRY_FLAG, old & NEGATIVE_FLAG == NEGATIVE_FLAG),
+            (NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG)),
+        ]);
+
         Result::Ok(())
     }
 
@@ -826,9 +858,12 @@ impl<T: Bus> CpuV2<T> {
         let addr = self.evaluate_operand_at_address(mode)?;
         let value = self.mem_read(addr)?;
 
-        self.set_status_flag(ZERO_FLAG, value & self.register_a == 0);
-        self.copy_bit_to_status(value, OVERFLOW_FLAG, OVERFLOW_FLAG);
-        self.copy_bit_to_status(value, NEGATIVE_FLAG, NEGATIVE_FLAG);
+        self.set_status_flags(&[
+            (ZERO_FLAG, value & self.register_a == 0),
+            (OVERFLOW_FLAG, value & OVERFLOW_FLAG == OVERFLOW_FLAG),
+            (NEGATIVE_FLAG, value & NEGATIVE_FLAG == NEGATIVE_FLAG),
+        ]);
+
         Result::Ok(())
     }
 
@@ -893,22 +928,22 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn clc(&mut self, _mode: &AddressingMode) -> Result<(), String> {
-        self.set_status_flag(CARRY_FLAG, false);
+        self.set_status_flags(&[(CARRY_FLAG, false)]);
         Result::Ok(())
     }
 
     fn cld(&mut self, _mode: &AddressingMode) -> Result<(), String> {
-        self.set_status_flag(DECIMAL_MODE_FLAG, false);
+        self.set_status_flags(&[(DECIMAL_MODE_FLAG, false)]);
         Result::Ok(())
     }
 
     fn cli(&mut self, _mode: &AddressingMode) -> Result<(), String> {
-        self.set_status_flag(INTERRUPT_DISABLE_FLAG, false);
+        self.set_status_flags(&[(INTERRUPT_DISABLE_FLAG, false)]);
         Result::Ok(())
     }
 
     fn clv(&mut self, _mode: &AddressingMode) -> Result<(), String> {
-        self.set_status_flag(OVERFLOW_FLAG, false);
+        self.set_status_flags(&[(OVERFLOW_FLAG, false)]);
         Result::Ok(())
     }
 
@@ -919,9 +954,12 @@ impl<T: Bus> CpuV2<T> {
 
         let sub = self.register_a.wrapping_sub(value);
 
-        self.set_status_flag(CARRY_FLAG, self.register_a >= value);
-        self.set_status_flag(ZERO_FLAG, self.register_a == value);
-        self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(sub, NEGATIVE_FLAG));
+        self.set_status_flags(&[
+            (CARRY_FLAG, self.register_a >= value),
+            (ZERO_FLAG, self.register_a == value),
+            (NEGATIVE_FLAG, Self::get_flag(sub, NEGATIVE_FLAG)),
+        ]);
+
         Result::Ok(())
     }
 
@@ -931,9 +969,11 @@ impl<T: Bus> CpuV2<T> {
 
         let sub = self.register_x.wrapping_sub(value);
 
-        self.set_status_flag(CARRY_FLAG, self.register_x >= value);
-        self.set_status_flag(ZERO_FLAG, self.register_x == value);
-        self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(sub, NEGATIVE_FLAG));
+        self.set_status_flags(&[
+            (CARRY_FLAG, self.register_x >= value),
+            (ZERO_FLAG, self.register_x == value),
+            (NEGATIVE_FLAG, Self::get_flag(sub, NEGATIVE_FLAG)),
+        ]);
         Result::Ok(())
     }
 
@@ -943,9 +983,11 @@ impl<T: Bus> CpuV2<T> {
 
         let sub = self.register_y.wrapping_sub(value);
 
-        self.set_status_flag(CARRY_FLAG, self.register_y >= value);
-        self.set_status_flag(ZERO_FLAG, self.register_y == value);
-        self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(sub, NEGATIVE_FLAG));
+        self.set_status_flags(&[
+            (CARRY_FLAG, self.register_y >= value),
+            (ZERO_FLAG, self.register_y == value),
+            (NEGATIVE_FLAG, Self::get_flag(sub, NEGATIVE_FLAG)),
+        ]);
         Result::Ok(())
     }
 
@@ -957,8 +999,11 @@ impl<T: Bus> CpuV2<T> {
 
         self.mem_write(address, sub)?;
 
-        self.set_status_flag(ZERO_FLAG, sub == 0);
-        self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(sub, NEGATIVE_FLAG));
+        self.set_status_flags(&[
+            (ZERO_FLAG, sub == 0),
+            (NEGATIVE_FLAG, Self::get_flag(sub, NEGATIVE_FLAG)),
+        ]);
+
         Result::Ok(())
     }
 
@@ -972,31 +1017,39 @@ impl<T: Bus> CpuV2<T> {
 
         let diff = self.register_a.wrapping_sub(sub);
 
-        self.set_status_flag(CARRY_FLAG, self.register_a >= sub);
-        self.set_status_flag(ZERO_FLAG, self.register_a == sub);
-        self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(diff, NEGATIVE_FLAG));
+        self.set_status_flags(&[
+            (CARRY_FLAG, self.register_a >= sub),
+            (ZERO_FLAG, self.register_a == sub),
+            (NEGATIVE_FLAG, Self::get_flag(diff, NEGATIVE_FLAG)),
+        ]);
+
         Result::Ok(())
     }
 
     fn dex(&mut self, _mode: &AddressingMode) -> Result<(), String> {
         self.register_x = self.register_x.wrapping_sub(1);
 
-        self.set_status_flag(ZERO_FLAG, self.register_x == 0);
-        self.set_status_flag(
-            NEGATIVE_FLAG,
-            Self::get_flag(self.register_x, NEGATIVE_FLAG),
-        );
+        self.set_status_flags(&[
+            (ZERO_FLAG, self.register_x == 0),
+            (
+                NEGATIVE_FLAG,
+                Self::get_flag(self.register_x, NEGATIVE_FLAG),
+            ),
+        ]);
+
         Result::Ok(())
     }
 
     fn dey(&mut self, _mode: &AddressingMode) -> Result<(), String> {
         self.register_y = self.register_y.wrapping_sub(1);
 
-        self.set_status_flag(ZERO_FLAG, self.register_y == 0);
-        self.set_status_flag(
-            NEGATIVE_FLAG,
-            Self::get_flag(self.register_y, NEGATIVE_FLAG),
-        );
+        self.set_status_flags(&[
+            (ZERO_FLAG, self.register_y == 0),
+            (
+                NEGATIVE_FLAG,
+                Self::get_flag(self.register_y, NEGATIVE_FLAG),
+            ),
+        ]);
         Result::Ok(())
     }
 
@@ -1007,11 +1060,14 @@ impl<T: Bus> CpuV2<T> {
 
         self.register_a = self.register_a ^ value;
 
-        self.set_status_flag(ZERO_FLAG, self.register_a == 0);
-        self.set_status_flag(
-            NEGATIVE_FLAG,
-            Self::get_flag(self.register_a, NEGATIVE_FLAG),
-        );
+        self.set_status_flags(&[
+            (ZERO_FLAG, self.register_a == 0),
+            (
+                NEGATIVE_FLAG,
+                Self::get_flag(self.register_a, NEGATIVE_FLAG),
+            ),
+        ]);
+
         Result::Ok(())
     }
 
@@ -1020,28 +1076,39 @@ impl<T: Bus> CpuV2<T> {
         let value = self.mem_read(address)?.wrapping_add(1);
         self.mem_write(address, value)?;
 
-        self.set_status_flag(ZERO_FLAG, value == 0);
-        self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG));
+        self.set_status_flags(&[
+            (ZERO_FLAG, value == 0),
+            (NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG)),
+        ]);
+
         Result::Ok(())
     }
 
     fn inx(&mut self) -> Result<(), String> {
         self.register_x = self.register_x.wrapping_add(1);
-        self.set_status_flag(ZERO_FLAG, self.register_x == 0);
-        self.set_status_flag(
-            NEGATIVE_FLAG,
-            Self::get_flag(self.register_x, NEGATIVE_FLAG),
-        );
+
+        self.set_status_flags(&[
+            (ZERO_FLAG, self.register_x == 0),
+            (
+                NEGATIVE_FLAG,
+                Self::get_flag(self.register_x, NEGATIVE_FLAG),
+            ),
+        ]);
+
         Result::Ok(())
     }
 
     fn iny(&mut self, _mode: &AddressingMode) -> Result<(), String> {
         self.register_y = self.register_y.wrapping_add(1);
-        self.set_status_flag(ZERO_FLAG, self.register_y == 0);
-        self.set_status_flag(
-            NEGATIVE_FLAG,
-            Self::get_flag(self.register_y, NEGATIVE_FLAG),
-        );
+
+        self.set_status_flags(&[
+            (ZERO_FLAG, self.register_y == 0),
+            (
+                NEGATIVE_FLAG,
+                Self::get_flag(self.register_y, NEGATIVE_FLAG),
+            ),
+        ]);
+
         Result::Ok(())
     }
 
@@ -1069,13 +1136,17 @@ impl<T: Bus> CpuV2<T> {
         let set_overflow = (value ^ a) & (a ^ result) & NEGATIVE_FLAG != 0;
 
         self.register_a = result;
-        self.set_status_flag(CARRY_FLAG, !clear_carry);
-        self.set_status_flag(ZERO_FLAG, self.register_a == 0);
-        self.set_status_flag(OVERFLOW_FLAG, set_overflow);
-        self.set_status_flag(
-            NEGATIVE_FLAG,
-            Self::get_flag(self.register_a, NEGATIVE_FLAG),
-        );
+
+        self.set_status_flags(&[
+            (CARRY_FLAG, !clear_carry),
+            (ZERO_FLAG, self.register_a == 0),
+            (OVERFLOW_FLAG, set_overflow),
+            (
+                NEGATIVE_FLAG,
+                Self::get_flag(self.register_a, NEGATIVE_FLAG),
+            ),
+        ]);
+
         Result::Ok(())
     }
 
@@ -1090,7 +1161,8 @@ impl<T: Bus> CpuV2<T> {
 
         self.stack_push_u16(self.program_counter - 1)?;
 
-        self.program_counter = pc_jump;
+        self.assign_program_counter(pc_jump);
+
         Result::Ok(())
     }
 
@@ -1100,11 +1172,15 @@ impl<T: Bus> CpuV2<T> {
         let value = self.mem_read(addr)?;
 
         self.register_a = value;
-        self.set_status_flag(ZERO_FLAG, self.register_a == 0);
-        self.set_status_flag(
-            NEGATIVE_FLAG,
-            Self::get_flag(self.register_a, NEGATIVE_FLAG),
-        );
+
+        self.set_status_flags(&[
+            (ZERO_FLAG, self.register_a == 0),
+            (
+                NEGATIVE_FLAG,
+                Self::get_flag(self.register_a, NEGATIVE_FLAG),
+            ),
+        ]);
+
         Result::Ok(())
     }
 
@@ -1114,11 +1190,13 @@ impl<T: Bus> CpuV2<T> {
         let value = self.mem_read(addr)?;
         self.register_x = value;
 
-        self.set_status_flag(ZERO_FLAG, self.register_x == 0);
-        self.set_status_flag(
-            NEGATIVE_FLAG,
-            Self::get_flag(self.register_x, NEGATIVE_FLAG),
-        );
+        self.set_status_flags(&[
+            (ZERO_FLAG, self.register_x == 0),
+            (
+                NEGATIVE_FLAG,
+                Self::get_flag(self.register_x, NEGATIVE_FLAG),
+            ),
+        ]);
         Result::Ok(())
     }
 
@@ -1128,9 +1206,11 @@ impl<T: Bus> CpuV2<T> {
         let value = self.mem_read(addr)?;
         self.register_a = value;
         self.register_x = value;
+        self.set_status_flags(&[
+            (ZERO_FLAG, value == 0),
+            (NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG)),
+        ]);
 
-        self.set_status_flag(ZERO_FLAG, value == 0);
-        self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG));
         Result::Ok(())
     }
 
@@ -1140,11 +1220,14 @@ impl<T: Bus> CpuV2<T> {
         let value = self.mem_read(addr)?;
         self.register_y = value;
 
-        self.set_status_flag(ZERO_FLAG, self.register_y == 0);
-        self.set_status_flag(
-            NEGATIVE_FLAG,
-            Self::get_flag(self.register_y, NEGATIVE_FLAG),
-        );
+        self.set_status_flags(&[
+            (ZERO_FLAG, self.register_y == 0),
+            (
+                NEGATIVE_FLAG,
+                Self::get_flag(self.register_y, NEGATIVE_FLAG),
+            ),
+        ]);
+
         Result::Ok(())
     }
 
@@ -1153,12 +1236,15 @@ impl<T: Bus> CpuV2<T> {
             let old = self.register_a;
             self.register_a = self.register_a >> 1;
 
-            self.set_status_flag(ZERO_FLAG, self.register_a == 0);
-            self.copy_bit_to_status(old, CARRY_FLAG, CARRY_FLAG);
-            self.set_status_flag(
-                NEGATIVE_FLAG,
-                Self::get_flag(self.register_a, NEGATIVE_FLAG),
-            );
+            self.set_status_flags(&[
+                (ZERO_FLAG, self.register_a == 0),
+                (CARRY_FLAG, old & CARRY_FLAG == CARRY_FLAG),
+                (
+                    NEGATIVE_FLAG,
+                    Self::get_flag(self.register_a, NEGATIVE_FLAG),
+                ),
+            ]);
+
             return Result::Ok(());
         }
 
@@ -1169,9 +1255,12 @@ impl<T: Bus> CpuV2<T> {
 
         self.mem_write(addr, value)?;
 
-        self.set_status_flag(ZERO_FLAG, value == 0);
-        self.copy_bit_to_status(old, CARRY_FLAG, CARRY_FLAG);
-        self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG));
+        self.set_status_flags(&[
+            (ZERO_FLAG, value == 0),
+            (CARRY_FLAG, old & CARRY_FLAG == CARRY_FLAG),
+            (NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG)),
+        ]);
+
         Result::Ok(())
     }
 
@@ -1200,16 +1289,20 @@ impl<T: Bus> CpuV2<T> {
 
         self.register_a = self.register_a | value;
 
-        self.set_status_flag(ZERO_FLAG, self.register_a == 0);
-        self.set_status_flag(
-            NEGATIVE_FLAG,
-            Self::get_flag(self.register_a, NEGATIVE_FLAG),
-        );
+        self.set_status_flags(&[
+            (ZERO_FLAG, self.register_a == 0),
+            (
+                NEGATIVE_FLAG,
+                Self::get_flag(self.register_a, NEGATIVE_FLAG),
+            ),
+        ]);
+
         Result::Ok(())
     }
 
     fn pha(&mut self, _mode: &AddressingMode) -> Result<(), String> {
         self.stack_push(self.register_a)?;
+        self.tick(1);
         Result::Ok(())
     }
 
@@ -1219,12 +1312,15 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn pla(&mut self, _mode: &AddressingMode) -> Result<(), String> {
-        self.register_a = self.stack_pop()?;
-        self.set_status_flag(ZERO_FLAG, self.register_a == 0);
-        self.set_status_flag(
-            NEGATIVE_FLAG,
-            Self::get_flag(self.register_a, NEGATIVE_FLAG),
-        );
+        let stack_pop = self.stack_pop()?;
+        self.assign_register_a(stack_pop);
+        self.set_status_flags(&[
+            (ZERO_FLAG, self.register_a == 0),
+            (
+                NEGATIVE_FLAG,
+                Self::get_flag(self.register_a, NEGATIVE_FLAG),
+            ),
+        ]);
         Result::Ok(())
     }
 
@@ -1245,9 +1341,11 @@ impl<T: Bus> CpuV2<T> {
 
             self.register_a = value;
 
-            self.copy_bit_to_status(old_value, NEGATIVE_FLAG, CARRY_FLAG);
-            self.set_status_flag(ZERO_FLAG, value == 0);
-            self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG));
+            self.set_status_flags(&[
+                (CARRY_FLAG, old_value & NEGATIVE_FLAG == NEGATIVE_FLAG),
+                (ZERO_FLAG, value == 0),
+                (NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG)),
+            ]);
 
             return Result::Ok(());
         }
@@ -1263,9 +1361,12 @@ impl<T: Bus> CpuV2<T> {
 
         self.mem_write(address, value)?;
 
-        self.copy_bit_to_status(old_value, NEGATIVE_FLAG, CARRY_FLAG);
-        self.set_status_flag(ZERO_FLAG, value == 0);
-        self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG));
+        self.set_status_flags(&[
+            (CARRY_FLAG, old_value & NEGATIVE_FLAG == NEGATIVE_FLAG),
+            (ZERO_FLAG, value == 0),
+            (NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG)),
+        ]);
+
         Result::Ok(())
     }
 
@@ -1281,9 +1382,11 @@ impl<T: Bus> CpuV2<T> {
 
             self.register_a = value;
 
-            self.copy_bit_to_status(old_value, CARRY_FLAG, CARRY_FLAG);
-            self.set_status_flag(ZERO_FLAG, value == 0);
-            self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG));
+            self.set_status_flags(&[
+                (CARRY_FLAG, old_value & CARRY_FLAG == CARRY_FLAG),
+                (ZERO_FLAG, value == 0),
+                (NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG)),
+            ]);
 
             return Result::Ok(());
         }
@@ -1299,9 +1402,12 @@ impl<T: Bus> CpuV2<T> {
 
         self.mem_write(address, value)?;
 
-        self.copy_bit_to_status(old_value, CARRY_FLAG, CARRY_FLAG);
-        self.set_status_flag(ZERO_FLAG, value == 0);
-        self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG));
+        self.set_status_flags(&[
+            (CARRY_FLAG, old_value & CARRY_FLAG == CARRY_FLAG),
+            (ZERO_FLAG, value == 0),
+            (NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG)),
+        ]);
+
         Result::Ok(())
     }
 
@@ -1313,12 +1419,15 @@ impl<T: Bus> CpuV2<T> {
         self.mem_write(address, value)?;
         self.register_a = self.register_a & value;
 
-        self.copy_bit_to_status(orig_value, NEGATIVE_FLAG, CARRY_FLAG);
-        self.set_status_flag(ZERO_FLAG, self.register_a == 0);
-        self.set_status_flag(
-            NEGATIVE_FLAG,
-            Self::get_flag(self.register_a, NEGATIVE_FLAG),
-        );
+        self.set_status_flags(&[
+            (CARRY_FLAG, orig_value & NEGATIVE_FLAG == NEGATIVE_FLAG),
+            (ZERO_FLAG, self.register_a == 0),
+            (
+                NEGATIVE_FLAG,
+                Self::get_flag(self.register_a, NEGATIVE_FLAG),
+            ),
+        ]);
+
         Result::Ok(())
     }
 
@@ -1352,13 +1461,16 @@ impl<T: Bus> CpuV2<T> {
 
         self.register_a = result;
 
-        self.set_status_flag(OVERFLOW_FLAG, set_overflow);
-        self.set_status_flag(CARRY_FLAG, carry);
-        self.set_status_flag(ZERO_FLAG, self.register_a == 0);
-        self.set_status_flag(
-            NEGATIVE_FLAG,
-            Self::get_flag(self.register_a, NEGATIVE_FLAG),
-        );
+        self.set_status_flags(&[
+            (OVERFLOW_FLAG, set_overflow),
+            (CARRY_FLAG, carry),
+            (ZERO_FLAG, self.register_a == 0),
+            (
+                NEGATIVE_FLAG,
+                Self::get_flag(self.register_a, NEGATIVE_FLAG),
+            ),
+        ]);
+
         Result::Ok(())
     }
 
@@ -1369,7 +1481,9 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn rts(&mut self, _mode: &AddressingMode) -> Result<(), String> {
-        self.program_counter = self.stack_pop_u16()? + 1;
+        let return_addr = self.stack_pop_u16()? + 1;
+        self.tick(1);
+        self.assign_program_counter(return_addr);
         Result::Ok(())
     }
 
@@ -1384,7 +1498,7 @@ impl<T: Bus> CpuV2<T> {
 
         //we do this after the return check, because it's easier to test and doesn't make a
         //difference when we exit :)
-        self.set_status_flag(INTERRUPT_DISABLE_FLAG, true);
+        self.set_status_flags(&[(INTERRUPT_DISABLE_FLAG, true)]);
         Result::Ok(false)
     }
 
@@ -1423,18 +1537,22 @@ impl<T: Bus> CpuV2<T> {
         let set_overflow = (value ^ a) & (a ^ result) & NEGATIVE_FLAG != 0;
 
         self.register_a = result;
-        self.set_status_flag(CARRY_FLAG, !clear_carry);
-        self.set_status_flag(ZERO_FLAG, self.register_a == 0);
-        self.set_status_flag(OVERFLOW_FLAG, set_overflow);
-        self.set_status_flag(
-            NEGATIVE_FLAG,
-            Self::get_flag(self.register_a, NEGATIVE_FLAG),
-        );
+
+        self.set_status_flags(&[
+            (OVERFLOW_FLAG, set_overflow),
+            (CARRY_FLAG, !clear_carry),
+            (ZERO_FLAG, self.register_a == 0),
+            (
+                NEGATIVE_FLAG,
+                Self::get_flag(self.register_a, NEGATIVE_FLAG),
+            ),
+        ]);
+
         Result::Ok(())
     }
 
     fn sec(&mut self, _mode: &AddressingMode) -> Result<(), String> {
-        self.status = self.status | CARRY_FLAG;
+        self.assign_status(self.status | CARRY_FLAG);
         Result::Ok(())
     }
 
@@ -1444,7 +1562,7 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn sei(&mut self, _mode: &AddressingMode) -> Result<(), String> {
-        self.status = self.status | INTERRUPT_DISABLE_FLAG;
+        self.assign_status(self.status | INTERRUPT_DISABLE_FLAG);
         Result::Ok(())
     }
 
@@ -1458,9 +1576,12 @@ impl<T: Bus> CpuV2<T> {
 
         self.register_a = result;
 
-        self.copy_bit_to_status(original, NEGATIVE_FLAG, CARRY_FLAG);
-        self.set_status_flag(ZERO_FLAG, result == 0);
-        self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(result, NEGATIVE_FLAG));
+        self.set_status_flags(&[
+            (CARRY_FLAG, original & NEGATIVE_FLAG == NEGATIVE_FLAG),
+            (ZERO_FLAG, result == 0),
+            (NEGATIVE_FLAG, Self::get_flag(result, NEGATIVE_FLAG)),
+        ]);
+
         Result::Ok(())
     }
 
@@ -1474,9 +1595,12 @@ impl<T: Bus> CpuV2<T> {
 
         self.register_a = result;
 
-        self.copy_bit_to_status(original, CARRY_FLAG, CARRY_FLAG);
-        self.set_status_flag(ZERO_FLAG, result == 0);
-        self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(result, NEGATIVE_FLAG));
+        self.set_status_flags(&[
+            (CARRY_FLAG, original & CARRY_FLAG == CARRY_FLAG),
+            (ZERO_FLAG, result == 0),
+            (NEGATIVE_FLAG, Self::get_flag(result, NEGATIVE_FLAG)),
+        ]);
+
         Result::Ok(())
     }
 
@@ -1494,41 +1618,51 @@ impl<T: Bus> CpuV2<T> {
 
     fn tax(&mut self) -> Result<(), String> {
         self.register_x = self.register_a;
-        self.set_status_flag(ZERO_FLAG, self.register_x == 0);
-        self.set_status_flag(
-            NEGATIVE_FLAG,
-            Self::get_flag(self.register_x, NEGATIVE_FLAG),
-        );
+
+        self.set_status_flags(&[
+            (ZERO_FLAG, self.register_x == 0),
+            (
+                NEGATIVE_FLAG,
+                Self::get_flag(self.register_x, NEGATIVE_FLAG),
+            ),
+        ]);
+
         Result::Ok(())
     }
 
     fn tay(&mut self) -> Result<(), String> {
         self.register_y = self.register_a;
-        self.set_status_flag(ZERO_FLAG, self.register_y == 0);
-        self.set_status_flag(
-            NEGATIVE_FLAG,
-            Self::get_flag(self.register_y, NEGATIVE_FLAG),
-        );
+        self.set_status_flags(&[
+            (ZERO_FLAG, self.register_y == 0),
+            (
+                NEGATIVE_FLAG,
+                Self::get_flag(self.register_y, NEGATIVE_FLAG),
+            ),
+        ]);
         Result::Ok(())
     }
 
     fn tsx(&mut self) -> Result<(), String> {
         self.register_x = self.stack_pointer;
-        self.set_status_flag(ZERO_FLAG, self.register_x == 0);
-        self.set_status_flag(
-            NEGATIVE_FLAG,
-            Self::get_flag(self.register_x, NEGATIVE_FLAG),
-        );
+        self.set_status_flags(&[
+            (ZERO_FLAG, self.register_x == 0),
+            (
+                NEGATIVE_FLAG,
+                Self::get_flag(self.register_x, NEGATIVE_FLAG),
+            ),
+        ]);
         Result::Ok(())
     }
 
     fn txa(&mut self) -> Result<(), String> {
         self.register_a = self.register_x;
-        self.set_status_flag(ZERO_FLAG, self.register_a == 0);
-        self.set_status_flag(
-            NEGATIVE_FLAG,
-            Self::get_flag(self.register_a, NEGATIVE_FLAG),
-        );
+        self.set_status_flags(&[
+            (ZERO_FLAG, self.register_a == 0),
+            (
+                NEGATIVE_FLAG,
+                Self::get_flag(self.register_a, NEGATIVE_FLAG),
+            ),
+        ]);
         Result::Ok(())
     }
 
@@ -1539,11 +1673,13 @@ impl<T: Bus> CpuV2<T> {
 
     fn tya(&mut self) -> Result<(), String> {
         self.register_a = self.register_y;
-        self.set_status_flag(ZERO_FLAG, self.register_a == 0);
-        self.set_status_flag(
-            NEGATIVE_FLAG,
-            Self::get_flag(self.register_a, NEGATIVE_FLAG),
-        );
+        self.set_status_flags(&[
+            (ZERO_FLAG, self.register_a == 0),
+            (
+                NEGATIVE_FLAG,
+                Self::get_flag(self.register_a, NEGATIVE_FLAG),
+            ),
+        ]);
         Result::Ok(())
     }
 
@@ -2838,7 +2974,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0xE9, 0x70, 0x00]);
         cpu.reset();
         cpu.register_a = 0x7F;
-        cpu.set_status_flag(CARRY_FLAG, true);
+        cpu.status = cpu.status | CARRY_FLAG;
         let _ = cpu.run_with_callback(|_| {});
         assert_eq!(0x0F, cpu.register_a);
         assert!(CARRY_FLAG & cpu.status == CARRY_FLAG);
@@ -2858,7 +2994,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0xE9, 0x01, 0x00]);
         cpu.reset();
         cpu.register_a = 0x80;
-        cpu.set_status_flag(CARRY_FLAG, true);
+        cpu.status = cpu.status | CARRY_FLAG;
         let _ = cpu.run_with_callback(|_| {});
         assert_eq!(0x7F, cpu.register_a);
         assert!(CARRY_FLAG & cpu.status == CARRY_FLAG);
@@ -2879,7 +3015,7 @@ mod test {
             .load_with_start_address(0x8000, vec![0xE9, 0x03, 0x00]);
         cpu.reset();
         cpu.register_a = 0x8F;
-        cpu.set_status_flag(CARRY_FLAG, true);
+        cpu.status = cpu.status | CARRY_FLAG;
         let _ = cpu.run_with_callback(|cpu| tracing_callback(cpu));
         assert_eq!(0x8C, cpu.register_a);
         assert!(CARRY_FLAG & cpu.status == CARRY_FLAG);
@@ -2899,7 +3035,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0xE9, 0x81, 0x00]);
         cpu.reset();
         cpu.register_a = 0x81;
-        cpu.set_status_flag(CARRY_FLAG, true);
+        cpu.status = cpu.status | CARRY_FLAG;
         let _ = cpu.run_with_callback(|_| {});
         assert_eq!(0x00, cpu.register_a);
         assert!(CARRY_FLAG & cpu.status == CARRY_FLAG);

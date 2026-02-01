@@ -403,8 +403,8 @@ impl<T: Bus> Mem for CpuV2<T> {
     }
 
     fn mem_write(&mut self, addr: u16, data: u8) -> Result<u8, std::string::String> {
-        let retval = self.bus.borrow_mut().mem_write(addr, data)?;
         self.tick(1);
+        let retval = self.bus.borrow_mut().mem_write(addr, data)?;
         self.writes.push((addr, retval));
         Result::Ok(retval)
     }

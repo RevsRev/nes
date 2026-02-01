@@ -559,7 +559,7 @@ mod test {
     fn nestest_blargg_01_len_ctr() {
         let rom = Rom::from_file("nestest/apu/01.len_ctr.nes");
         let nes_test_log = read_file("nestest/apu/01_fceux.log");
-        should_match_fceux(rom, nes_test_log, -1);
+        should_match_fceux(rom, nes_test_log, 533670);
     }
 
     #[test]

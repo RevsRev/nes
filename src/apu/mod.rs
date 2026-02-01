@@ -97,6 +97,8 @@ impl Tick for APU {
             let frame_tick = if on_apu_clock_cycle { 1 } else { 0 };
             self.frame.borrow_mut().tick(frame_tick);
             if on_apu_clock_cycle {
+                self.frame.borrow_mut().step();
+
                 let emit_clock = self.frame.borrow_mut().emit_clock();
 
                 match emit_clock {
@@ -107,8 +109,6 @@ impl Tick for APU {
                     }
                     None => {}
                 }
-
-                self.frame.borrow_mut().step();
 
                 self.pulse_1.borrow_mut().decrement_timer();
                 self.pulse_2.borrow_mut().decrement_timer();

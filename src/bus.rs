@@ -112,11 +112,11 @@ impl<'a> Mem for BusImpl<'a> {
                 self.mem_read(mirror_down_addr)
             }
 
-            0x4000..=0x4013 => Result::Err(format!(
-                "Attempt to read from APU write only address {:#04X}",
-                addr
-            )),
-
+            0x4000..=0x4013 => Result::Ok(0),
+            // 0x4000..=0x4013 => Result::Err(format!(
+            //     "Attempt to read from APU write only address {:#04X}",
+            //     addr
+            // )),
             0x4014 => Result::Err(format!("Unexpected mem read from 0x4014")),
 
             0x4015 => self.apu.read_status(),

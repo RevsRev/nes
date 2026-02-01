@@ -663,11 +663,7 @@ mod test {
         let rom = Rom::from_file(rom_path);
         let halt = Arc::new(AtomicBool::new(false));
 
-        let mut nes = nes_with_cpu_v1(
-            rom,
-            Arc::clone(&halt),
-            |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
-        );
+        let mut nes = construct_nes(rom, &halt);
 
         let halt_share = halt.clone();
         let handle = thread::spawn(move || {

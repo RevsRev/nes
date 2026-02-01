@@ -210,7 +210,7 @@ lazy_static! {
         OpCode::new(0xAF, "*LAX", 3, 4, AddressingMode::Absolute, OpCodeBehaviour::MemoryRead),
         OpCode::new(0xBF, "*LAX", 3, 4/*+1 if page is crossed*/, AddressingMode::Absolute_Y, OpCodeBehaviour::MemoryRead),
         OpCode::new(0xA3, "*LAX", 2, 6, AddressingMode::Indirect_X, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0xB3, "*LAX", 2, 4/*+1 if page is crossed*/, AddressingMode::Indirect_Y, OpCodeBehaviour::MemoryRead),
+        OpCode::new(0xB3, "*LAX", 2, 5/*+1 if page is crossed*/, AddressingMode::Indirect_Y, OpCodeBehaviour::MemoryRead),
 
         OpCode::new(0xA0, "LDY", 2, 2, AddressingMode::Immediate, OpCodeBehaviour::NoMemoryAccess),
         OpCode::new(0xA4, "LDY", 2, 3, AddressingMode::ZeroPage, OpCodeBehaviour::MemoryRead),
@@ -250,7 +250,7 @@ lazy_static! {
 
 
         //*NOP operations that are known as TOP, ie triple no ops
-        OpCode::new(0x0C, "*NOP", 3, 3, AddressingMode::Absolute, OpCodeBehaviour::MemoryRead),
+        OpCode::new(0x0C, "*NOP", 3, 4, AddressingMode::Absolute, OpCodeBehaviour::MemoryRead),
         OpCode::new(0x1C, "*NOP", 3, 4 /*+1 if page is crossed*/, AddressingMode::Absolute_X, OpCodeBehaviour::MemoryRead),
         OpCode::new(0x3C, "*NOP", 3, 4 /*+1 if page is crossed*/, AddressingMode::Absolute_X, OpCodeBehaviour::MemoryRead),
         OpCode::new(0x5C, "*NOP", 3, 4 /*+1 if page is crossed*/, AddressingMode::Absolute_X, OpCodeBehaviour::MemoryRead),

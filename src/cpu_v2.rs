@@ -65,8 +65,6 @@ impl<T: Bus> MOS6502<T> for CpuV2<T> {
     where
         F: for<'a> FnMut(&'a Self),
     {
-        let should_nmi = self.interrupt.borrow_mut().take_nmi();
-
         self.reads.clear();
         self.writes.clear();
         self.trace_cycles = self.total_cycles;
@@ -267,7 +265,7 @@ impl<T: Bus> MOS6502<T> for CpuV2<T> {
             }
         }
 
-        if should_nmi {
+        if self.interrupt.borrow_mut().take_nmi() {
             self.interrupt_nmi();
         }
 
@@ -1809,15 +1807,15 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn interrupt_nmi(&mut self) -> Result<(), String> {
+        self.mem_read(self.program_counter)?; //dummy read
         self.stack_push_u16(self.program_counter)?;
         let status = (self.status.clone() | BREAK2_FLAG) & !BREAK_FLAG;
 
         self.stack_push(status)?;
         self.status = self.status | INTERRUPT_DISABLE_FLAG;
 
-        self.total_cycles = self.total_cycles + 7;
-        self.bus.borrow_mut().tick(7);
         self.program_counter = self.mem_read_u16(NMI_INTERRUPT_ADDRESS)?;
+        self.tick(1);
         Result::Ok(())
     }
 }

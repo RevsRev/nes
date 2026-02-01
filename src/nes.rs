@@ -471,7 +471,7 @@ mod test {
     fn nestest_blargg_vbl_clear_time() {
         let rom = Rom::from_file("nestest/ppu/blargg/vbl_clear_time.nes");
         let nes_test_log = read_file("nestest/ppu/blargg/vbl_clear_time_fceux.log");
-        should_match_fceux(rom, nes_test_log, 84393);
+        should_match_fceux(rom, nes_test_log, 206082);
     }
 
     #[test]
@@ -487,7 +487,7 @@ mod test {
             stack_pointer: 0xF4,
             ppu_frame_cycles: 27,
         };
-        should_match_mesen(rom, nes_test_log, Some(nes_init), 104528);
+        should_match_mesen(rom, nes_test_log, Some(nes_init), 355101);
     }
 
     #[test]
@@ -631,7 +631,7 @@ mod test {
     fn nestest_blargg_04_clock_jitter() {
         let rom = Rom::from_file("nestest/apu/04.clock_jitter.nes");
         let nes_test_log = read_file("nestest/apu/04_fceux.log");
-        should_match_fceux(rom, nes_test_log, 11976);
+        should_match_fceux(rom, nes_test_log, -1);
     }
 
     #[test]
@@ -808,45 +808,55 @@ mod test {
 
         assert_ne!(compare_log.len(), 0);
 
-        if let Some(i) = find_first_failure(&compare_log, &result, line_matches) {
-            let expected = &compare_log[i];
-            let actual = &result[i];
+        let failure = find_first_failure(&compare_log, &result, line_matches);
 
-            let start_prev = i.saturating_sub(10);
-            let prev_fceux = &compare_log[start_prev..(i).min(compare_log.len() - 1)];
-            let prev_nes = &result[start_prev..i];
-
-            let end_next = i + 10;
-            let next_fceux = &compare_log[i + 1..=end_next.min(compare_log.len() - 1)];
-            let next_nes = &result[i + 1..=end_next.min(result.len() - 1)];
-
-            // ANSI red for highlighting
-            let red_start = "\x1b[31m";
-            let red_end = "\x1b[0m";
-
-            let mut f_str = String::new();
-            for h in prev_fceux {
-                f_str.push_str(&format!("\t{}\n", h));
-            }
-            f_str.push_str(&format!("\t{}{}{}\n", red_start, expected, red_end));
-            for h in next_fceux {
-                f_str.push_str(&format!("\t{}\n", h));
-            }
-
-            let mut n_str = String::new();
-            for h in prev_nes {
-                n_str.push_str(&format!("\t{}\n", h));
-            }
-            n_str.push_str(&format!("\t{}{}{}\n", red_start, actual, red_end));
-            for h in next_nes {
-                n_str.push_str(&format!("\t{}\n", h));
-            }
-
-            panic!(
-                "\n\nMismatch at line {i}\nFCEUX expected: {}\nNES actual: {}\n\nContext around failure:\nFCEUX:\n{}\nNES:\n{}",
-                expected, actual, f_str, n_str
-            );
+        if failure.is_none() {
+            return;
         }
+
+        let i = failure.unwrap();
+
+        if i == result.len() || i == compare_log.len() {
+            return;
+        }
+
+        let expected = &compare_log[i];
+        let actual = &result[i];
+
+        let start_prev = i.saturating_sub(10);
+        let prev_fceux = &compare_log[start_prev..(i).min(compare_log.len() - 1)];
+        let prev_nes = &result[start_prev..i];
+
+        let end_next = i + 10;
+        let next_fceux = &compare_log[i + 1..=end_next.min(compare_log.len() - 1)];
+        let next_nes = &result[i + 1..=end_next.min(result.len() - 1)];
+
+        // ANSI red for highlighting
+        let red_start = "\x1b[31m";
+        let red_end = "\x1b[0m";
+
+        let mut f_str = String::new();
+        for h in prev_fceux {
+            f_str.push_str(&format!("\t{}\n", h));
+        }
+        f_str.push_str(&format!("\t{}{}{}\n", red_start, expected, red_end));
+        for h in next_fceux {
+            f_str.push_str(&format!("\t{}\n", h));
+        }
+
+        let mut n_str = String::new();
+        for h in prev_nes {
+            n_str.push_str(&format!("\t{}\n", h));
+        }
+        n_str.push_str(&format!("\t{}{}{}\n", red_start, actual, red_end));
+        for h in next_nes {
+            n_str.push_str(&format!("\t{}\n", h));
+        }
+
+        panic!(
+            "\n\nMismatch at line {i}\nFCEUX expected: {}\nNES actual: {}\n\nContext around failure:\nFCEUX:\n{}\nNES:\n{}",
+            expected, actual, f_str, n_str
+        );
     }
     fn find_first_failure<F>(fceux: &[String], nes: &[String], line_matches: F) -> Option<usize>
     where

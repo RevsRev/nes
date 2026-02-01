@@ -7,6 +7,7 @@ use std::fmt;
 pub struct NesTrace {
     pub cpu_trace: CpuTrace,
     pub ppu_trace: PpuTrace,
+    pub apu_trace: ApuTrace,
 }
 
 pub struct CpuTrace {
@@ -28,6 +29,15 @@ pub struct PpuTrace {
     pub dot: u16,
 }
 
+pub struct ApuTrace {
+    pub pulse_1: PulseTrace,
+    pub pulse_2: PulseTrace,
+}
+pub struct PulseTrace {
+    pub len_counter: u8,
+    pub len_counter_enabled: bool,
+}
+
 #[derive(Clone, Copy)]
 pub struct CpuTraceFormatOptions {
     pub write_break_2_flag: bool,
@@ -39,9 +49,12 @@ pub struct CpuTraceFormatter {
     pub options: CpuTraceFormatOptions,
 }
 pub struct PpuTraceFormatter {}
+pub struct ApuTraceFormatter {}
+
 pub struct NesTraceFormatter {
     pub cpu_formatter: CpuTraceFormatter,
-    pub ppu_formatter: PpuTraceFormatter,
+    pub ppu_formatter: Option<PpuTraceFormatter>,
+    pub apu_formatter: Option<ApuTraceFormatter>,
 }
 
 impl NesTraceFormatter {
@@ -49,11 +62,34 @@ impl NesTraceFormatter {
         use std::fmt::Write;
         let mut out = String::new();
 
+        let _ = write!(out, "{}", self.cpu_formatter.format(&nes_trace.cpu_trace));
+
+        let _ = match self.ppu_formatter.as_ref() {
+            None => Ok(()),
+            Some(ppu) => write!(out, " {}", ppu.format(&nes_trace.ppu_trace)),
+        };
+
+        let _ = match self.apu_formatter.as_ref() {
+            None => Ok(()),
+            Some(apu) => write!(out, " {}", apu.format(&nes_trace.apu_trace)),
+        };
+
+        out
+    }
+}
+
+impl ApuTraceFormatter {
+    pub fn format(&self, apu_trace: &ApuTrace) -> String {
+        use std::fmt::Write;
+        let mut out = String::new();
+
         write!(
             out,
-            "{} {}",
-            self.cpu_formatter.format(&nes_trace.cpu_trace),
-            self.ppu_formatter.format(&nes_trace.ppu_trace)
+            "P1(L: {}, LE: {}) P2(L: {}, LE: {})",
+            apu_trace.pulse_1.len_counter,
+            apu_trace.pulse_1.len_counter_enabled,
+            apu_trace.pulse_2.len_counter,
+            apu_trace.pulse_2.len_counter_enabled
         );
 
         out

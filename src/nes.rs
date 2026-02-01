@@ -122,6 +122,7 @@ impl<'call, T: Cpu<BusImpl<'call>>> NES<'call, T> {
 
         loop {
             let ppu_tr = self.bus.borrow_mut().ppu.trace();
+            let apu_tr = self.bus.borrow_mut().apu.trace();
             match self.cpu.step_with_callback(&mut |_| {}) {
                 Ok(b) => match b {
                     true => {}
@@ -133,8 +134,8 @@ impl<'call, T: Cpu<BusImpl<'call>>> NES<'call, T> {
             }
             self.trace = Option::Some(NesTrace {
                 cpu_trace: self.cpu.take_trace().take().unwrap(),
-
                 ppu_trace: ppu_tr,
+                apu_trace: apu_tr,
             });
             tracing_callback(self);
             callback(self);
@@ -157,7 +158,8 @@ mod test {
     use crate::ppu::PPU;
     use crate::rom::{self, Rom};
     use crate::trace::{
-        CpuTraceFormatOptions, CpuTraceFormatter, NesTraceFormatter, PpuTraceFormatter,
+        ApuTraceFormatter, CpuTraceFormatOptions, CpuTraceFormatter, NesTraceFormatter,
+        PpuTraceFormatter,
     };
     use crate::traits::cpu::Cpu;
     use crate::traits::mem::Mem;
@@ -557,7 +559,7 @@ mod test {
     fn nestest_blargg_01_len_ctr() {
         let rom = Rom::from_file("nestest/apu/01.len_ctr.nes");
         let nes_test_log = read_file("nestest/apu/01_fceux.log");
-        should_match_fceux(rom, nes_test_log, 270300);
+        should_match_fceux(rom, nes_test_log, -1);
     }
 
     #[test]
@@ -684,7 +686,8 @@ mod test {
             cpu_formatter: CpuTraceFormatter {
                 options: nes.cpu.format_options(false, true),
             },
-            ppu_formatter: PpuTraceFormatter {},
+            ppu_formatter: Some(PpuTraceFormatter {}),
+            apu_formatter: Some(ApuTraceFormatter {}),
         };
 
         let _runtime_result = panic::catch_unwind(AssertUnwindSafe(|| {
@@ -780,7 +783,8 @@ mod test {
             cpu_formatter: CpuTraceFormatter {
                 options: nes.cpu.format_options(false, true),
             },
-            ppu_formatter: PpuTraceFormatter {},
+            ppu_formatter: Some(PpuTraceFormatter {}),
+            apu_formatter: Some(ApuTraceFormatter {}),
         };
 
         let _runtime_result = panic::catch_unwind(AssertUnwindSafe(|| {

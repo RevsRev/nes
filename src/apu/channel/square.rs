@@ -1,6 +1,9 @@
-use crate::apu::{
-    channel::sweep::Sweep,
-    registers::{divider::Divider, frame::FrameClock},
+use crate::{
+    apu::{
+        channel::sweep::Sweep,
+        registers::{divider::Divider, frame::FrameClock},
+    },
+    trace::PulseTrace,
 };
 
 use super::len_counter::LenCounter;
@@ -246,5 +249,12 @@ impl SquareChannel {
 
     pub fn len_counter_expired(&self) -> bool {
         self.len_counter.get() == 0
+    }
+
+    pub fn trace(&self) -> PulseTrace {
+        PulseTrace {
+            len_counter: self.len_counter.get(),
+            len_counter_enabled: self.len_counter.enabled(),
+        }
     }
 }

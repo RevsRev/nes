@@ -69,4 +69,8 @@ impl LenCounter {
     pub fn enable(&mut self) {
         self.disabled = false;
     }
+
+    pub fn enabled(&self) -> bool {
+        !self.disabled
+    }
 }

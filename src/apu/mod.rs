@@ -9,6 +9,7 @@ use crate::{
         registers::{frame::FrameCounter, status::Status},
     },
     interrupt::{Interrupt, InterruptImpl},
+    trace::{ApuTrace, PulseTrace},
     traits::tick::Tick,
 };
 
@@ -79,6 +80,13 @@ impl APU {
 
     pub fn read_status(&mut self) -> Result<u8, String> {
         self.status.read()
+    }
+
+    pub fn trace(&self) -> ApuTrace {
+        ApuTrace {
+            pulse_1: self.pulse_1.borrow().trace(),
+            pulse_2: self.pulse_2.borrow().trace(),
+        }
     }
 }
 

@@ -382,17 +382,15 @@ impl<T: Bus> Mem for CpuV2<T> {
     fn mem_read(&mut self, addr: u16) -> Result<u8, std::string::String> {
         let read = match self.dummy_read.take() {
             None => {
-                let r = self.bus.borrow_mut().mem_read(addr)?;
                 self.tick(1);
-                r
+                self.bus.borrow_mut().mem_read(addr)?
             }
             Some((dummy_addr, r)) => {
                 if dummy_addr == addr {
                     r
                 } else {
-                    let r2 = self.bus.borrow_mut().mem_read(addr)?;
                     self.tick(1); //not sure if we want a tick here?
-                    r2
+                    self.bus.borrow_mut().mem_read(addr)?
                 }
             }
         };

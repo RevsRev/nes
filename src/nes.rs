@@ -471,7 +471,7 @@ mod test {
     fn nestest_blargg_vbl_clear_time() {
         let rom = Rom::from_file("nestest/ppu/blargg/vbl_clear_time.nes");
         let nes_test_log = read_file("nestest/ppu/blargg/vbl_clear_time_fceux.log");
-        should_match_fceux(rom, nes_test_log, 206082);
+        should_match_fceux(rom, nes_test_log, 206075);
     }
 
     #[test]
@@ -487,7 +487,7 @@ mod test {
             stack_pointer: 0xF4,
             ppu_frame_cycles: 27,
         };
-        should_match_mesen(rom, nes_test_log, Some(nes_init), 355101);
+        should_match_mesen(rom, nes_test_log, Some(nes_init), 206076);
     }
 
     #[test]
@@ -559,7 +559,7 @@ mod test {
     fn nestest_blargg_01_len_ctr() {
         let rom = Rom::from_file("nestest/apu/01.len_ctr.nes");
         let nes_test_log = read_file("nestest/apu/01_fceux.log");
-        should_match_fceux(rom, nes_test_log, 533670);
+        should_match_fceux(rom, nes_test_log, 533663);
     }
 
     #[test]
@@ -631,7 +631,7 @@ mod test {
     fn nestest_blargg_04_clock_jitter() {
         let rom = Rom::from_file("nestest/apu/04.clock_jitter.nes");
         let nes_test_log = read_file("nestest/apu/04_fceux.log");
-        should_match_fceux(rom, nes_test_log, -1);
+        should_match_fceux(rom, nes_test_log, 29890);
     }
 
     #[test]

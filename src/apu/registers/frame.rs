@@ -2,6 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::{
     interrupt::{Interrupt, InterruptImpl},
+    trace::FrameTrace,
     traits::tick::Tick,
 };
 
@@ -103,6 +104,13 @@ impl FrameCounter {
         self.apu_cycles = self.apu_cycles + 1;
         if self.apu_cycles > 18640 {
             self.apu_cycles = 0;
+        }
+    }
+
+    pub fn trace(&self) -> FrameTrace {
+        FrameTrace {
+            irq_flag: self.irq_flag,
+            apu_cycles: self.apu_cycles,
         }
     }
 }

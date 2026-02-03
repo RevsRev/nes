@@ -41,8 +41,8 @@ pub const LENGTH_TABLE: [u8; 32] = [
 impl LenCounter {
     pub fn new() -> Self {
         LenCounter {
-            len_counter: 0xFF,
-            disabled: false,
+            len_counter: 0x00,
+            disabled: true,
         }
     }
 

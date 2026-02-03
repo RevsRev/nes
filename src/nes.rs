@@ -19,7 +19,6 @@ use crate::traits::tracing::Tracing;
 
 pub struct NES<'call, T: Cpu<BusImpl<'call>>> {
     tracing: bool,
-    trace_options: CpuTraceFormatOptions,
     pub trace: Option<NesTrace>,
 
     pub cpu: T,
@@ -54,11 +53,6 @@ where
         cpu,
         bus,
         tracing: false,
-        trace_options: CpuTraceFormatOptions {
-            write_break_2_flag: true,
-            write_cpu_cycles: true,
-            reads_offset: 0,
-        },
         trace: None,
     }
 }
@@ -85,11 +79,6 @@ where
         cpu,
         bus,
         tracing: false,
-        trace_options: CpuTraceFormatOptions {
-            write_break_2_flag: true,
-            write_cpu_cycles: true,
-            reads_offset: 1,
-        },
         trace: None,
     }
 }
@@ -103,23 +92,6 @@ impl<'call, T: Cpu<BusImpl<'call>>> NES<'call, T> {
     where
         F: FnMut(&mut NES<T>),
     {
-        let tracing = self.tracing;
-        let trace_options = self.trace_options;
-
-        let tracing_callback = |nes: &mut NES<T>| {
-            if tracing {
-                match nes.trace.as_ref() {
-                    Option::None => println!("NULL Trace"),
-                    Option::Some(s) => {
-                        let trace_formatter = CpuTraceFormatter {
-                            options: trace_options,
-                        };
-                        println!("{}", trace_formatter.format(&s.cpu_trace))
-                    }
-                };
-            }
-        };
-
         loop {
             let ppu_tr = self.bus.borrow_mut().ppu.trace();
             let apu_tr = self.bus.borrow_mut().apu.trace();
@@ -137,7 +109,6 @@ impl<'call, T: Cpu<BusImpl<'call>>> NES<'call, T> {
                 ppu_trace: ppu_tr,
                 apu_trace: apu_tr,
             });
-            tracing_callback(self);
             callback(self);
         }
         Result::Ok(())
@@ -656,6 +627,25 @@ mod test {
         let rom = Rom::from_file("nestest/apu/05.len_timing_mode0.nes");
         let nes_test_log = read_file("nestest/apu/05_fceux.log");
         should_match_fceux(rom, nes_test_log, 812136);
+    }
+
+    #[test]
+    fn nestest_blargg_05_len_timing_mode0_mesen() {
+        let rom = Rom::from_file("nestest/apu/05.len_timing_mode0.nes");
+        let nes_test_log = read_file("nestest/apu/05_mesen.log");
+        should_match_mesen(
+            rom,
+            nes_test_log,
+            Some(NesInit {
+                cycles: 8,
+                register_a: 0,
+                register_x: 0,
+                status: 04,
+                stack_pointer: 0xFD,
+                ppu_frame_cycles: 27,
+            }),
+            -1,
+        );
     }
 
     fn write_nes_logs(rom_path: &str, out_path: &str, max_cycles: i64) {

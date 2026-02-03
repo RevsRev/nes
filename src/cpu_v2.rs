@@ -301,7 +301,11 @@ impl<T: Bus> MOS6502<T> for CpuV2<T> {
         self.register_y = 0;
         self.status = INTERRUPT_DISABLE_FLAG | BREAK2_FLAG;
         self.stack_pointer = STACK_RESET;
-        self.program_counter = self.mem_read_u16(PC_START_ADDRESS).unwrap();
+        self.program_counter = self
+            .bus
+            .borrow_mut()
+            .mem_read_u16(PC_START_ADDRESS)
+            .unwrap();
         self.total_cycles = 0;
     }
 }

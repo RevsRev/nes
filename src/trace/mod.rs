@@ -32,10 +32,15 @@ pub struct PpuTrace {
 pub struct ApuTrace {
     pub pulse_1: PulseTrace,
     pub pulse_2: PulseTrace,
+    pub frame_trace: FrameTrace,
 }
 pub struct PulseTrace {
     pub len_counter: u8,
     pub len_counter_enabled: bool,
+}
+pub struct FrameTrace {
+    pub irq_flag: bool,
+    pub apu_cycles: u32,
 }
 
 #[derive(Clone, Copy)]
@@ -85,11 +90,13 @@ impl ApuTraceFormatter {
 
         write!(
             out,
-            "P1(L: {}, LE: {}) P2(L: {}, LE: {})",
+            "P1(L: {}, LE: {}) P2(L: {}, LE: {}) F(IRQ: {} C:{})",
             apu_trace.pulse_1.len_counter,
             apu_trace.pulse_1.len_counter_enabled,
             apu_trace.pulse_2.len_counter,
-            apu_trace.pulse_2.len_counter_enabled
+            apu_trace.pulse_2.len_counter_enabled,
+            apu_trace.frame_trace.irq_flag,
+            apu_trace.frame_trace.apu_cycles,
         );
 
         out

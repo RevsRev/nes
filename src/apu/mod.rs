@@ -86,6 +86,7 @@ impl APU {
         ApuTrace {
             pulse_1: self.pulse_1.borrow().trace(),
             pulse_2: self.pulse_2.borrow().trace(),
+            frame_trace: self.frame.borrow().trace(),
         }
     }
 }

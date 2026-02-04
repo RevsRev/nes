@@ -95,8 +95,6 @@ impl Tick for APU {
     fn tick(&mut self, cycles: u8) {
         for c in 0..cycles {
             let on_apu_clock_cycle = self.cpu_cycles.wrapping_add(c) % 2 == 0;
-            let frame_tick = if on_apu_clock_cycle { 1 } else { 0 };
-            self.frame.borrow_mut().tick(frame_tick);
             if on_apu_clock_cycle {
                 self.frame.borrow_mut().step();
 

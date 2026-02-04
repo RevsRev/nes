@@ -602,7 +602,7 @@ mod test {
     fn nestest_blargg_04_clock_jitter() {
         let rom = Rom::from_file("nestest/apu/04.clock_jitter.nes");
         let nes_test_log = read_file("nestest/apu/04_fceux.log");
-        should_match_fceux(rom, nes_test_log, 29890);
+        should_match_fceux(rom, nes_test_log, -1);
     }
 
     #[test]

@@ -71,7 +71,10 @@ impl APU {
     }
 
     pub fn write_to_frame_counter(&mut self, data: u8) -> u8 {
-        self.frame.borrow_mut().write(data)
+        let r = self.frame.borrow_mut().write(data);
+        let countdown = if self.cpu_cycles % 2 == 0 { 2 } else { 3 };
+        self.frame.borrow_mut().set_reset_timer_countdown(countdown);
+        r
     }
 
     pub fn output(&self) -> f32 {
@@ -94,10 +97,9 @@ impl APU {
 impl Tick for APU {
     fn tick(&mut self, cycles: u8) {
         for c in 0..cycles {
+            self.frame.borrow_mut().step(1);
             let on_apu_clock_cycle = self.cpu_cycles.wrapping_add(c) % 2 == 0;
             if on_apu_clock_cycle {
-                self.frame.borrow_mut().step();
-
                 let emit_clock = self.frame.borrow_mut().emit_clock();
 
                 match emit_clock {

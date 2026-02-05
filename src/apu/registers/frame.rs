@@ -12,13 +12,12 @@ const INTERRUPT: u8 = 0b0100_0000;
 pub struct FrameCounter {
     data: u8,
     frame_cycles: u32,
+    cpu_cycles: u64,
     written_during_cycle: bool,
     reset_timer_countdown: u64,
     clock: Option<FrameClock>,
     interrupt: Rc<RefCell<InterruptImpl>>,
     irq_flag: bool,
-
-    apu_ticks: u64,
 }
 
 pub enum FrameClock {
@@ -31,12 +30,12 @@ impl FrameCounter {
         FrameCounter {
             data: 0,
             frame_cycles: 0,
+            cpu_cycles: 0,
             written_during_cycle: false,
             reset_timer_countdown: 0,
             clock: Option::None,
             interrupt: interrupt,
             irq_flag: false,
-            apu_ticks: 0,
         }
     }
 
@@ -47,10 +46,14 @@ impl FrameCounter {
             self.set_irq_flag(false);
         }
 
-        self.reset_timer_countdown = self.apu_ticks + 1;
+        self.cpu_cycles = 0xFFFFFFFFFFFFFFFF;
 
         self.data = data;
         old_value
+    }
+
+    pub fn set_reset_timer_countdown(&mut self, countdown: u64) {
+        self.reset_timer_countdown = countdown;
     }
 
     pub fn get_data(&self) -> u8 {
@@ -68,13 +71,22 @@ impl FrameCounter {
         self.clock.take()
     }
 
-    pub fn step(&mut self) {
-        self.apu_ticks = self.apu_ticks + 1;
-        if self.apu_ticks == self.reset_timer_countdown {
+    pub fn step(&mut self, cycles: u8) {
+        if self.cpu_cycles == 0xFFFFFFFFFFFFFFFF {
+            self.cpu_cycles = 0;
+            return;
+        }
+
+        if self.cpu_cycles == self.reset_timer_countdown {
             if self.data & MODE == MODE {
                 self.clock = Option::Some(FrameClock::HALF);
             }
             self.frame_cycles = 0;
+        }
+
+        if self.cpu_cycles % 2 == 1 {
+            self.cpu_cycles = self.cpu_cycles + 1;
+            return;
         }
 
         if self.data & MODE == MODE {
@@ -82,6 +94,8 @@ impl FrameCounter {
         } else {
             self.four_step_clock()
         }
+
+        self.cpu_cycles = self.cpu_cycles + 1;
     }
 
     fn four_step_clock(&mut self) {
@@ -102,6 +116,11 @@ impl FrameCounter {
     }
 
     fn five_step_clock(&mut self) {
+        self.frame_cycles = self.frame_cycles + 1;
+        if self.frame_cycles > 18640 {
+            self.frame_cycles = 0;
+        }
+
         if self.frame_cycles == 7456 || self.frame_cycles == 18640 {
             self.clock = Option::Some(FrameClock::HALF);
         } else if self.frame_cycles == 3728
@@ -109,11 +128,6 @@ impl FrameCounter {
             || self.frame_cycles == 14914
         {
             self.clock = Option::Some(FrameClock::QUARTER);
-        }
-
-        self.frame_cycles = self.frame_cycles + 1;
-        if self.frame_cycles > 18640 {
-            self.frame_cycles = 0;
         }
     }
 

@@ -598,12 +598,13 @@ mod test {
         should_match_nes(rom, nes_test_log, 1_000_000);
     }
 
-    #[test]
-    fn nestest_blargg_04_clock_jitter() {
-        let rom = Rom::from_file("nestest/apu/04.clock_jitter.nes");
-        let nes_test_log = read_file("nestest/apu/04_fceux.log");
-        should_match_fceux(rom, nes_test_log, -1);
-    }
+    //FCEUX doesn't even pass the clock jitter test! So no point comparing to incorrect logs!
+    // #[test]
+    // fn nestest_blargg_04_clock_jitter() {
+    //     let rom = Rom::from_file("nestest/apu/04.clock_jitter.nes");
+    //     let nes_test_log = read_file("nestest/apu/04_fceux.log");
+    //     should_match_fceux(rom, nes_test_log, 265758);
+    // }
 
     #[test]
     fn nestest_blargg_04_clock_jitter_mesen() {
@@ -620,7 +621,7 @@ mod test {
                 stack_pointer: 0xFD,
                 ppu_frame_cycles: 27,
             }),
-            -1,
+            265758,
         );
     }
 

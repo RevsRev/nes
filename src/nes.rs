@@ -606,6 +606,25 @@ mod test {
     }
 
     #[test]
+    fn nestest_blargg_04_clock_jitter_mesen() {
+        let rom = Rom::from_file("nestest/apu/04.clock_jitter.nes");
+        let nes_test_log = read_file("nestest/apu/04_mesen.log");
+        should_match_mesen(
+            rom,
+            nes_test_log,
+            Some(NesInit {
+                cycles: 8,
+                register_a: 0,
+                register_x: 0,
+                status: 04,
+                stack_pointer: 0xFD,
+                ppu_frame_cycles: 27,
+            }),
+            -1,
+        );
+    }
+
+    #[test]
     fn nestest_regression_blargg_04_clock_jitter() {
         let regen_logs = std::env::var("REGEN_LOGS").is_ok();
 

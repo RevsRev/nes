@@ -11,7 +11,7 @@ const INTERRUPT: u8 = 0b0100_0000;
 
 pub struct FrameCounter {
     data: u8,
-    apu_cycles: u32,
+    frame_cycles: u32,
     written_during_cycle: bool,
     reset_timer_countdown: u64,
     clock: Option<FrameClock>,
@@ -30,7 +30,7 @@ impl FrameCounter {
     pub fn new(interrupt: Rc<RefCell<InterruptImpl>>) -> Self {
         FrameCounter {
             data: 0,
-            apu_cycles: 0,
+            frame_cycles: 0,
             written_during_cycle: false,
             reset_timer_countdown: 0,
             clock: Option::None,
@@ -74,7 +74,7 @@ impl FrameCounter {
             if self.data & MODE == MODE {
                 self.clock = Option::Some(FrameClock::HALF);
             }
-            self.apu_cycles = 0;
+            self.frame_cycles = 0;
         }
 
         if self.data & MODE == MODE {
@@ -85,39 +85,42 @@ impl FrameCounter {
     }
 
     fn four_step_clock(&mut self) {
-        self.apu_cycles = self.apu_cycles + 1;
-        if self.apu_cycles > 14914 {
-            self.apu_cycles = 0;
+        self.frame_cycles = self.frame_cycles + 1;
+        if self.frame_cycles > 14914 {
+            self.frame_cycles = 0;
         }
 
-        if self.apu_cycles == 7456 || self.apu_cycles == 14914 {
+        if self.frame_cycles == 7456 || self.frame_cycles == 14914 {
             self.clock = Option::Some(FrameClock::HALF);
-        } else if self.apu_cycles == 3728 || self.apu_cycles == 11185 {
+        } else if self.frame_cycles == 3728 || self.frame_cycles == 11185 {
             self.clock = Option::Some(FrameClock::QUARTER);
         }
 
-        if self.apu_cycles == 14914 && self.data & 0b0100_0000 == 0b0 {
+        if self.frame_cycles == 14914 && self.data & 0b0100_0000 == 0b0 {
             self.set_irq_flag(true);
         }
     }
 
     fn five_step_clock(&mut self) {
-        if self.apu_cycles == 7456 || self.apu_cycles == 18640 {
+        if self.frame_cycles == 7456 || self.frame_cycles == 18640 {
             self.clock = Option::Some(FrameClock::HALF);
-        } else if self.apu_cycles == 3728 || self.apu_cycles == 11185 || self.apu_cycles == 14914 {
+        } else if self.frame_cycles == 3728
+            || self.frame_cycles == 11185
+            || self.frame_cycles == 14914
+        {
             self.clock = Option::Some(FrameClock::QUARTER);
         }
 
-        self.apu_cycles = self.apu_cycles + 1;
-        if self.apu_cycles > 18640 {
-            self.apu_cycles = 0;
+        self.frame_cycles = self.frame_cycles + 1;
+        if self.frame_cycles > 18640 {
+            self.frame_cycles = 0;
         }
     }
 
     pub fn trace(&self) -> FrameTrace {
         FrameTrace {
             irq_flag: self.irq_flag,
-            apu_cycles: self.apu_cycles,
+            apu_cycles: self.frame_cycles,
         }
     }
 }

@@ -240,6 +240,10 @@ impl<T: Bus> MOS6502<T> for CpuV2<T> {
         self.store_trace(&opcode);
         callback(self);
 
+        if self.interrupt.borrow_mut().take_nmi() {
+            self.interrupt_nmi();
+        }
+
         if self.halt.load(Ordering::Relaxed) {
             return Ok(false);
         }
@@ -262,10 +266,6 @@ impl<T: Bus> MOS6502<T> for CpuV2<T> {
                     return Err(self.format_fatal_error(opcode, s));
                 }
             }
-        }
-
-        if self.interrupt.borrow_mut().take_nmi() {
-            self.interrupt_nmi();
         }
 
         return Ok(true);

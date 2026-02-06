@@ -41,8 +41,6 @@ impl Tick for PPU {
         self.new_frame = false;
 
         for _ in 0..cycles {
-            self.frame_cycles += 1;
-
             if self.is_sprite_0_hit(self.frame_cycles) {
                 self.status.set_sprite_0_hit(true);
             }
@@ -61,6 +59,7 @@ impl Tick for PPU {
                 self.status.set_sprite_0_hit(false);
             }
 
+            self.frame_cycles += 1;
             if self.frame_cycles == 341 {
                 self.frame_cycles = 0;
                 self.scanline += 1;

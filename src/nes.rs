@@ -774,7 +774,7 @@ mod test {
                 nes.cpu.set_register_x(init.register_x);
                 nes.cpu.set_status(init.status);
                 nes.cpu.set_stack_pointer(init.stack_pointer);
-                nes.bus.borrow_mut().ppu.frame_cycles = init.ppu_frame_cycles;
+                nes.bus.borrow_mut().ppu.frame_dots = init.ppu_frame_cycles;
             }
             None => {}
         }

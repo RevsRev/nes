@@ -28,24 +28,25 @@ pub struct PPU {
     oam_addr: u8,
     interrupt: Rc<RefCell<InterruptImpl>>,
 
-    pub frame_cycles: usize,
-    total_cycles: u64,
+    pub frame_dots: usize,
+    total_ppu_cycles: u64,
+    total_frames: u64,
     pub scanline: u16,
     pub new_frame: bool,
 }
 
 impl Tick for PPU {
     fn tick(&mut self, cycles: u8) {
-        self.total_cycles += cycles as u64;
+        self.total_ppu_cycles += cycles as u64;
         // self.frame_cycles += cycles as usize;
         self.new_frame = false;
 
         for _ in 0..cycles {
-            if self.is_sprite_0_hit(self.frame_cycles) {
+            if self.is_sprite_0_hit(self.frame_dots) {
                 self.status.set_sprite_0_hit(true);
             }
 
-            if self.scanline == 241 && self.frame_cycles == 1 {
+            if self.scanline == 241 && self.frame_dots == 1 {
                 self.status.set_vblank(true);
                 self.status.set_sprite_0_hit(false);
                 if self.ctl.generate_vblank_nmi() {
@@ -53,21 +54,31 @@ impl Tick for PPU {
                 }
             }
 
-            if self.scanline == 261 && self.frame_cycles == 1 {
+            if self.scanline == 261 && self.frame_dots == 1 {
                 self.status.set_vblank(false);
                 self.interrupt.borrow_mut().set_nmi(false);
                 self.status.set_sprite_0_hit(false);
             }
 
-            self.frame_cycles += 1;
-            if self.frame_cycles == 341 {
-                self.frame_cycles = 0;
+            self.frame_dots += 1;
+
+            if self.frame_dots == 340
+                && self.scanline == 261
+                && self.total_frames % 2 == 1
+                && self.mask.is_rendering_enabled()
+            {
+                self.frame_dots += 1;
+            }
+
+            if self.frame_dots == 341 {
+                self.frame_dots = 0;
                 self.scanline += 1;
             }
 
             if self.scanline == 262 {
                 self.scanline = 0;
                 self.new_frame = true;
+                self.total_frames = self.total_frames + 1;
             }
         }
     }
@@ -91,8 +102,9 @@ impl PPU {
             oam_addr: 0,
             interrupt: interrupt,
 
-            total_cycles: 0,
-            frame_cycles: 0,
+            total_ppu_cycles: 0,
+            total_frames: 0,
+            frame_dots: 0,
             scanline: 0,
             new_frame: false,
         }
@@ -101,7 +113,7 @@ impl PPU {
     pub fn trace(&self) -> PpuTrace {
         PpuTrace {
             scanline: self.scanline,
-            dot: self.frame_cycles as u16,
+            dot: self.frame_dots as u16,
         }
     }
 

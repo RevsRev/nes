@@ -29,6 +29,11 @@ impl MaskRegister {
     pub fn show_sprites(&self) -> bool {
         has_flag(self.value, ENABLE_SPRITE_RENDERING)
     }
+
+    pub(crate) fn is_rendering_enabled(&self) -> bool {
+        has_flag(self.value, ENABLE_SPRITE_RENDERING)
+            && has_flag(self.value, ENABLE_BACKGROUND_RENDERING)
+    }
 }
 
 fn has_flag(value: u8, flag: u8) -> bool {

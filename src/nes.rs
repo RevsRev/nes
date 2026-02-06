@@ -6,7 +6,6 @@ use std::sync::atomic::AtomicBool;
 
 use crate::apu::APU;
 use crate::bus::BusImpl;
-use crate::cpu_v1::CpuV1;
 use crate::cpu_v2::CpuV2;
 use crate::interrupt::InterruptImpl;
 use crate::io::joypad::Joypad;
@@ -28,32 +27,6 @@ pub struct NES<'call, T: Cpu<BusImpl<'call>>> {
 impl<'call, T: Cpu<BusImpl<'call>>> fmt::Display for NES<'call, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "\ncpu: {}, \nbus: {}", self.cpu, self.bus.borrow())
-    }
-}
-
-pub fn nes_with_cpu_v1<'call, F>(
-    rom: Rom,
-    halt: Arc<AtomicBool>,
-    gameloop_callback: F,
-) -> NES<'call, CpuV1<BusImpl<'call>>>
-where
-    F: FnMut(&PPU, &APU, &mut Joypad) + 'call,
-{
-    let interrupt = Rc::new(RefCell::new(InterruptImpl::new()));
-    let interrupt_cpu = interrupt.clone();
-    let bus = Rc::new(RefCell::new(BusImpl::new(
-        rom,
-        interrupt,
-        gameloop_callback,
-    )));
-    let mut cpu = CpuV1::new(Rc::clone(&bus), interrupt_cpu, halt);
-    cpu.reset();
-
-    NES {
-        cpu,
-        bus,
-        tracing: false,
-        trace: None,
     }
 }
 
@@ -123,9 +96,7 @@ mod test {
 
     use crate::apu::APU;
     use crate::bus::BusImpl;
-    use crate::cpu_v1::CpuV1;
     use crate::io::joypad::Joypad;
-    use crate::nes::nes_with_cpu_v1;
     use crate::ppu::PPU;
     use crate::rom::{self, Rom};
     use crate::trace::{

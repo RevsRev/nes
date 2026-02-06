@@ -12,13 +12,12 @@ use cpal::{
     SampleFormat,
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
-use cpu_v1::CpuV1;
 use cpu_v2::CpuV2;
 use io::{
     joypad::{BUTTON_A, BUTTON_B, DOWN, Joypad, LEFT, RIGHT, SELECT, START, UP},
     render::frame::Frame,
 };
-use nes::{NES, nes_with_cpu_v1, nes_with_cpu_v2};
+use nes::{NES, nes_with_cpu_v2};
 use ppu::PPU;
 use rom::Rom;
 use sdl2::{event::Event, keyboard::Keycode, pixels::PixelFormatEnum};
@@ -32,7 +31,6 @@ use crate::{apu::APU, io::audio::sound_frame::SoundFrame};
 
 mod apu;
 mod bus;
-mod cpu_v1;
 mod cpu_v2;
 mod interrupt;
 mod io;
@@ -189,23 +187,6 @@ fn main() {
     };
 
     let result = match args.version {
-        1 => {
-            let mut nes = nes_with_cpu_v1(rom, halt, gameloop_callback);
-            nes.set_tracing(args.trace);
-
-            nes.run_with_callback(move |nes| {
-                if !args.trace {
-                    return;
-                }
-
-                match nes.trace.as_ref() {
-                    Option::None => println!("NULL Trace"),
-                    Option::Some(s) => {
-                        println!("{}", trace_formatter.format(s))
-                    }
-                };
-            })
-        }
         2 => {
             let mut nes = nes_with_cpu_v2(rom, halt, gameloop_callback);
             nes.set_tracing(args.trace);

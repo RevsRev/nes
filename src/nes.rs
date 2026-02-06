@@ -668,6 +668,25 @@ mod test {
         );
     }
 
+    #[test]
+    fn nestest_blargg_07_irq_flag_timing_mesen() {
+        let rom = Rom::from_file("nestest/apu/07.irq_flag_timing.nes");
+        let nes_test_log = read_file("nestest/apu/07_mesen.log");
+        should_match_mesen(
+            rom,
+            nes_test_log,
+            Some(NesInit {
+                cycles: 8,
+                register_a: 0,
+                register_x: 0,
+                status: 04,
+                stack_pointer: 0xFD,
+                ppu_frame_cycles: 27,
+            }),
+            -1,
+        );
+    }
+
     fn write_nes_logs(rom_path: &str, out_path: &str, max_cycles: i64) {
         let file = File::create(out_path).expect("failed to create log file");
         let writer = RefCell::new(BufWriter::new(file));

@@ -1,5 +1,5 @@
 use crate::interrupt::{Interrupt, InterruptImpl};
-use crate::opp::{AddressingMode, OpCode};
+use crate::opp::{AddressingMode, OpCode, OpCodeBehaviour};
 use crate::trace::{CpuTrace, CpuTraceFormatOptions, CpuTraceFormatter};
 use crate::traits::bus::Bus;
 use crate::traits::cpu::Cpu;
@@ -30,7 +30,6 @@ pub struct CpuV2<T: Bus> {
     bus: Rc<RefCell<T>>,
 
     interrupt: Rc<RefCell<InterruptImpl>>,
-    dummy_read: Option<(u16, u8)>,
 
     //tracing info
     trace: Option<CpuTrace>,
@@ -384,20 +383,9 @@ impl<T: Bus> Tracing for CpuV2<T> {
 
 impl<T: Bus> Mem for CpuV2<T> {
     fn mem_read(&mut self, addr: u16) -> Result<u8, std::string::String> {
-        let read = match self.dummy_read.take() {
-            None => {
-                self.tick(1);
-                self.bus.borrow_mut().mem_read(addr)?
-            }
-            Some((dummy_addr, r)) => {
-                if dummy_addr == addr {
-                    r
-                } else {
-                    self.tick(1); //not sure if we want a tick here?
-                    self.bus.borrow_mut().mem_read(addr)?
-                }
-            }
-        };
+        self.tick(1);
+        let read = self.bus.borrow_mut().mem_read(addr)?;
+
         self.reads.push((addr, read));
         Result::Ok(read)
     }
@@ -442,7 +430,6 @@ impl<T: Bus> fmt::Display for CpuV2<T> {
 
 impl<T: Bus> Tick for CpuV2<T> {
     fn tick(&mut self, cycles: u8) {
-        self.dummy_read = None;
         self.total_cycles += cycles as u64;
         self.bus.borrow_mut().tick(cycles);
     }
@@ -463,7 +450,6 @@ impl<T: Bus> CpuV2<T> {
             stack_pointer: STACK_RESET,
             bus: bus,
             interrupt: interrupt,
-            dummy_read: None,
             trace: Option::None,
             trace_cycles: 0,
             trace_pc: 0,
@@ -506,12 +492,6 @@ impl<T: Bus> CpuV2<T> {
         self.trace_reg_y = 0;
     }
 
-    fn dummy_read(&mut self, addr: u16) -> Result<u8, std::string::String> {
-        let read = self.bus.borrow_mut().mem_read(addr)?;
-        self.tick(1);
-        self.dummy_read = Some((addr, read));
-        Result::Ok(read)
-    }
     fn format_fatal_error(&mut self, opcode: &&OpCode, s: String) -> String {
         let registers_and_pointers = format!(
             "A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}",
@@ -643,14 +623,12 @@ impl<T: Bus> CpuV2<T> {
                 let base = self.mem_read_u16(self.program_counter)?;
                 self.program_counter = self.program_counter + 2;
 
-                self.dummy_read(
-                    (base & 0xFF00) | (base.wrapping_add(self.register_x as u16) & 0x00FF),
-                )?;
-
                 let addr = base.wrapping_add(self.register_x as u16);
 
-                if Self::page_boundary_crossed(base, addr) {
-                    self.dummy_read(addr)?;
+                if Self::page_boundary_crossed(base, addr)
+                    || opcode.behaviour == OpCodeBehaviour::MemoryWrite
+                {
+                    self.mem_read(addr)?;
                 }
                 addr
             }
@@ -658,16 +636,13 @@ impl<T: Bus> CpuV2<T> {
                 let base = self.mem_read_u16(self.program_counter)?;
                 self.program_counter = self.program_counter + 2;
 
-                //dummy read
-                self.dummy_read(
-                    (base & 0xFF00) | (base.wrapping_add(self.register_y as u16) & 0x00FF),
-                )?;
-
                 let addr = base.wrapping_add(self.register_y as u16);
 
-                if Self::page_boundary_crossed(base, addr) {
+                if Self::page_boundary_crossed(base, addr)
+                    || opcode.behaviour == OpCodeBehaviour::MemoryWrite
+                {
                     //dummy read correct address
-                    self.dummy_read(addr)?;
+                    self.mem_read(addr)?;
                 }
                 addr
             }
@@ -675,8 +650,7 @@ impl<T: Bus> CpuV2<T> {
                 let base = self.mem_read(self.program_counter)?;
                 self.program_counter = self.program_counter + 1;
                 let ptr: u8 = base.wrapping_add(self.register_x);
-                self.dummy_read(ptr as u16)?;
-                self.dummy_read = None; //We want this dummy to consume a cycle
+                self.mem_read(ptr as u16)?;
                 let lo = self.mem_read(ptr as u16)?;
                 let hi = self.mem_read(ptr.wrapping_add(1) as u16)?;
                 (hi as u16) << 8 | (lo as u16)
@@ -687,13 +661,13 @@ impl<T: Bus> CpuV2<T> {
                 let lo = self.mem_read(base as u16)?;
                 let hi = self.mem_read(base.wrapping_add(1) as u16)?;
 
-                self.dummy_read((lo as u16).add(self.register_y as u16))?;
-
                 let deref_base = (hi as u16) << 8 | (lo as u16);
                 let deref = deref_base.wrapping_add(self.register_y as u16);
 
-                if Self::page_boundary_crossed(deref, deref_base) {
-                    self.dummy_read(deref)?;
+                if Self::page_boundary_crossed(deref, deref_base)
+                    || opcode.behaviour == OpCodeBehaviour::MemoryWrite
+                {
+                    self.mem_read(deref)?;
                 }
                 deref
             }
@@ -845,7 +819,6 @@ impl<T: Bus> CpuV2<T> {
         }
 
         let addr = self.evaluate_operand_at_address(opcode)?;
-        self.dummy_read = None;
         let old = self.mem_read(addr)?;
 
         let value = old << 1;
@@ -1046,7 +1019,6 @@ impl<T: Bus> CpuV2<T> {
 
     fn dec(&mut self, opcode: &OpCode) -> Result<(), String> {
         let address = self.evaluate_operand_at_address(opcode)?;
-        self.dummy_read = None;
         let value = self.mem_read(address)?;
 
         self.mem_write(address, value)?; //dummy write
@@ -1065,7 +1037,6 @@ impl<T: Bus> CpuV2<T> {
 
     fn dcp(&mut self, opcode: &OpCode) -> Result<(), String> {
         let address = self.evaluate_operand_at_address(opcode)?;
-        self.dummy_read = None;
         let value = self.mem_read(address)?;
 
         let sub = value.wrapping_sub(1);
@@ -1140,7 +1111,6 @@ impl<T: Bus> CpuV2<T> {
 
     fn inc(&mut self, opcode: &OpCode) -> Result<(), String> {
         let address = self.evaluate_operand_at_address(opcode)?;
-        self.dummy_read = None;
         let value = self.mem_read(address)?.wrapping_add(1);
         self.mem_write(address, value)?;
         self.tick(1);
@@ -1189,7 +1159,6 @@ impl<T: Bus> CpuV2<T> {
 
     fn isb(&mut self, opcode: &OpCode) -> Result<(), String> {
         let address = self.evaluate_operand_at_address(opcode)?;
-        self.dummy_read = None;
         let value = self.mem_read(address)?.wrapping_add(1);
         self.mem_write(address, value)?;
         self.tick(1); //dummy write
@@ -1332,7 +1301,6 @@ impl<T: Bus> CpuV2<T> {
         }
 
         let addr = self.evaluate_operand_at_address(opcode)?;
-        self.dummy_read = None;
         let old = self.mem_read(addr)?;
 
         let value = old >> 1;
@@ -1445,7 +1413,6 @@ impl<T: Bus> CpuV2<T> {
         }
 
         let address = self.evaluate_operand_at_address(opcode)?;
-        self.dummy_read = None;
         let old_value = self.mem_read(address)?;
         let carry = Self::get_flag(self.status, CARRY_FLAG);
 
@@ -1488,7 +1455,6 @@ impl<T: Bus> CpuV2<T> {
         }
 
         let address = self.evaluate_operand_at_address(opcode)?;
-        self.dummy_read = None;
         let old_value = self.mem_read(address)?;
         let carry = Self::get_flag(self.status, CARRY_FLAG);
 
@@ -1511,7 +1477,6 @@ impl<T: Bus> CpuV2<T> {
 
     fn rla(&mut self, opcode: &OpCode) -> Result<(), String> {
         let address = self.evaluate_operand_at_address(opcode)?;
-        self.dummy_read = None;
         let orig_value = self.mem_read(address)?;
         let value = (orig_value << 1) | (self.status & CARRY_FLAG);
 
@@ -1533,7 +1498,6 @@ impl<T: Bus> CpuV2<T> {
 
     fn rra(&mut self, opcode: &OpCode) -> Result<(), String> {
         let address = self.evaluate_operand_at_address(opcode)?;
-        self.dummy_read = None;
         let orig_value = self.mem_read(address)?;
 
         let should_carry = Self::get_flag(orig_value, CARRY_FLAG);
@@ -1677,7 +1641,6 @@ impl<T: Bus> CpuV2<T> {
 
     fn slo(&mut self, opcode: &OpCode) -> Result<(), String> {
         let address = self.evaluate_operand_at_address(opcode)?;
-        self.dummy_read = None;
         let original = self.mem_read(address)?;
         let value = original << 1;
         self.mem_write(address, value)?;
@@ -1698,7 +1661,6 @@ impl<T: Bus> CpuV2<T> {
 
     fn sre(&mut self, opcode: &OpCode) -> Result<(), String> {
         let address = self.evaluate_operand_at_address(opcode)?;
-        self.dummy_read = None;
         let original = self.mem_read(address)?;
         let value = original >> 1;
 

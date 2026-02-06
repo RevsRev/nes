@@ -31,7 +31,7 @@ pub struct OpCode {
     pub behaviour: OpCodeBehaviour,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub enum OpCodeBehaviour {
     ControlFlow,
     MemoryRead,
@@ -91,10 +91,10 @@ lazy_static! {
         OpCode::new(0x31, "AND", 2, 5 /*+1 if page is crossed*/, AddressingMode::Indirect_Y, OpCodeBehaviour::MemoryRead),
 
         OpCode::new(0x0A, "ASL", 1, 2, AddressingMode::Accumulator, OpCodeBehaviour::NoMemoryAccess),
-        OpCode::new(0x06, "ASL", 2, 5, AddressingMode::ZeroPage, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0x16, "ASL", 2, 6, AddressingMode::ZeroPage_X, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0x0E, "ASL", 3, 6, AddressingMode::Absolute, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0x1E, "ASL", 3, 7, AddressingMode::Absolute_X, OpCodeBehaviour::MemoryRead),
+        OpCode::new(0x06, "ASL", 2, 5, AddressingMode::ZeroPage, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0x16, "ASL", 2, 6, AddressingMode::ZeroPage_X, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0x0E, "ASL", 3, 6, AddressingMode::Absolute, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0x1E, "ASL", 3, 7, AddressingMode::Absolute_X, OpCodeBehaviour::MemoryWrite),
 
         OpCode::new(0x90, "BCC", 2, 2 /*+1 if branch succeeds, +2 if to a new page*/, AddressingMode::Relative, OpCodeBehaviour::NoMemoryAccess),
 
@@ -142,10 +142,10 @@ lazy_static! {
         OpCode::new(0xC4, "CPY", 2, 3, AddressingMode::ZeroPage, OpCodeBehaviour::MemoryRead),
         OpCode::new(0xCC, "CPY", 3, 4, AddressingMode::Absolute, OpCodeBehaviour::MemoryRead),
 
-        OpCode::new(0xC6, "DEC", 2, 5, AddressingMode::ZeroPage, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0xD6, "DEC", 2, 6, AddressingMode::ZeroPage_X, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0xCE, "DEC", 3, 6, AddressingMode::Absolute, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0xDE, "DEC", 3, 7, AddressingMode::Absolute_X, OpCodeBehaviour::MemoryRead),
+        OpCode::new(0xC6, "DEC", 2, 5, AddressingMode::ZeroPage, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0xD6, "DEC", 2, 6, AddressingMode::ZeroPage_X, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0xCE, "DEC", 3, 6, AddressingMode::Absolute, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0xDE, "DEC", 3, 7, AddressingMode::Absolute_X, OpCodeBehaviour::MemoryWrite),
 
         OpCode::new(0xC7, "*DCP", 2, 5, AddressingMode::ZeroPage, OpCodeBehaviour::MemoryWrite),
         OpCode::new(0xD7, "*DCP", 2, 6, AddressingMode::ZeroPage_X, OpCodeBehaviour::MemoryWrite),
@@ -168,22 +168,22 @@ lazy_static! {
         OpCode::new(0x41, "EOR", 2, 6, AddressingMode::Indirect_X, OpCodeBehaviour::MemoryRead),
         OpCode::new(0x51, "EOR", 2, 5 /*+1 if page is crossed*/, AddressingMode::Indirect_Y, OpCodeBehaviour::MemoryRead),
 
-        OpCode::new(0xE6, "INC", 2, 5, AddressingMode::ZeroPage, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0xF6, "INC", 2, 6, AddressingMode::ZeroPage_X, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0xEE, "INC", 3, 6, AddressingMode::Absolute, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0xFE, "INC", 3, 7, AddressingMode::Absolute_X, OpCodeBehaviour::MemoryRead),
+        OpCode::new(0xE6, "INC", 2, 5, AddressingMode::ZeroPage, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0xF6, "INC", 2, 6, AddressingMode::ZeroPage_X, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0xEE, "INC", 3, 6, AddressingMode::Absolute, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0xFE, "INC", 3, 7, AddressingMode::Absolute_X, OpCodeBehaviour::MemoryWrite),
 
         OpCode::new(0xE8, "INX", 1, 2, AddressingMode::Implied, OpCodeBehaviour::NoMemoryAccess),
 
         OpCode::new(0xC8, "INY", 1, 2, AddressingMode::Implied, OpCodeBehaviour::NoMemoryAccess),
 
-        OpCode::new(0xE7, "*ISB", 2, 5, AddressingMode::ZeroPage, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0xF7, "*ISB", 2, 6, AddressingMode::ZeroPage_X, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0xEF, "*ISB", 3, 6, AddressingMode::Absolute, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0xFF, "*ISB", 3, 7, AddressingMode::Absolute_X, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0xFB, "*ISB", 3, 7, AddressingMode::Absolute_Y, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0xE3, "*ISB", 2, 8, AddressingMode::Indirect_X, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0xF3, "*ISB", 2, 8, AddressingMode::Indirect_Y, OpCodeBehaviour::MemoryRead),
+        OpCode::new(0xE7, "*ISB", 2, 5, AddressingMode::ZeroPage, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0xF7, "*ISB", 2, 6, AddressingMode::ZeroPage_X, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0xEF, "*ISB", 3, 6, AddressingMode::Absolute, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0xFF, "*ISB", 3, 7, AddressingMode::Absolute_X, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0xFB, "*ISB", 3, 7, AddressingMode::Absolute_Y, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0xE3, "*ISB", 2, 8, AddressingMode::Indirect_X, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0xF3, "*ISB", 2, 8, AddressingMode::Indirect_Y, OpCodeBehaviour::MemoryWrite),
 
         OpCode::new(0x4C, "JMP", 3, 3, AddressingMode::Absolute, OpCodeBehaviour::ControlFlow),
         OpCode::new(0x6C, "JMP", 3, 5, AddressingMode::Indirect, OpCodeBehaviour::MemoryRead),
@@ -219,10 +219,10 @@ lazy_static! {
         OpCode::new(0xBC, "LDY", 3, 4 /*+1 if page is crossed*/, AddressingMode::Absolute_X, OpCodeBehaviour::MemoryRead),
 
         OpCode::new(0x4A, "LSR", 1, 2, AddressingMode::Accumulator, OpCodeBehaviour::NoMemoryAccess),
-        OpCode::new(0x46, "LSR", 2, 5, AddressingMode::ZeroPage, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0x56, "LSR", 2, 6, AddressingMode::ZeroPage_X, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0x4E, "LSR", 3, 6, AddressingMode::Absolute, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0x5E, "LSR", 3, 7, AddressingMode::Absolute_X, OpCodeBehaviour::MemoryRead),
+        OpCode::new(0x46, "LSR", 2, 5, AddressingMode::ZeroPage, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0x56, "LSR", 2, 6, AddressingMode::ZeroPage_X, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0x4E, "LSR", 3, 6, AddressingMode::Absolute, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0x5E, "LSR", 3, 7, AddressingMode::Absolute_X, OpCodeBehaviour::MemoryWrite),
 
         OpCode::new(0xEA, "NOP", 1, 2, AddressingMode::Implied, OpCodeBehaviour::MemoryRead),
         OpCode::new(0x1A, "*NOP", 1, 2, AddressingMode::Implied, OpCodeBehaviour::MemoryRead),
@@ -276,16 +276,16 @@ lazy_static! {
         OpCode::new(0x28, "PLP", 1, 4, AddressingMode::Implied, OpCodeBehaviour::NoMemoryAccess),
 
         OpCode::new(0x2A, "ROL", 1, 2, AddressingMode::Accumulator, OpCodeBehaviour::NoMemoryAccess),
-        OpCode::new(0x26, "ROL", 2, 5, AddressingMode::ZeroPage, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0x36, "ROL", 2, 6, AddressingMode::ZeroPage_X, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0x2E, "ROL", 3, 6, AddressingMode::Absolute, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0x3E, "ROL", 3, 7, AddressingMode::Absolute_X, OpCodeBehaviour::MemoryRead),
+        OpCode::new(0x26, "ROL", 2, 5, AddressingMode::ZeroPage, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0x36, "ROL", 2, 6, AddressingMode::ZeroPage_X, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0x2E, "ROL", 3, 6, AddressingMode::Absolute, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0x3E, "ROL", 3, 7, AddressingMode::Absolute_X, OpCodeBehaviour::MemoryWrite),
 
         OpCode::new(0x6A, "ROR", 1, 2, AddressingMode::Accumulator, OpCodeBehaviour::NoMemoryAccess),
-        OpCode::new(0x66, "ROR", 2, 5, AddressingMode::ZeroPage, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0x76, "ROR", 2, 6, AddressingMode::ZeroPage_X, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0x6E, "ROR", 3, 6, AddressingMode::Absolute, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0x7E, "ROR", 3, 7, AddressingMode::Absolute_X, OpCodeBehaviour::MemoryRead),
+        OpCode::new(0x66, "ROR", 2, 5, AddressingMode::ZeroPage, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0x76, "ROR", 2, 6, AddressingMode::ZeroPage_X, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0x6E, "ROR", 3, 6, AddressingMode::Absolute, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0x7E, "ROR", 3, 7, AddressingMode::Absolute_X, OpCodeBehaviour::MemoryWrite),
 
         OpCode::new(0x27, "*RLA", 2, 5, AddressingMode::ZeroPage, OpCodeBehaviour::MemoryWrite),
         OpCode::new(0x37, "*RLA", 2, 6, AddressingMode::ZeroPage_X, OpCodeBehaviour::MemoryWrite),
@@ -329,13 +329,13 @@ lazy_static! {
 
         OpCode::new(0x78, "SEI", 1, 2, AddressingMode::Implied, OpCodeBehaviour::NoMemoryAccess),
 
-        OpCode::new(0x07, "*SLO", 2, 5, AddressingMode::ZeroPage, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0x17, "*SLO", 2, 6, AddressingMode::ZeroPage_X, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0x0F, "*SLO", 3, 6, AddressingMode::Absolute, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0x1F, "*SLO", 3, 7, AddressingMode::Absolute_X, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0x1B, "*SLO", 3, 7, AddressingMode::Absolute_Y, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0x03, "*SLO", 2, 8, AddressingMode::Indirect_X, OpCodeBehaviour::MemoryRead),
-        OpCode::new(0x13, "*SLO", 2, 8, AddressingMode::Indirect_Y, OpCodeBehaviour::MemoryRead),
+        OpCode::new(0x07, "*SLO", 2, 5, AddressingMode::ZeroPage, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0x17, "*SLO", 2, 6, AddressingMode::ZeroPage_X, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0x0F, "*SLO", 3, 6, AddressingMode::Absolute, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0x1F, "*SLO", 3, 7, AddressingMode::Absolute_X, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0x1B, "*SLO", 3, 7, AddressingMode::Absolute_Y, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0x03, "*SLO", 2, 8, AddressingMode::Indirect_X, OpCodeBehaviour::MemoryWrite),
+        OpCode::new(0x13, "*SLO", 2, 8, AddressingMode::Indirect_Y, OpCodeBehaviour::MemoryWrite),
 
         OpCode::new(0x47, "*SRE", 2, 5, AddressingMode::ZeroPage, OpCodeBehaviour::MemoryWrite),
         OpCode::new(0x57, "*SRE", 2, 6, AddressingMode::ZeroPage_X, OpCodeBehaviour::MemoryWrite),

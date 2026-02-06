@@ -328,10 +328,11 @@ impl CpuTraceFormatter {
             }
             AddressingMode::Indirect_X => {
                 let first_read = cpu_trace.reads[0 + self.options.reads_offset as usize].1;
+                let dummy_cycle = if self.options.reads_offset == 1 { 1 } else { 0 };
                 let read_value = match cpu_trace.op_code.behaviour {
                     OpCodeBehaviour::MemoryWrite => cpu_trace.writes[0].1,
                     OpCodeBehaviour::MemoryRead => {
-                        cpu_trace.reads[3 + self.options.reads_offset as usize].1
+                        cpu_trace.reads[3 + dummy_cycle + self.options.reads_offset as usize].1
                     }
                     _ => 0,
                 };

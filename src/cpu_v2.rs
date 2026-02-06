@@ -237,6 +237,23 @@ impl<T: Bus> MOS6502<T> for CpuV2<T> {
             }
         }
 
+        let oam_stall = self.interrupt.borrow().poll_oam_data();
+        match oam_stall {
+            Some(page_hi) => {
+                self.tick(1);
+                //oam started on an odd cycle (tick made it even)
+                if self.total_cycles % 2 == 0 {
+                    self.tick(1);
+                }
+                for i in 0..256 {
+                    let value = self.mem_read(((page_hi as u16) << 8) | i)?;
+                    self.mem_write(0x4014, value)?;
+                }
+                self.interrupt.borrow_mut().take_oam_data();
+            }
+            None => {}
+        }
+
         self.store_trace(&opcode);
         callback(self);
 

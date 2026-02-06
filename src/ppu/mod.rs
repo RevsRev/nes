@@ -240,12 +240,16 @@ impl PPU {
         self.scroll.write(value)
     }
 
-    pub fn write_to_oam_dma(&mut self, data: &[u8; 256]) -> u8 {
-        for x in data.iter() {
-            self.oam_data[self.oam_addr as usize] = *x;
-            self.oam_addr = self.oam_addr.wrapping_add(1);
+    pub fn write_to_oam_dma(&mut self, data: u8) -> u8 {
+        if self.interrupt.borrow().poll_oam_data().is_none() {
+            self.interrupt.borrow_mut().set_oam_data(data);
+            return 0;
         }
-        0
+
+        let old = self.oam_data[self.oam_addr as usize];
+        self.oam_data[self.oam_addr as usize] = data;
+        self.oam_addr = self.oam_addr.wrapping_add(1);
+        old
     }
 
     pub fn is_sprite_0_hit(&self, cycle: usize) -> bool {
@@ -481,7 +485,11 @@ pub mod test {
         data[255] = 0x88;
 
         ppu.write_to_oam_addr(0x10);
-        ppu.write_to_oam_dma(&data);
+        ppu.write_to_oam_dma(0x00);
+
+        for i in 0..256 {
+            ppu.write_to_oam_dma(data[i]);
+        }
 
         ppu.write_to_oam_addr(0xf); //wrap around
         assert_eq!(ppu.read_oam_data(), 0x88);

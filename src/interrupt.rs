@@ -10,12 +10,18 @@ pub trait Interrupt {
     fn poll_irq(&mut self) -> bool;
     fn take_irq(&mut self) -> bool;
     fn set_irq(&mut self, state: bool);
+
+    //bastardising slightly for oamdata handling :(
+    fn poll_oam_data(&self) -> Option<u8>;
+    fn take_oam_data(&mut self) -> Option<u8>;
+    fn set_oam_data(&mut self, hi_byte: u8);
 }
 
 pub struct InterruptImpl {
     nmi_interrupt: Option<u8>,
     dmc_interrupt: Option<u8>,
     irq_interrupt: Option<u8>,
+    oam_data: Option<u8>,
 }
 
 impl Interrupt for InterruptImpl {
@@ -67,6 +73,18 @@ impl Interrupt for InterruptImpl {
             self.irq_interrupt = None;
         }
     }
+
+    fn poll_oam_data(&self) -> Option<u8> {
+        self.oam_data
+    }
+
+    fn set_oam_data(&mut self, hi_byte: u8) {
+        self.oam_data = Some(hi_byte);
+    }
+
+    fn take_oam_data(&mut self) -> Option<u8> {
+        self.oam_data.take()
+    }
 }
 
 impl InterruptImpl {
@@ -75,6 +93,7 @@ impl InterruptImpl {
             nmi_interrupt: None,
             dmc_interrupt: None,
             irq_interrupt: None,
+            oam_data: None,
         }
     }
 }

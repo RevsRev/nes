@@ -198,13 +198,7 @@ impl<'a> Mem for BusImpl<'a> {
 
             // https://wiki.nesdev.com/w/index.php/PPU_programmer_reference#OAM_DMA_.28.244014.29_.3E_write
             0x4014 => {
-                let mut buffer: [u8; 256] = [0; 256];
-                let hi: u16 = (data as u16) << 8;
-                for i in 0..256u16 {
-                    buffer[i as usize] = self.mem_read(hi + i)?;
-                }
-
-                Result::Ok(self.ppu.write_to_oam_dma(&buffer))
+                Result::Ok(self.ppu.write_to_oam_dma(data))
 
                 // todo: handle this eventually
                 // let add_cycles: u16 = if self.cycles % 2 == 1 { 514 } else { 513 };

@@ -581,19 +581,9 @@ impl<T: Bus> CpuV2<T> {
                 addr
             }
             AddressingMode::Relative => {
-                let begin = self.program_counter;
                 let value = self.mem_read(self.program_counter)? as i8;
-                let addr = self
-                    .program_counter
-                    .wrapping_add(1)
-                    .wrapping_add(value as u16);
-
                 self.program_counter = self.program_counter + 1;
-                if Self::page_boundary_crossed(begin, addr) {
-                    self.tick(1);
-                }
-
-                addr
+                self.program_counter.wrapping_add(value as u16)
             }
             AddressingMode::ZeroPage => {
                 let addr = self.mem_read(self.program_counter)? as u16;
@@ -848,7 +838,9 @@ impl<T: Bus> CpuV2<T> {
         if Self::get_flag(self.status, CARRY_FLAG) {
             return Result::Ok(());
         }
-
+        if Self::page_boundary_crossed(self.program_counter, eval) {
+            self.tick(1);
+        }
         self.tick(1);
         self.program_counter = eval;
         Result::Ok(())
@@ -860,7 +852,9 @@ impl<T: Bus> CpuV2<T> {
         if !Self::get_flag(self.status, CARRY_FLAG) {
             return Result::Ok(());
         }
-
+        if Self::page_boundary_crossed(self.program_counter, eval) {
+            self.tick(1);
+        }
         self.tick(1);
 
         self.program_counter = eval;
@@ -873,7 +867,9 @@ impl<T: Bus> CpuV2<T> {
         if !Self::get_flag(self.status, ZERO_FLAG) {
             return Result::Ok(());
         }
-
+        if Self::page_boundary_crossed(self.program_counter, eval) {
+            self.tick(1);
+        }
         self.tick(1);
 
         self.program_counter = eval;
@@ -899,7 +895,9 @@ impl<T: Bus> CpuV2<T> {
         if !Self::get_flag(self.status, NEGATIVE_FLAG) {
             return Result::Ok(());
         }
-
+        if Self::page_boundary_crossed(self.program_counter, eval) {
+            self.tick(1);
+        }
         self.tick(1);
         self.program_counter = eval;
         Result::Ok(())
@@ -910,6 +908,10 @@ impl<T: Bus> CpuV2<T> {
 
         if Self::get_flag(self.status, ZERO_FLAG) {
             return Result::Ok(());
+        }
+
+        if Self::page_boundary_crossed(self.program_counter, eval) {
+            self.tick(1);
         }
 
         self.tick(1);
@@ -923,6 +925,9 @@ impl<T: Bus> CpuV2<T> {
         if Self::get_flag(self.status, NEGATIVE_FLAG) {
             return Result::Ok(());
         }
+        if Self::page_boundary_crossed(self.program_counter, eval) {
+            self.tick(1);
+        }
 
         self.tick(1);
         self.program_counter = eval;
@@ -935,7 +940,9 @@ impl<T: Bus> CpuV2<T> {
         if Self::get_flag(self.status, OVERFLOW_FLAG) {
             return Result::Ok(());
         }
-
+        if Self::page_boundary_crossed(self.program_counter, eval) {
+            self.tick(1);
+        }
         self.tick(1);
         self.program_counter = eval;
         Result::Ok(())
@@ -947,7 +954,9 @@ impl<T: Bus> CpuV2<T> {
         if !Self::get_flag(self.status, OVERFLOW_FLAG) {
             return Result::Ok(());
         }
-
+        if Self::page_boundary_crossed(self.program_counter, eval) {
+            self.tick(1);
+        }
         self.tick(1);
         self.program_counter = eval;
         Result::Ok(())

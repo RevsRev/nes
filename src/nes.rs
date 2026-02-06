@@ -522,6 +522,23 @@ mod test {
         should_match_mesen(rom, nes_test_log, Some(nes_init), -1);
     }
 
+    #[test]
+    fn nestest_ppu_scroll() {
+        let rom = Rom::from_file("nestest/ppu/scroll.nes");
+        let nes_test_log = read_file("nestest/ppu/scroll.log");
+
+        let nes_init = NesInit {
+            cycles: 8,
+            register_a: 0x1A,
+            register_x: 0,
+            status: 0x05,
+            stack_pointer: 0xEF,
+            ppu_frame_cycles: 27,
+        };
+
+        should_match_mesen(rom, nes_test_log, Some(nes_init), -1);
+    }
+
     /*
      * BLARGG APU TESTS
      */

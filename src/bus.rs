@@ -213,10 +213,13 @@ impl<'a> Mem for BusImpl<'a> {
 
             PRG_RAM_START..=PRG_RAM_END => Result::Ok(self.write_prg_ram(addr, data)),
 
-            ROM_START..=ROM_END => Result::Err(format!(
-                "Attempt to write to Cartridge in ROM space at addr: {:#04X}",
-                addr
-            )),
+            //ignore writes to rom
+            // ROM_START..=ROM_END => Result::Err(format!(
+            //     "Attempt to write to Cartridge in ROM space at addr: {:#04X}",
+            //     addr
+            // )),
+            ROM_START..=ROM_END => Ok(0),
+
             _ => {
                 println!("Ignoring mem write-access at {:#04x}", addr);
                 Result::Ok(0)

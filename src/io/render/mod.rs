@@ -6,6 +6,9 @@ use crate::{ppu::PPU, rom::Mirroring};
 pub mod frame;
 pub mod palette;
 
+pub const WIDTH: usize = 256;
+pub const HEIGHT: usize = 240;
+
 struct Rect {
     x1: usize,
     y1: usize,
@@ -50,7 +53,7 @@ fn render_background(frame: &mut Frame, ppu: &PPU) {
         frame,
         ppu,
         main_nametable,
-        Rect::new(scroll_x, scroll_y, 256, 240),
+        Rect::new(scroll_x, scroll_y, WIDTH, HEIGHT),
         -(scroll_x as isize),
         -(scroll_y as isize),
     );
@@ -60,7 +63,7 @@ fn render_background(frame: &mut Frame, ppu: &PPU) {
             frame,
             ppu,
             second_nametable,
-            Rect::new(0, 0, scroll_x, 240),
+            Rect::new(0, 0, scroll_x, HEIGHT),
             (256 - scroll_x) as isize,
             0,
         );
@@ -69,7 +72,7 @@ fn render_background(frame: &mut Frame, ppu: &PPU) {
             frame,
             ppu,
             second_nametable,
-            Rect::new(0, 0, 256, scroll_y),
+            Rect::new(0, 0, WIDTH, scroll_y),
             0,
             (240 - scroll_y) as isize,
         );

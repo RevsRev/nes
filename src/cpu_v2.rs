@@ -88,124 +88,124 @@ impl<T: Bus> MOS6502<T> for CpuV2<T> {
         })?;
 
         let execution_result: Result<(), String> = match opcode.code {
-            0x69 | 0x65 | 0x75 | 0x6D | 0x7D | 0x79 | 0x61 | 0x71 => self.adc(&opcode.mode),
+            0x69 | 0x65 | 0x75 | 0x6D | 0x7D | 0x79 | 0x61 | 0x71 => self.adc(&opcode),
 
-            0x29 | 0x25 | 0x35 | 0x2D | 0x3D | 0x39 | 0x21 | 0x31 => self.and(&opcode.mode),
+            0x29 | 0x25 | 0x35 | 0x2D | 0x3D | 0x39 | 0x21 | 0x31 => self.and(&opcode),
 
-            0x0A | 0x06 | 0x16 | 0x0E | 0x1E => self.asl(&opcode.mode),
+            0x0A | 0x06 | 0x16 | 0x0E | 0x1E => self.asl(&opcode),
 
-            0x90 => self.bcc(&opcode.mode),
+            0x90 => self.bcc(&opcode),
 
-            0xB0 => self.bcs(&opcode.mode),
+            0xB0 => self.bcs(&opcode),
 
-            0xF0 => self.beq(&opcode.mode),
+            0xF0 => self.beq(&opcode),
 
-            0x24 | 0x2C => self.bit(&opcode.mode),
+            0x24 | 0x2C => self.bit(&opcode),
 
-            0x30 => self.bmi(&opcode.mode),
+            0x30 => self.bmi(&opcode),
 
-            0xD0 => self.bne(&opcode.mode),
+            0xD0 => self.bne(&opcode),
 
-            0x10 => self.bpl(&opcode.mode),
+            0x10 => self.bpl(&opcode),
 
-            0x50 => self.bvc(&opcode.mode),
+            0x50 => self.bvc(&opcode),
 
-            0x70 => self.bvs(&opcode.mode),
+            0x70 => self.bvs(&opcode),
 
-            0x18 => self.clc(&opcode.mode),
+            0x18 => self.clc(&opcode),
 
-            0xD8 => self.cld(&opcode.mode),
+            0xD8 => self.cld(&opcode),
 
-            0x58 => self.cli(&opcode.mode),
+            0x58 => self.cli(&opcode),
 
-            0xB8 => self.clv(&opcode.mode),
+            0xB8 => self.clv(&opcode),
 
-            0xC9 | 0xC5 | 0xD5 | 0xCD | 0xDD | 0xD9 | 0xC1 | 0xD1 => self.cmp(&opcode.mode),
+            0xC9 | 0xC5 | 0xD5 | 0xCD | 0xDD | 0xD9 | 0xC1 | 0xD1 => self.cmp(&opcode),
 
-            0xE0 | 0xE4 | 0xEC => self.cpx(&opcode.mode),
+            0xE0 | 0xE4 | 0xEC => self.cpx(&opcode),
 
-            0xC0 | 0xC4 | 0xCC => self.cpy(&opcode.mode),
+            0xC0 | 0xC4 | 0xCC => self.cpy(&opcode),
 
-            0xC6 | 0xD6 | 0xCE | 0xDE => self.dec(&opcode.mode),
+            0xC6 | 0xD6 | 0xCE | 0xDE => self.dec(&opcode),
 
-            0xC7 | 0xD7 | 0xCF | 0xDF | 0xDB | 0xC3 | 0xD3 => self.dcp(&opcode.mode),
+            0xC7 | 0xD7 | 0xCF | 0xDF | 0xDB | 0xC3 | 0xD3 => self.dcp(&opcode),
 
-            0xCA => self.dex(&opcode.mode),
+            0xCA => self.dex(&opcode),
 
-            0x88 => self.dey(&opcode.mode),
+            0x88 => self.dey(&opcode),
 
-            0x49 | 0x45 | 0x55 | 0x4D | 0x5D | 0x59 | 0x41 | 0x51 => self.eor(&opcode.mode),
+            0x49 | 0x45 | 0x55 | 0x4D | 0x5D | 0x59 | 0x41 | 0x51 => self.eor(&opcode),
 
-            0xE6 | 0xF6 | 0xEE | 0xFE => self.inc(&opcode.mode),
+            0xE6 | 0xF6 | 0xEE | 0xFE => self.inc(&opcode),
 
             0xE8 => self.inx(),
 
-            0xC8 => self.iny(&opcode.mode),
+            0xC8 => self.iny(&opcode),
 
-            0xE7 | 0xF7 | 0xEF | 0xFF | 0xFB | 0xE3 | 0xF3 => self.isb(&opcode.mode),
+            0xE7 | 0xF7 | 0xEF | 0xFF | 0xFB | 0xE3 | 0xF3 => self.isb(&opcode),
 
-            0x4C | 0x6C => self.jmp(&opcode.mode),
+            0x4C | 0x6C => self.jmp(&opcode),
 
-            0x20 => self.jsr(&opcode.mode),
+            0x20 => self.jsr(&opcode),
 
-            0xa9 | 0xa5 | 0xb5 | 0xad | 0xbd | 0xb9 | 0xa1 | 0xb1 => self.lda(&opcode.mode),
+            0xa9 | 0xa5 | 0xb5 | 0xad | 0xbd | 0xb9 | 0xa1 | 0xb1 => self.lda(&opcode),
 
-            0xA2 | 0xA6 | 0xB6 | 0xAE | 0xBE => self.ldx(&opcode.mode),
+            0xA2 | 0xA6 | 0xB6 | 0xAE | 0xBE => self.ldx(&opcode),
 
-            0xA7 | 0xB7 | 0xAF | 0xBF | 0xA3 | 0xB3 => self.lax(&opcode.mode),
+            0xA7 | 0xB7 | 0xAF | 0xBF | 0xA3 | 0xB3 => self.lax(&opcode),
 
-            0xA0 | 0xA4 | 0xB4 | 0xAC | 0xBC => self.ldy(&opcode.mode),
+            0xA0 | 0xA4 | 0xB4 | 0xAC | 0xBC => self.ldy(&opcode),
 
-            0x4A | 0x46 | 0x56 | 0x4E | 0x5E => self.lsr(&opcode.mode),
+            0x4A | 0x46 | 0x56 | 0x4E | 0x5E => self.lsr(&opcode),
 
-            0xEA | 0x1A | 0x3A | 0x5A | 0x7A | 0xDA | 0xFA => self.nop(&opcode.mode),
+            0xEA | 0x1A | 0x3A | 0x5A | 0x7A | 0xDA | 0xFA => self.nop(&opcode),
 
             0x04 | 0x14 | 0x34 | 0x44 | 0x54 | 0x64 | 0x74 | 0x80 | 0x82 | 0x89 | 0xC2 | 0xD4
-            | 0xE2 | 0xF4 => self.dop(&opcode.mode),
+            | 0xE2 | 0xF4 => self.dop(&opcode),
 
-            0x0C | 0x1C | 0x3C | 0x5C | 0x7C | 0xDC | 0xFC => self.top(&opcode.mode),
+            0x0C | 0x1C | 0x3C | 0x5C | 0x7C | 0xDC | 0xFC => self.top(&opcode),
 
-            0x09 | 0x05 | 0x15 | 0x0D | 0x1D | 0x19 | 0x01 | 0x11 => self.ora(&opcode.mode),
+            0x09 | 0x05 | 0x15 | 0x0D | 0x1D | 0x19 | 0x01 | 0x11 => self.ora(&opcode),
 
-            0x48 => self.pha(&opcode.mode),
+            0x48 => self.pha(&opcode),
 
-            0x08 => self.php(&opcode.mode),
+            0x08 => self.php(&opcode),
 
-            0x68 => self.pla(&opcode.mode),
+            0x68 => self.pla(&opcode),
 
-            0x28 => self.plp(&opcode.mode),
+            0x28 => self.plp(&opcode),
 
-            0x2A | 0x26 | 0x36 | 0x2E | 0x3E => self.rol(&opcode.mode),
+            0x2A | 0x26 | 0x36 | 0x2E | 0x3E => self.rol(&opcode),
 
-            0x6A | 0x66 | 0x76 | 0x6E | 0x7E => self.ror(&opcode.mode),
+            0x6A | 0x66 | 0x76 | 0x6E | 0x7E => self.ror(&opcode),
 
-            0x27 | 0x37 | 0x2F | 0x3F | 0x3B | 0x23 | 0x33 => self.rla(&opcode.mode),
+            0x27 | 0x37 | 0x2F | 0x3F | 0x3B | 0x23 | 0x33 => self.rla(&opcode),
 
-            0x67 | 0x77 | 0x6F | 0x7F | 0x7B | 0x63 | 0x73 => self.rra(&opcode.mode),
+            0x67 | 0x77 | 0x6F | 0x7F | 0x7B | 0x63 | 0x73 => self.rra(&opcode),
 
-            0x40 => self.rti(&opcode.mode),
+            0x40 => self.rti(&opcode),
 
-            0x60 => self.rts(&opcode.mode),
+            0x60 => self.rts(&opcode),
 
-            0x87 | 0x97 | 0x83 | 0x8F => self.sax(&opcode.mode),
+            0x87 | 0x97 | 0x83 | 0x8F => self.sax(&opcode),
 
-            0xE9 | 0xE5 | 0xF5 | 0xED | 0xFD | 0xF9 | 0xE1 | 0xF1 | 0xEB => self.sbc(&opcode.mode),
+            0xE9 | 0xE5 | 0xF5 | 0xED | 0xFD | 0xF9 | 0xE1 | 0xF1 | 0xEB => self.sbc(&opcode),
 
-            0x38 => self.sec(&opcode.mode),
+            0x38 => self.sec(&opcode),
 
-            0xF8 => self.sed(&opcode.mode),
+            0xF8 => self.sed(&opcode),
 
-            0x78 => self.sei(&opcode.mode),
+            0x78 => self.sei(&opcode),
 
-            0x07 | 0x17 | 0x0F | 0x1F | 0x1B | 0x03 | 0x13 => self.slo(&opcode.mode),
+            0x07 | 0x17 | 0x0F | 0x1F | 0x1B | 0x03 | 0x13 => self.slo(&opcode),
 
-            0x47 | 0x57 | 0x4F | 0x5F | 0x5B | 0x43 | 0x53 => self.sre(&opcode.mode),
+            0x47 | 0x57 | 0x4F | 0x5F | 0x5B | 0x43 | 0x53 => self.sre(&opcode),
 
-            0x85 | 0x95 | 0x8d | 0x9d | 0x99 | 0x81 | 0x91 => self.sta(&opcode.mode),
+            0x85 | 0x95 | 0x8d | 0x9d | 0x99 | 0x81 | 0x91 => self.sta(&opcode),
 
-            0x86 | 0x96 | 0x8E => self.stx(&opcode.mode),
+            0x86 | 0x96 | 0x8E => self.stx(&opcode),
 
-            0x84 | 0x94 | 0x8C => self.sty(&opcode.mode),
+            0x84 | 0x94 | 0x8C => self.sty(&opcode),
 
             0xAA => self.tax(),
 
@@ -220,7 +220,7 @@ impl<T: Bus> MOS6502<T> for CpuV2<T> {
             0x98 => self.tya(),
 
             0x00 => {
-                let break_result = self.brk(&opcode.mode);
+                let break_result = self.brk(&opcode);
                 break_result.map(|v| {
                     if v {
                         self.halt.store(true, Ordering::Relaxed);
@@ -592,8 +592,8 @@ impl<T: Bus> CpuV2<T> {
         return register & flag == flag;
     }
 
-    fn evaluate_operand_at_address(&mut self, mode: &AddressingMode) -> Result<u16, String> {
-        let result: u16 = match mode {
+    fn evaluate_operand_at_address(&mut self, opcode: &OpCode) -> Result<u16, String> {
+        let result: u16 = match opcode.mode {
             AddressingMode::Implied => self.program_counter,
             AddressingMode::Immediate => {
                 let addr = self.program_counter;
@@ -765,8 +765,8 @@ impl<T: Bus> CpuV2<T> {
         }
     }
 
-    fn adc(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(mode)?;
+    fn adc(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let eval = self.evaluate_operand_at_address(opcode)?;
         let addr = eval;
         let value = self.mem_read(addr)?;
 
@@ -804,8 +804,8 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn and(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(mode)?;
+    fn and(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let eval = self.evaluate_operand_at_address(opcode)?;
         let addr = eval;
         let value = self.mem_read(addr)?;
 
@@ -825,8 +825,8 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn asl(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        if *mode == AddressingMode::Accumulator {
+    fn asl(&mut self, opcode: &OpCode) -> Result<(), String> {
+        if opcode.mode == AddressingMode::Accumulator {
             let old = self.register_a;
 
             let new = self.register_a << 1;
@@ -844,7 +844,7 @@ impl<T: Bus> CpuV2<T> {
             return Result::Ok(());
         }
 
-        let addr = self.evaluate_operand_at_address(mode)?;
+        let addr = self.evaluate_operand_at_address(opcode)?;
         self.dummy_read = None;
         let old = self.mem_read(addr)?;
 
@@ -862,15 +862,15 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn sta(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let addr = self.evaluate_operand_at_address(mode)?;
+    fn sta(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let addr = self.evaluate_operand_at_address(opcode)?;
 
         self.mem_write(addr, self.register_a)?;
         Result::Ok(())
     }
 
-    fn bcc(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(mode)?;
+    fn bcc(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let eval = self.evaluate_operand_at_address(opcode)?;
 
         if Self::get_flag(self.status, CARRY_FLAG) {
             return Result::Ok(());
@@ -881,8 +881,8 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn bcs(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(mode)?;
+    fn bcs(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let eval = self.evaluate_operand_at_address(opcode)?;
 
         if !Self::get_flag(self.status, CARRY_FLAG) {
             return Result::Ok(());
@@ -894,8 +894,8 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn beq(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(mode)?;
+    fn beq(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let eval = self.evaluate_operand_at_address(opcode)?;
 
         if !Self::get_flag(self.status, ZERO_FLAG) {
             return Result::Ok(());
@@ -907,8 +907,8 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn bit(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let addr = self.evaluate_operand_at_address(mode)?;
+    fn bit(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let addr = self.evaluate_operand_at_address(opcode)?;
         let value = self.mem_read(addr)?;
 
         self.set_status_flags(&[
@@ -920,8 +920,8 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn bmi(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(mode)?;
+    fn bmi(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let eval = self.evaluate_operand_at_address(opcode)?;
 
         if !Self::get_flag(self.status, NEGATIVE_FLAG) {
             return Result::Ok(());
@@ -932,8 +932,8 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn bne(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(mode)?;
+    fn bne(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let eval = self.evaluate_operand_at_address(opcode)?;
 
         if Self::get_flag(self.status, ZERO_FLAG) {
             return Result::Ok(());
@@ -944,8 +944,8 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn bpl(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(mode)?;
+    fn bpl(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let eval = self.evaluate_operand_at_address(opcode)?;
 
         if Self::get_flag(self.status, NEGATIVE_FLAG) {
             return Result::Ok(());
@@ -956,8 +956,8 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn bvc(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(mode)?;
+    fn bvc(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let eval = self.evaluate_operand_at_address(opcode)?;
 
         if Self::get_flag(self.status, OVERFLOW_FLAG) {
             return Result::Ok(());
@@ -968,8 +968,8 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn bvs(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(mode)?;
+    fn bvs(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let eval = self.evaluate_operand_at_address(opcode)?;
 
         if !Self::get_flag(self.status, OVERFLOW_FLAG) {
             return Result::Ok(());
@@ -980,28 +980,28 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn clc(&mut self, _mode: &AddressingMode) -> Result<(), String> {
+    fn clc(&mut self, _opcode: &OpCode) -> Result<(), String> {
         self.set_status_flags_with_tick(&[(CARRY_FLAG, false)], true);
         Result::Ok(())
     }
 
-    fn cld(&mut self, _mode: &AddressingMode) -> Result<(), String> {
+    fn cld(&mut self, _opcode: &OpCode) -> Result<(), String> {
         self.set_status_flags_with_tick(&[(DECIMAL_MODE_FLAG, false)], true);
         Result::Ok(())
     }
 
-    fn cli(&mut self, _mode: &AddressingMode) -> Result<(), String> {
+    fn cli(&mut self, _opcode: &OpCode) -> Result<(), String> {
         self.set_status_flags_with_tick(&[(INTERRUPT_DISABLE_FLAG, false)], true);
         Result::Ok(())
     }
 
-    fn clv(&mut self, _mode: &AddressingMode) -> Result<(), String> {
+    fn clv(&mut self, _opcode: &OpCode) -> Result<(), String> {
         self.set_status_flags_with_tick(&[(OVERFLOW_FLAG, false)], true);
         Result::Ok(())
     }
 
-    fn cmp(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(mode)?;
+    fn cmp(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let eval = self.evaluate_operand_at_address(opcode)?;
         let addr = eval;
         let value = self.mem_read(addr)?;
 
@@ -1016,8 +1016,8 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn cpx(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let address = self.evaluate_operand_at_address(mode)?;
+    fn cpx(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let address = self.evaluate_operand_at_address(opcode)?;
         let value = self.mem_read(address)?;
 
         let sub = self.register_x.wrapping_sub(value);
@@ -1030,8 +1030,8 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn cpy(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let address = self.evaluate_operand_at_address(mode)?;
+    fn cpy(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let address = self.evaluate_operand_at_address(opcode)?;
         let value = self.mem_read(address)?;
 
         let sub = self.register_y.wrapping_sub(value);
@@ -1044,8 +1044,8 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn dec(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let address = self.evaluate_operand_at_address(mode)?;
+    fn dec(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let address = self.evaluate_operand_at_address(opcode)?;
         self.dummy_read = None;
         let value = self.mem_read(address)?;
 
@@ -1063,8 +1063,8 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn dcp(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let address = self.evaluate_operand_at_address(mode)?;
+    fn dcp(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let address = self.evaluate_operand_at_address(opcode)?;
         self.dummy_read = None;
         let value = self.mem_read(address)?;
 
@@ -1084,7 +1084,7 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn dex(&mut self, _mode: &AddressingMode) -> Result<(), String> {
+    fn dex(&mut self, _opcode: &OpCode) -> Result<(), String> {
         self.register_x = self.register_x.wrapping_sub(1);
 
         self.set_status_flags_with_tick(
@@ -1101,7 +1101,7 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn dey(&mut self, _mode: &AddressingMode) -> Result<(), String> {
+    fn dey(&mut self, _opcode: &OpCode) -> Result<(), String> {
         self.register_y = self.register_y.wrapping_sub(1);
 
         self.set_status_flags_with_tick(
@@ -1117,8 +1117,8 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn eor(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(mode)?;
+    fn eor(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let eval = self.evaluate_operand_at_address(opcode)?;
         let addr = eval;
         let value = self.mem_read(addr)?;
 
@@ -1138,8 +1138,8 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn inc(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let address = self.evaluate_operand_at_address(mode)?;
+    fn inc(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let address = self.evaluate_operand_at_address(opcode)?;
         self.dummy_read = None;
         let value = self.mem_read(address)?.wrapping_add(1);
         self.mem_write(address, value)?;
@@ -1170,7 +1170,7 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn iny(&mut self, _mode: &AddressingMode) -> Result<(), String> {
+    fn iny(&mut self, _opcode: &OpCode) -> Result<(), String> {
         self.register_y = self.register_y.wrapping_add(1);
 
         self.set_status_flags_with_tick(
@@ -1187,8 +1187,8 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn isb(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let address = self.evaluate_operand_at_address(mode)?;
+    fn isb(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let address = self.evaluate_operand_at_address(opcode)?;
         self.dummy_read = None;
         let value = self.mem_read(address)?.wrapping_add(1);
         self.mem_write(address, value)?;
@@ -1227,14 +1227,14 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn jmp(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let pc_jump = self.evaluate_operand_at_address(mode)?;
+    fn jmp(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let pc_jump = self.evaluate_operand_at_address(opcode)?;
         self.program_counter = pc_jump;
         Result::Ok(())
     }
 
-    fn jsr(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let pc_jump = self.evaluate_operand_at_address(mode)?;
+    fn jsr(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let pc_jump = self.evaluate_operand_at_address(opcode)?;
 
         self.stack_push_u16(self.program_counter - 1)?;
 
@@ -1243,8 +1243,8 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn lda(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(mode)?;
+    fn lda(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let eval = self.evaluate_operand_at_address(opcode)?;
         let addr = eval;
         let value = self.mem_read(addr)?;
 
@@ -1264,8 +1264,8 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn ldx(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(mode)?;
+    fn ldx(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let eval = self.evaluate_operand_at_address(opcode)?;
         let addr = eval;
         let value = self.mem_read(addr)?;
         self.register_x = value;
@@ -1280,8 +1280,8 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn lax(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(mode)?;
+    fn lax(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let eval = self.evaluate_operand_at_address(opcode)?;
         let addr = eval;
         let value = self.mem_read(addr)?;
         self.register_a = value;
@@ -1294,8 +1294,8 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn ldy(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(mode)?;
+    fn ldy(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let eval = self.evaluate_operand_at_address(opcode)?;
         let addr = eval;
         let value = self.mem_read(addr)?;
         self.register_y = value;
@@ -1311,8 +1311,8 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn lsr(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        if *mode == AddressingMode::Accumulator {
+    fn lsr(&mut self, opcode: &OpCode) -> Result<(), String> {
+        if opcode.mode == AddressingMode::Accumulator {
             let old = self.register_a;
             self.register_a = self.register_a >> 1;
 
@@ -1331,7 +1331,7 @@ impl<T: Bus> CpuV2<T> {
             return Result::Ok(());
         }
 
-        let addr = self.evaluate_operand_at_address(mode)?;
+        let addr = self.evaluate_operand_at_address(opcode)?;
         self.dummy_read = None;
         let old = self.mem_read(addr)?;
 
@@ -1349,10 +1349,10 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn nop(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let addr = self.evaluate_operand_at_address(mode)?;
+    fn nop(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let addr = self.evaluate_operand_at_address(opcode)?;
 
-        if *mode == AddressingMode::Absolute_X || *mode == AddressingMode::Absolute_Y {
+        if opcode.mode == AddressingMode::Absolute_X || opcode.mode == AddressingMode::Absolute_Y {
             return Result::Ok(());
         }
 
@@ -1360,20 +1360,20 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn dop(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let addr = self.evaluate_operand_at_address(mode)?;
+    fn dop(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let addr = self.evaluate_operand_at_address(opcode)?;
         self.mem_read(addr)?;
         Result::Ok(())
     }
 
-    fn top(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let addr = self.evaluate_operand_at_address(mode)?;
+    fn top(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let addr = self.evaluate_operand_at_address(opcode)?;
         self.mem_read(addr)?;
         Result::Ok(())
     }
 
-    fn ora(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(mode)?;
+    fn ora(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let eval = self.evaluate_operand_at_address(opcode)?;
         let addr = eval;
         let value = self.mem_read(addr)?;
 
@@ -1390,19 +1390,19 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn pha(&mut self, _mode: &AddressingMode) -> Result<(), String> {
+    fn pha(&mut self, _opcode: &OpCode) -> Result<(), String> {
         self.mem_read((STACK as u16) + (self.stack_pointer as u16))?; //dummy read top of stack
         self.stack_push(self.register_a)?;
         Result::Ok(())
     }
 
-    fn php(&mut self, _mode: &AddressingMode) -> Result<(), String> {
+    fn php(&mut self, _opcode: &OpCode) -> Result<(), String> {
         self.mem_read((STACK as u16) + (self.stack_pointer as u16))?; //dummy read top of stack
         self.stack_push(self.status | BREAK_FLAG | BREAK2_FLAG)?;
         Result::Ok(())
     }
 
-    fn pla(&mut self, _mode: &AddressingMode) -> Result<(), String> {
+    fn pla(&mut self, _opcode: &OpCode) -> Result<(), String> {
         self.mem_read((STACK as u16) + (self.stack_pointer as u16))?; //dummy read top of stack
         let stack_pop = self.stack_pop()?;
         self.assign_register_a(stack_pop);
@@ -1416,15 +1416,15 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn plp(&mut self, _mode: &AddressingMode) -> Result<(), String> {
+    fn plp(&mut self, _opcode: &OpCode) -> Result<(), String> {
         self.mem_read((STACK as u16) + (self.stack_pointer as u16))?; //dummy read top of stack
         let stack_pop = self.stack_pop()? & !(BREAK_FLAG) | BREAK2_FLAG;
         self.assign_status(stack_pop);
         Result::Ok(())
     }
 
-    fn rol(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        if mode == &AddressingMode::Accumulator {
+    fn rol(&mut self, opcode: &OpCode) -> Result<(), String> {
+        if opcode.mode == AddressingMode::Accumulator {
             let old_value = self.register_a;
             let carry = Self::get_flag(self.status, CARRY_FLAG);
 
@@ -1444,7 +1444,7 @@ impl<T: Bus> CpuV2<T> {
             return Result::Ok(());
         }
 
-        let address = self.evaluate_operand_at_address(mode)?;
+        let address = self.evaluate_operand_at_address(opcode)?;
         self.dummy_read = None;
         let old_value = self.mem_read(address)?;
         let carry = Self::get_flag(self.status, CARRY_FLAG);
@@ -1466,8 +1466,8 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn ror(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        if mode == &AddressingMode::Accumulator {
+    fn ror(&mut self, opcode: &OpCode) -> Result<(), String> {
+        if opcode.mode == AddressingMode::Accumulator {
             let old_value = self.register_a;
             let carry = Self::get_flag(self.status, CARRY_FLAG);
 
@@ -1487,7 +1487,7 @@ impl<T: Bus> CpuV2<T> {
             return Result::Ok(());
         }
 
-        let address = self.evaluate_operand_at_address(mode)?;
+        let address = self.evaluate_operand_at_address(opcode)?;
         self.dummy_read = None;
         let old_value = self.mem_read(address)?;
         let carry = Self::get_flag(self.status, CARRY_FLAG);
@@ -1509,8 +1509,8 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn rla(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let address = self.evaluate_operand_at_address(mode)?;
+    fn rla(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let address = self.evaluate_operand_at_address(opcode)?;
         self.dummy_read = None;
         let orig_value = self.mem_read(address)?;
         let value = (orig_value << 1) | (self.status & CARRY_FLAG);
@@ -1531,8 +1531,8 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn rra(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let address = self.evaluate_operand_at_address(mode)?;
+    fn rra(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let address = self.evaluate_operand_at_address(opcode)?;
         self.dummy_read = None;
         let orig_value = self.mem_read(address)?;
 
@@ -1576,7 +1576,7 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn rti(&mut self, _mode: &AddressingMode) -> Result<(), String> {
+    fn rti(&mut self, _opcode: &OpCode) -> Result<(), String> {
         self.mem_read((STACK as u16) + (self.stack_pointer as u16))?; //dummy read top of stack
 
         let status_pop = self.stack_pop()? | BREAK2_FLAG;
@@ -1586,7 +1586,7 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn rts(&mut self, _mode: &AddressingMode) -> Result<(), String> {
+    fn rts(&mut self, _opcode: &OpCode) -> Result<(), String> {
         self.mem_read((STACK as u16) + (self.stack_pointer as u16))?; //dummy read top of stack
 
         let return_addr = self.stack_pop_u16()? + 1;
@@ -1595,7 +1595,7 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn brk(&mut self, _mode: &AddressingMode) -> Result<bool, String> {
+    fn brk(&mut self, _opcode: &OpCode) -> Result<bool, String> {
         self.stack_push_u16(self.program_counter)?;
         self.stack_push(self.status | (BREAK_FLAG & BREAK2_FLAG))?;
 
@@ -1611,8 +1611,8 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(false)
     }
 
-    fn sax(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let address = self.evaluate_operand_at_address(mode)?;
+    fn sax(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let address = self.evaluate_operand_at_address(opcode)?;
         let value = self.register_x & self.register_a;
 
         self.mem_write(address, value)?;
@@ -1623,14 +1623,14 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn sbc(&mut self, mode: &AddressingMode) -> Result<(), String> {
+    fn sbc(&mut self, opcode: &OpCode) -> Result<(), String> {
         let c = match Self::get_flag(self.status, CARRY_FLAG) {
             true => 1,
             false => 0,
         };
 
         let a = self.register_a;
-        let eval = self.evaluate_operand_at_address(mode)?;
+        let eval = self.evaluate_operand_at_address(opcode)?;
         let address = eval;
         let value = self.mem_read(address)?;
 
@@ -1660,23 +1660,23 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn sec(&mut self, _mode: &AddressingMode) -> Result<(), String> {
+    fn sec(&mut self, _opcode: &OpCode) -> Result<(), String> {
         self.set_status_flags_with_tick(&[(CARRY_FLAG, true)], true);
         Result::Ok(())
     }
 
-    fn sed(&mut self, _mode: &AddressingMode) -> Result<(), String> {
+    fn sed(&mut self, _opcode: &OpCode) -> Result<(), String> {
         self.set_status_flags_with_tick(&[(DECIMAL_MODE_FLAG, true)], true);
         Result::Ok(())
     }
 
-    fn sei(&mut self, _mode: &AddressingMode) -> Result<(), String> {
+    fn sei(&mut self, _opcode: &OpCode) -> Result<(), String> {
         self.set_status_flags_with_tick(&[(INTERRUPT_DISABLE_FLAG, true)], true);
         Result::Ok(())
     }
 
-    fn slo(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let address = self.evaluate_operand_at_address(mode)?;
+    fn slo(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let address = self.evaluate_operand_at_address(opcode)?;
         self.dummy_read = None;
         let original = self.mem_read(address)?;
         let value = original << 1;
@@ -1696,8 +1696,8 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn sre(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let address = self.evaluate_operand_at_address(mode)?;
+    fn sre(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let address = self.evaluate_operand_at_address(opcode)?;
         self.dummy_read = None;
         let original = self.mem_read(address)?;
         let value = original >> 1;
@@ -1716,14 +1716,14 @@ impl<T: Bus> CpuV2<T> {
         Result::Ok(())
     }
 
-    fn stx(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let address = self.evaluate_operand_at_address(mode)?;
+    fn stx(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let address = self.evaluate_operand_at_address(opcode)?;
         self.mem_write(address, self.register_x)?;
         Result::Ok(())
     }
 
-    fn sty(&mut self, mode: &AddressingMode) -> Result<(), String> {
-        let address = self.evaluate_operand_at_address(mode)?;
+    fn sty(&mut self, opcode: &OpCode) -> Result<(), String> {
+        let address = self.evaluate_operand_at_address(opcode)?;
         self.mem_write(address, self.register_y)?;
         Result::Ok(())
     }

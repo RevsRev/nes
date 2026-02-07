@@ -1,7 +1,7 @@
 pub trait Interrupt {
-    fn poll_nmi(&mut self) -> bool;
-    fn take_nmi(&mut self) -> bool;
-    fn set_nmi(&mut self, state: bool);
+    fn poll_nmi(&self) -> Option<u16>;
+    fn take_nmi(&mut self) -> Option<u16>;
+    fn set_nmi(&mut self, state: Option<u16>);
 
     fn poll_dmc(&mut self) -> bool;
     fn take_dmc(&mut self) -> bool;
@@ -18,25 +18,23 @@ pub trait Interrupt {
 }
 
 pub struct InterruptImpl {
-    nmi_interrupt: Option<u8>,
+    nmi_interrupt: Option<u16>,
     dmc_interrupt: Option<u8>,
     irq_interrupt: Option<u8>,
     oam_data: Option<u8>,
 }
 
 impl Interrupt for InterruptImpl {
-    fn poll_nmi(&mut self) -> bool {
-        self.nmi_interrupt.is_some()
+    fn poll_nmi(&self) -> Option<u16> {
+        self.nmi_interrupt
     }
-    fn take_nmi(&mut self) -> bool {
-        let state = self.nmi_interrupt.take();
-        state.is_some()
+    fn take_nmi(&mut self) -> Option<u16> {
+        self.nmi_interrupt.take()
     }
-    fn set_nmi(&mut self, state: bool) {
-        if state {
-            self.nmi_interrupt = Some(1);
-        } else {
-            self.nmi_interrupt = None;
+    fn set_nmi(&mut self, state: Option<u16>) {
+        match state {
+            Some(data) => self.nmi_interrupt = Some(data),
+            None => self.nmi_interrupt = None,
         }
     }
 

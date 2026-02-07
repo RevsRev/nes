@@ -64,6 +64,8 @@ impl<T: Bus> MOS6502<T> for CpuV2<T> {
     where
         F: for<'a> FnMut(&'a Self),
     {
+        let nmi_at_step_start = self.interrupt.borrow().poll_nmi().is_some();
+
         self.reads.clear();
         self.writes.clear();
         self.trace_cycles = self.total_cycles;
@@ -75,6 +77,7 @@ impl<T: Bus> MOS6502<T> for CpuV2<T> {
         self.trace_reg_y = self.register_y;
 
         //FETCH
+        self.bus.borrow_mut().signal_cpu_start();
         let op = self.mem_read(self.program_counter);
         self.program_counter = self.program_counter + 1;
 
@@ -254,12 +257,20 @@ impl<T: Bus> MOS6502<T> for CpuV2<T> {
             None => {}
         }
 
+        //pretty horrible logic to get the traces to line up with mesen emulator... Once we have a
+        //working emulator can probably just always take the nmi here without the ppu cycles check
+        let ppu_cycles = ((self.total_cycles - self.trace_cycles) * 3) as u16;
+        let take_nmi_set_this_frame = match self.interrupt.borrow().poll_nmi() {
+            None => false,
+            Some(cycles) => cycles < ppu_cycles - 3,
+        };
+        if nmi_at_step_start || take_nmi_set_this_frame {
+            self.interrupt.borrow_mut().take_nmi();
+            self.interrupt_nmi()?;
+        }
+
         self.store_trace(&opcode);
         callback(self);
-
-        if self.interrupt.borrow_mut().take_nmi() {
-            self.interrupt_nmi();
-        }
 
         if self.halt.load(Ordering::Relaxed) {
             return Ok(false);
@@ -1853,7 +1864,9 @@ mod test {
         }
     }
 
-    impl Bus for BusStub {}
+    impl Bus for BusStub {
+        fn signal_cpu_start(&mut self) {}
+    }
 
     impl Tick for BusStub {
         fn tick(&mut self, cycles: u8) {

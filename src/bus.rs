@@ -89,7 +89,11 @@ impl<'a> fmt::Display for BusImpl<'a> {
         )
     }
 }
-impl<'a> Bus for BusImpl<'a> {}
+impl<'a> Bus for BusImpl<'a> {
+    fn signal_cpu_start(&mut self) {
+        self.ppu.on_cpu_cycle_start();
+    }
+}
 
 impl<'a> Mem for BusImpl<'a> {
     fn mem_read(&mut self, addr: u16) -> Result<u8, String> {

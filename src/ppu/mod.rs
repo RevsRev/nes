@@ -27,8 +27,10 @@ pub struct PPU {
     status: StatusRegister,
     oam_addr: u8,
     interrupt: Rc<RefCell<InterruptImpl>>,
+    trace: Option<PpuTrace>,
 
     pub frame_dots: usize,
+    ppu_cycles_this_cpu_cycle: u16,
     total_ppu_cycles: u64,
     total_frames: u64,
     pub scanline: u16,
@@ -42,25 +44,31 @@ impl Tick for PPU {
         self.new_frame = false;
 
         for _ in 0..cycles {
-            if self.is_sprite_0_hit(self.frame_dots) {
+            if self.ppu_cycles_this_cpu_cycle == 2 {
+                self.store_trace();
+            }
+
+            if self.is_sprite_0_hit() {
                 self.status.set_sprite_0_hit(true);
             }
+
+            if self.scanline == 261 && self.frame_dots == 1 {
+                self.status.set_vblank(false);
+                self.interrupt.borrow_mut().set_nmi(None);
+                self.status.set_sprite_0_hit(false);
+            }
+
+            self.frame_dots += 1;
 
             if self.scanline == 241 && self.frame_dots == 1 {
                 self.status.set_vblank(true);
                 self.status.set_sprite_0_hit(false);
                 if self.ctl.generate_vblank_nmi() {
-                    self.interrupt.borrow_mut().set_nmi(true);
+                    self.interrupt
+                        .borrow_mut()
+                        .set_nmi(Some(self.ppu_cycles_this_cpu_cycle));
                 }
             }
-
-            if self.scanline == 261 && self.frame_dots == 1 {
-                self.status.set_vblank(false);
-                self.interrupt.borrow_mut().set_nmi(false);
-                self.status.set_sprite_0_hit(false);
-            }
-
-            self.frame_dots += 1;
 
             if self.frame_dots == 340
                 && self.scanline == 261
@@ -80,6 +88,7 @@ impl Tick for PPU {
                 self.new_frame = true;
                 self.total_frames = self.total_frames + 1;
             }
+            self.ppu_cycles_this_cpu_cycle = self.ppu_cycles_this_cpu_cycle + 1;
         }
     }
 }
@@ -101,7 +110,9 @@ impl PPU {
             status: StatusRegister::new(),
             oam_addr: 0,
             interrupt: interrupt,
+            trace: None,
 
+            ppu_cycles_this_cpu_cycle: 0,
             total_ppu_cycles: 0,
             total_frames: 0,
             frame_dots: 0,
@@ -114,7 +125,23 @@ impl PPU {
         PpuTrace {
             scanline: self.scanline,
             dot: self.frame_dots as u16,
+            status: self.status.snapshot(),
+            mask: self.mask.read(),
+            sprite_zero_x: self.oam_data[3],
+            sprite_zero_y: self.oam_data[0],
         }
+    }
+
+    pub fn store_trace(&mut self) {
+        self.trace = Some(self.trace());
+    }
+
+    pub fn take_trace(&mut self) -> Option<PpuTrace> {
+        self.trace.take()
+    }
+
+    pub fn on_cpu_cycle_start(&mut self) {
+        self.ppu_cycles_this_cpu_cycle = 0;
     }
 
     pub fn read_data(&mut self) -> Result<u8, String> {
@@ -214,7 +241,9 @@ impl PPU {
         let before_nmi_status = self.ctl.generate_vblank_nmi();
         let retval = self.ctl.update(value);
         if !before_nmi_status && self.ctl.generate_vblank_nmi() && self.status.is_vblank() {
-            self.interrupt.borrow_mut().set_nmi(true);
+            self.interrupt
+                .borrow_mut()
+                .set_nmi(Some(self.ppu_cycles_this_cpu_cycle));
         }
         retval
     }
@@ -264,10 +293,24 @@ impl PPU {
         old
     }
 
-    pub fn is_sprite_0_hit(&self, cycle: usize) -> bool {
+    pub fn is_sprite_0_hit(&self) -> bool {
         let y = self.oam_data[0] as usize;
         let x = self.oam_data[3] as usize;
-        (y == self.scanline as usize) && x <= cycle && self.mask.show_sprites()
+
+        if x <= 7usize && self.mask.is_left_side_clipping_window_enabled() {
+            return false;
+        }
+
+        if x == 255usize {
+            return false;
+        }
+
+        let sprite_height: usize = 8; //TODO - get proper sprite height
+        let y_hit =
+            (self.scanline as usize >= y) && ((self.scanline as usize) < (y + sprite_height));
+        let x_hit = (x <= self.frame_dots) && (self.frame_dots < x + 8);
+
+        y_hit && x_hit && self.mask.is_rendering_enabled()
     }
 }
 #[cfg(test)]

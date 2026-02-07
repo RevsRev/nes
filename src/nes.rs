@@ -66,7 +66,6 @@ impl<'call, T: Cpu<BusImpl<'call>>> NES<'call, T> {
         F: FnMut(&mut NES<T>),
     {
         loop {
-            let ppu_tr = self.bus.borrow_mut().ppu.trace();
             let apu_tr = self.bus.borrow_mut().apu.trace();
             match self.cpu.step_with_callback(&mut |_| {}) {
                 Ok(b) => match b {
@@ -79,7 +78,7 @@ impl<'call, T: Cpu<BusImpl<'call>>> NES<'call, T> {
             }
             self.trace = Option::Some(NesTrace {
                 cpu_trace: self.cpu.take_trace().take().unwrap(),
-                ppu_trace: ppu_tr,
+                ppu_trace: self.bus.borrow_mut().ppu.take_trace().unwrap(),
                 apu_trace: apu_tr,
             });
             callback(self);
@@ -500,11 +499,11 @@ mod test {
 
         let nes_init = NesInit {
             cycles: 8,
-            register_a: 0x1A,
+            register_a: 0x00,
             register_x: 0,
-            status: 0x05,
-            stack_pointer: 0xEF,
-            ppu_frame_cycles: 27,
+            status: 0x04,
+            stack_pointer: 0xFD,
+            ppu_frame_cycles: 25,
         };
 
         should_match_mesen(rom, nes_test_log, Some(nes_init), -1);

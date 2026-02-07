@@ -27,6 +27,10 @@ pub struct CpuTrace {
 pub struct PpuTrace {
     pub scanline: u16,
     pub dot: u16,
+    pub status: u8,
+    pub mask: u8,
+    pub sprite_zero_x: u8,
+    pub sprite_zero_y: u8,
 }
 
 pub struct ApuTrace {
@@ -107,7 +111,16 @@ impl PpuTraceFormatter {
     pub fn format(&self, ppu_trace: &PpuTrace) -> String {
         use std::fmt::Write;
         let mut out = String::new();
-        write!(out, "V:{:<3} H:{:<3}", ppu_trace.scanline, ppu_trace.dot);
+        write!(
+            out,
+            "V:{:<3} H:{:<3} PS:{:02X} M:{:02X} 0X:{:<3} 0Y:{:<3}",
+            ppu_trace.scanline,
+            ppu_trace.dot,
+            ppu_trace.status,
+            ppu_trace.mask,
+            ppu_trace.sprite_zero_x,
+            ppu_trace.sprite_zero_y,
+        );
         out
     }
 }

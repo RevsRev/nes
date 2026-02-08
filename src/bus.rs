@@ -22,6 +22,7 @@ const ROM_END: u16 = 0xFFFF;
 pub struct BusImpl<'call> {
     cpu_vram: [u8; 2048],
     rom: Rc<RefCell<Rom>>,
+    open_bus: u8,
     pub ppu: PPU,
     pub apu: APU,
     interrupt: Rc<RefCell<InterruptImpl>>,
@@ -49,6 +50,7 @@ impl<'a> BusImpl<'a> {
         BusImpl {
             cpu_vram: [0; 2048],
             rom: bus_rc_rom,
+            open_bus: 0,
             ppu: ppu,
             apu: apu,
             interrupt: interrupt,
@@ -125,7 +127,11 @@ impl<'a> Mem for BusImpl<'a> {
 
             0x4015 => self.apu.read_status(),
 
-            0x4016 => Result::Ok(self.joypad.read()),
+            0x4016 => {
+                let read = self.joypad.read();
+                let ret_val = (read & 0x01) | (self.open_bus & 0xFE);
+                Result::Ok(ret_val)
+            }
 
             0x4017 => {
                 // ignore joypad 2
@@ -141,10 +147,16 @@ impl<'a> Mem for BusImpl<'a> {
             }
         };
 
+        match value {
+            Err(_) => {}
+            Ok(data) => self.open_bus = data,
+        }
+
         value
     }
 
     fn mem_write(&mut self, addr: u16, data: u8) -> Result<u8, std::string::String> {
+        self.open_bus = data;
         return match addr {
             RAM..=RAM_MIRRORS_END => {
                 let mirror_down_addr = addr & 0b0000111_11111111;

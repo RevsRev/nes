@@ -19,6 +19,12 @@ pub struct PPU {
     pub vram: [u8; 2048],
     pub oam_data: [u8; 256],
 
+    //Internal registers, named to match ppu docs
+    v: u8,
+    t: u8,
+    x: u8,
+    w: u8,
+
     internal_data_buf: u8,
 
     addr: AddrRegister,
@@ -102,6 +108,11 @@ impl PPU {
             palette_table: [0; 32],
             vram: [0; 2048],
             oam_data: [0; 256],
+
+            v: 0,
+            t: 0,
+            x: 0,
+            w: 0,
 
             internal_data_buf: 0x0000,
 

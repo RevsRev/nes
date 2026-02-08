@@ -32,6 +32,7 @@ pub struct CpuV2<T: Bus> {
     interrupt: Rc<RefCell<InterruptImpl>>,
 
     //tracing info
+    tracing: bool,
     trace: Option<CpuTrace>,
     trace_cycles: u64,
     trace_pc: u16,
@@ -407,6 +408,10 @@ impl<T: Bus> Tracing for CpuV2<T> {
             reads_offset: 1,
         }
     }
+
+    fn set_tracing(&mut self, tracing: bool) {
+        self.tracing = tracing;
+    }
 }
 
 impl<T: Bus> Mem for CpuV2<T> {
@@ -478,6 +483,7 @@ impl<T: Bus> CpuV2<T> {
             stack_pointer: STACK_RESET,
             bus: bus,
             interrupt: interrupt,
+            tracing: false,
             trace: Option::None,
             trace_cycles: 0,
             trace_pc: 0,
@@ -495,19 +501,21 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn store_trace(&mut self, op: &OpCode) {
-        self.trace = Option::Some(CpuTrace {
-            cpu_cycles: self.trace_cycles,
-            pc: self.trace_pc,
-            op_code: (*op).to_owned(),
-            absolute_address: self.operand_address,
-            register_a: self.trace_reg_a,
-            register_x: self.trace_reg_x,
-            register_y: self.trace_reg_y,
-            status: self.trace_status,
-            stack: self.trace_sp,
-            reads: self.reads.clone(),
-            writes: self.writes.clone(),
-        });
+        if self.tracing {
+            self.trace = Option::Some(CpuTrace {
+                cpu_cycles: self.trace_cycles,
+                pc: self.trace_pc,
+                op_code: (*op).to_owned(),
+                absolute_address: self.operand_address,
+                register_a: self.trace_reg_a,
+                register_x: self.trace_reg_x,
+                register_y: self.trace_reg_y,
+                status: self.trace_status,
+                stack: self.trace_sp,
+                reads: self.reads.clone(),
+                writes: self.writes.clone(),
+            });
+        }
 
         self.operand_address = Option::None;
         self.reads.clear();

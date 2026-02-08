@@ -33,6 +33,7 @@ impl<'call, T: Cpu<BusImpl<'call>>> fmt::Display for NES<'call, T> {
 pub fn nes_with_cpu_v2<'call, F>(
     rom: Rom,
     halt: Arc<AtomicBool>,
+    tracing: bool,
     gameloop_callback: F,
 ) -> NES<'call, CpuV2<BusImpl<'call>>>
 where
@@ -46,12 +47,15 @@ where
         gameloop_callback,
     )));
     let mut cpu = CpuV2::new(Rc::clone(&bus), interrupt_cpu, halt);
+    bus.borrow_mut().ppu.set_tracing(tracing);
+    bus.borrow_mut().apu.set_tracing(tracing);
+    cpu.set_tracing(tracing);
     cpu.reset();
 
     NES {
         cpu,
         bus,
-        tracing: false,
+        tracing: tracing,
         trace: None,
     }
 }
@@ -59,6 +63,9 @@ where
 impl<'call, T: Cpu<BusImpl<'call>>> NES<'call, T> {
     pub fn set_tracing(&mut self, tracing: bool) {
         self.tracing = tracing;
+        self.cpu.set_tracing(tracing);
+        self.bus.borrow_mut().apu.set_tracing(tracing);
+        self.bus.borrow_mut().ppu.set_tracing(tracing);
     }
 
     pub fn run_with_callback<F>(&mut self, mut callback: F) -> Result<(), String>
@@ -66,7 +73,7 @@ impl<'call, T: Cpu<BusImpl<'call>>> NES<'call, T> {
         F: FnMut(&mut NES<T>),
     {
         loop {
-            let apu_tr = self.bus.borrow_mut().apu.trace();
+            let mut apu_tr = self.bus.borrow_mut().apu.trace();
             match self.cpu.step_with_callback(&mut |_| {}) {
                 Ok(b) => match b {
                     true => {}
@@ -76,11 +83,14 @@ impl<'call, T: Cpu<BusImpl<'call>>> NES<'call, T> {
                     return Err(s);
                 }
             }
-            self.trace = Option::Some(NesTrace {
-                cpu_trace: self.cpu.take_trace().take().unwrap(),
-                ppu_trace: self.bus.borrow_mut().ppu.take_trace().unwrap(),
-                apu_trace: apu_tr,
-            });
+
+            if self.tracing {
+                self.trace = Option::Some(NesTrace {
+                    cpu_trace: self.cpu.take_trace().take().unwrap(),
+                    ppu_trace: self.bus.borrow_mut().ppu.take_trace().unwrap(),
+                    apu_trace: apu_tr.take().unwrap(),
+                });
+            }
             callback(self);
         }
         Result::Ok(())
@@ -146,6 +156,7 @@ mod test {
         return nes_with_cpu_v2(
             rom,
             Arc::clone(halt),
+            true,
             |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
         );
 

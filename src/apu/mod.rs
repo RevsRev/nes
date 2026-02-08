@@ -31,6 +31,7 @@ pub struct APU {
 
     cpu_cycles: u8,
     sequencer_cycles: u16,
+    tracing: bool,
 }
 
 impl APU {
@@ -62,6 +63,7 @@ impl APU {
             mixer: Mixer::new(),
             cpu_cycles: 0,
             sequencer_cycles: 0,
+            tracing: false,
         }
     }
 
@@ -85,12 +87,20 @@ impl APU {
         self.status.read()
     }
 
-    pub fn trace(&self) -> ApuTrace {
-        ApuTrace {
+    pub fn set_tracing(&mut self, tracing: bool) {
+        self.tracing = tracing;
+    }
+
+    pub fn trace(&self) -> Option<ApuTrace> {
+        if !self.tracing {
+            return None;
+        }
+
+        Some(ApuTrace {
             pulse_1: self.pulse_1.borrow().trace(),
             pulse_2: self.pulse_2.borrow().trace(),
             frame_trace: self.frame.borrow().trace(),
-        }
+        })
     }
 }
 

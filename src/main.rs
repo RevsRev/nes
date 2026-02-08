@@ -188,8 +188,7 @@ fn main() {
 
     let result = match args.version {
         2 => {
-            let mut nes = nes_with_cpu_v2(rom, halt, gameloop_callback);
-            nes.set_tracing(args.trace);
+            let mut nes = nes_with_cpu_v2(rom, halt, args.trace, gameloop_callback);
 
             nes.run_with_callback(move |nes| {
                 if !args.trace {

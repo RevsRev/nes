@@ -27,6 +27,7 @@ pub struct PPU {
     status: StatusRegister,
     oam_addr: u8,
     interrupt: Rc<RefCell<InterruptImpl>>,
+    tracing: bool,
     trace: Option<PpuTrace>,
 
     pub frame_dots: usize,
@@ -110,6 +111,7 @@ impl PPU {
             status: StatusRegister::new(),
             oam_addr: 0,
             interrupt: interrupt,
+            tracing: false,
             trace: None,
 
             ppu_cycles_this_cpu_cycle: 0,
@@ -119,6 +121,10 @@ impl PPU {
             scanline: 0,
             new_frame: false,
         }
+    }
+
+    pub fn set_tracing(&mut self, tracing: bool) {
+        self.tracing = tracing;
     }
 
     pub fn trace(&self) -> PpuTrace {
@@ -133,7 +139,9 @@ impl PPU {
     }
 
     pub fn store_trace(&mut self) {
-        self.trace = Some(self.trace());
+        if self.tracing {
+            self.trace = Some(self.trace());
+        }
     }
 
     pub fn take_trace(&mut self) -> Option<PpuTrace> {

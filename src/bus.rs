@@ -109,7 +109,11 @@ impl<'a> Mem for BusImpl<'a> {
                 Result::Ok(0)
             }
 
-            0x2002 => Result::Ok(self.ppu.read_status()),
+            0x2002 => {
+                let status_read = self.ppu.read_status();
+                let ret_val = (status_read & 0xE0) | (self.open_bus & 0x1F);
+                Ok(ret_val)
+            }
             0x2004 => Result::Ok(self.ppu.read_oam_data()),
             0x2007 => self.ppu.read_data(),
 

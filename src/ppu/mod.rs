@@ -4,6 +4,7 @@ use registers::{mask::MaskRegister, scroll::ScrollRegister, status::StatusRegist
 
 use crate::{
     interrupt::{Interrupt, InterruptImpl},
+    io::render::background_pixel_at,
     ppu::registers::{addr::AddrRegister, ctl::ControlRegister},
     rom::{Mirroring, Rom},
     trace::PpuTrace,
@@ -133,6 +134,8 @@ impl PPU {
             dot: self.frame_dots as u16,
             status: self.status.snapshot(),
             mask: self.mask.read(),
+            scroll_x: self.scroll.scroll_x,
+            scroll_y: self.scroll.scroll_y,
             sprite_zero_x: self.oam_data[3],
             sprite_zero_y: self.oam_data[0],
         }
@@ -302,6 +305,10 @@ impl PPU {
     }
 
     pub fn is_sprite_0_hit(&self) -> bool {
+        if !self.mask.is_rendering_enabled() {
+            return false;
+        }
+
         let y = self.oam_data[0] as usize;
         let x = self.oam_data[3] as usize;
 
@@ -313,12 +320,22 @@ impl PPU {
             return false;
         }
 
-        let sprite_height: usize = 8; //TODO - get proper sprite height
+        let sprite_height = self.ctl.sprite_size() as usize;
+
         let y_hit =
             (self.scanline as usize >= y) && ((self.scanline as usize) < (y + sprite_height));
+
+        if !y_hit {
+            return false;
+        }
+
         let x_hit = (x <= self.frame_dots) && (self.frame_dots < x + 8);
 
-        y_hit && x_hit && self.mask.is_rendering_enabled()
+        if !x_hit {
+            return false;
+        }
+
+        return background_pixel_at(self, x, y) != 0;
     }
 }
 #[cfg(test)]

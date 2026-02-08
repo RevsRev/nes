@@ -256,7 +256,9 @@ impl PPU {
     }
 
     pub fn write_to_ppu_addr(&mut self, value: u8) -> u8 {
-        self.addr.update(value)
+        let r = self.addr.update(value, self.w == 0);
+        self.w = (self.w + 1) % 2;
+        r
     }
 
     pub fn write_to_ctl(&mut self, value: u8) -> u8 {
@@ -276,9 +278,8 @@ impl PPU {
 
     pub fn read_status(&mut self) -> u8 {
         let data = self.status.snapshot();
+        self.w = 0;
         self.status.set_vblank(false);
-        self.addr.reset_latch();
-        self.scroll.reset_latch();
         data
     }
 
@@ -300,7 +301,9 @@ impl PPU {
     }
 
     pub fn write_to_scroll(&mut self, value: u8) -> u8 {
-        self.scroll.write(value)
+        let r = self.scroll.write(value, self.w == 0);
+        self.w = (self.w + 1) % 2;
+        r
     }
 
     pub fn write_to_oam_dma(&mut self, data: u8) -> u8 {

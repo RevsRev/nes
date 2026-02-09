@@ -5,7 +5,7 @@ use registers::{mask::MaskRegister, scroll::ScrollRegister, status::StatusRegist
 use crate::{
     interrupt::{Interrupt, InterruptImpl},
     io::render::background_pixel_at,
-    ppu::registers::{addr::AddrRegister, ctl::ControlRegister},
+    ppu::registers::ctl::ControlRegister,
     rom::{Mirroring, Rom},
     trace::PpuTrace,
     traits::tick::Tick,
@@ -20,14 +20,13 @@ pub struct PPU {
     pub oam_data: [u8; 256],
 
     //Internal registers, named to match ppu docs
-    v: u8,
-    t: u8,
+    v: u16,
+    t: u16,
     x: u8,
     w: u8,
 
     internal_data_buf: u8,
 
-    addr: AddrRegister,
     pub scroll: ScrollRegister,
     mask: MaskRegister,
     pub ctl: ControlRegister,
@@ -118,7 +117,6 @@ impl PPU {
 
             mask: MaskRegister::new(),
             scroll: ScrollRegister::new(),
-            addr: AddrRegister::new(),
             ctl: ControlRegister::new(),
             status: StatusRegister::new(),
             oam_addr: 0,
@@ -167,7 +165,7 @@ impl PPU {
     }
 
     pub fn read_data(&mut self) -> Result<u8, String> {
-        let addr = self.addr.get();
+        let addr = self.v;
         self.increment_vram_addr();
 
         match addr {
@@ -192,7 +190,7 @@ impl PPU {
 
     pub fn write_data(&mut self, value: u8) -> Result<u8, String> {
         let retval: Result<u8, String>;
-        let addr = self.addr.get();
+        let addr = self.v;
         match addr {
             0x0000..=0x1FFF => {
                 retval = Result::Ok(self.rom.borrow_mut().write_to_chr_rom(addr as usize, value));
@@ -252,16 +250,30 @@ impl PPU {
     }
 
     fn increment_vram_addr(&mut self) {
-        self.addr.increment(self.ctl.vram_addr_increment());
+        self.v = self.v + self.ctl.vram_addr_increment() as u16;
+        if self.v > 0x3FFF {
+            self.v = self.v & 0b111111_11111111;
+        }
     }
 
     pub fn write_to_ppu_addr(&mut self, value: u8) -> u8 {
-        let r = self.addr.update(value, self.w == 0);
+        let retval: u8;
+        if self.w == 0 {
+            retval = value & 0b0011_1111;
+            self.t = (self.t & 0b0000_0000_1111_1111) | ((retval as u16) << 8);
+        } else {
+            retval = value;
+            self.t = (self.t & 0b0111_1111_0000_0000) | (retval as u16);
+            self.v = self.t; //TODO - Docs say this happens 1 to 1.5 dots later, but I'm not sure
+            //it matters that much (?)
+        }
         self.w = (self.w + 1) % 2;
-        r
+        retval
     }
 
     pub fn write_to_ctl(&mut self, value: u8) -> u8 {
+        self.t = (self.t & 0b0111_0011_1111_1111) | (((value as u16) & 0b11) << 11);
+
         let before_nmi_status = self.ctl.generate_vblank_nmi();
         let retval = self.ctl.update(value);
         if !before_nmi_status && self.ctl.generate_vblank_nmi() && self.status.is_vblank() {
@@ -302,6 +314,13 @@ impl PPU {
 
     pub fn write_to_scroll(&mut self, value: u8) -> u8 {
         let r = self.scroll.write(value, self.w == 0);
+        if self.w == 0 {
+            self.x = value & 0b111;
+            self.t = (self.t & 0b0111_1111_1110_0000) | (value as u16 >> 3);
+        } else {
+            let set = ((value as u16 & 0b111) << 14) | ((value as u16 & 0b1111_1000) << 2);
+            self.t = (self.t & 0b01000_1100_0001_1111) | set;
+        }
         self.w = (self.w + 1) % 2;
         r
     }
@@ -411,11 +430,16 @@ pub mod test {
         ppu.write_to_ctl(0);
         ppu.vram[0x0305] = 0x66;
 
+        println!("v, t = {:04X}, {:04X}", ppu.v, ppu.t);
         ppu.write_to_ppu_addr(0x23);
+
+        println!("v, t = {:04X}, {:04X}", ppu.v, ppu.t);
         ppu.write_to_ppu_addr(0x05);
 
+        println!("v, t = {:04X}, {:04X}", ppu.v, ppu.t);
+
         ppu.read_data().unwrap(); //load_into_buffer
-        assert_eq!(ppu.addr.get(), 0x2306);
+        assert_eq!(ppu.v, 0x2306);
         assert_eq!(ppu.read_data().unwrap(), 0x66);
     }
 

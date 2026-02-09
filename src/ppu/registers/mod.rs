@@ -1,4 +1,3 @@
-pub mod addr;
 pub mod ctl;
 pub mod mask;
 pub mod scroll;

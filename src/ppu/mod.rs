@@ -25,9 +25,10 @@ pub struct PPU {
     x: u8,
     w: u8,
 
+    pub scroll: ScrollRegister,
+
     internal_data_buf: u8,
 
-    pub scroll: ScrollRegister,
     mask: MaskRegister,
     pub ctl: ControlRegister,
     status: StatusRegister,
@@ -59,14 +60,33 @@ impl Tick for PPU {
                 self.status.set_sprite_0_hit(true);
             }
 
-            if self.scanline == 261 && self.frame_dots == 1 {
-                self.status.set_vblank(false);
-                self.interrupt.borrow_mut().set_nmi(None);
-                self.status.set_sprite_0_hit(false);
+            let is_rendering_enabled =
+                (self.scanline < 240 || self.scanline == 261) && self.mask.is_rendering_enabled();
+            if self.frame_dots == 256 && is_rendering_enabled {
+                self.increment_y();
+            }
+
+            if is_rendering_enabled
+                && self.frame_dots != 0
+                && self.frame_dots % 8 == 0
+                && (self.frame_dots <= 256 || self.frame_dots >= 328)
+            {
+                self.increment_coarse_x();
+            }
+
+            if self.frame_dots == 257 && is_rendering_enabled {
+                self.v = (self.v & 0b0111_1011_0001_1111) | (self.t & 0b0000_0100_0001_1111);
+            }
+
+            if self.scanline == 261
+                && self.frame_dots >= 280
+                && self.frame_dots <= 304
+                && is_rendering_enabled
+            {
+                self.v = (self.v & 0b0000_0100_0001_1111) | (self.t & 0b0111_1011_1110_0000);
             }
 
             self.frame_dots += 1;
-
             if self.scanline == 241 && self.frame_dots == 1 {
                 self.status.set_vblank(true);
                 self.status.set_sprite_0_hit(false);
@@ -75,6 +95,12 @@ impl Tick for PPU {
                         .borrow_mut()
                         .set_nmi(Some(self.ppu_cycles_this_cpu_cycle));
                 }
+            }
+
+            if self.scanline == 261 && self.frame_dots == 1 {
+                self.status.set_vblank(false);
+                self.interrupt.borrow_mut().set_nmi(None);
+                self.status.set_sprite_0_hit(false);
             }
 
             if self.frame_dots == 340
@@ -113,10 +139,11 @@ impl PPU {
             x: 0,
             w: 0,
 
+            scroll: ScrollRegister::new(),
+
             internal_data_buf: 0x0000,
 
             mask: MaskRegister::new(),
-            scroll: ScrollRegister::new(),
             ctl: ControlRegister::new(),
             status: StatusRegister::new(),
             oam_addr: 0,
@@ -143,8 +170,8 @@ impl PPU {
             dot: self.frame_dots as u16,
             status: self.status.snapshot(),
             mask: self.mask.read(),
-            scroll_x: self.scroll.scroll_x,
-            scroll_y: self.scroll.scroll_y,
+            t: self.t,
+            v: self.v,
             sprite_zero_x: self.oam_data[3],
             sprite_zero_y: self.oam_data[0],
         }
@@ -272,7 +299,7 @@ impl PPU {
     }
 
     pub fn write_to_ctl(&mut self, value: u8) -> u8 {
-        self.t = (self.t & 0b0111_0011_1111_1111) | (((value as u16) & 0b11) << 11);
+        self.t = (self.t & 0b0111_0011_1111_1111) | (((value as u16) & 0b11) << 10);
 
         let before_nmi_status = self.ctl.generate_vblank_nmi();
         let retval = self.ctl.update(value);
@@ -313,16 +340,16 @@ impl PPU {
     }
 
     pub fn write_to_scroll(&mut self, value: u8) -> u8 {
-        let r = self.scroll.write(value, self.w == 0);
+        self.scroll.write(value, self.w == 0);
         if self.w == 0 {
             self.x = value & 0b111;
             self.t = (self.t & 0b0111_1111_1110_0000) | (value as u16 >> 3);
         } else {
-            let set = ((value as u16 & 0b111) << 14) | ((value as u16 & 0b1111_1000) << 2);
-            self.t = (self.t & 0b01000_1100_0001_1111) | set;
+            let set = ((value as u16 & 0b111) << 12) | ((value as u16 & 0b1111_1000) << 2);
+            self.t = (self.t & 0b1000_1100_0001_1111) | set;
         }
         self.w = (self.w + 1) % 2;
-        r
+        value
     }
 
     pub fn write_to_oam_dma(&mut self, data: u8) -> u8 {
@@ -369,6 +396,89 @@ impl PPU {
         }
 
         return background_pixel_at(self, x, y) != 0;
+    }
+
+    pub fn nametable_address(&self) -> u16 {
+        // 0x2000 | (self.v & 0b0000_1100_0000_0000)
+        match self.nametable_select() {
+            0 => 0x2000,
+            1 => 0x2400,
+            2 => 0x2800,
+            3 => 0x2C00,
+            _ => panic!("Impossible!"),
+        }
+    }
+
+    fn increment_y(&mut self) {
+        //y increment
+        if (self.v & 0x7000) != 0x7000 {
+            self.v = self.v + 0x1000;
+        } else {
+            self.v = self.v & !0x7000;
+            let mut y = (self.v & 0x03E0) >> 5;
+            if y == 0x1D {
+                y = 0;
+                self.v = self.v ^ 0x0800;
+            } else if y == 0x1F {
+                y = 0;
+            } else {
+                y = y + 1;
+            }
+            self.v = (self.v & !0x03E0) | (y << 5);
+        }
+    }
+
+    fn increment_coarse_x(&mut self) {
+        if (self.v & 0x001F) == 0x1F {
+            self.v = self.v & !0x001F;
+            self.v = self.v ^ 0x0400;
+        } else {
+            self.v = self.v + 1;
+        }
+    }
+
+    fn nametable_select(&self) -> u8 {
+        (self.v >> 10) as u8 & 0b11
+    }
+
+    pub fn scroll_x(&self) -> u16 {
+        // let new_x = (self.v & 0x1F) << 3 | (self.x as u16 & 0b111);
+        // if new_x != self.scroll.scroll_x as u16 {
+        //     panic!(
+        //         "New and old scroll x did not match.\n\t(v,t) = ({:04X}, {:04X})\n\t(old, new) = ({},{})",
+        //         self.v, self.t, self.scroll.scroll_x, new_x
+        //     );
+        // }
+        // new_x
+        self.scroll.scroll_x as u16
+    }
+
+    pub fn scroll_y(&self) -> u16 {
+        // let new_y = ((self.v >> 2) & 0b1111_1000) | ((self.v >> 12) & 0b111);
+        // if new_y != self.scroll.scroll_y as u16 {
+        //     panic!(
+        //         "New and old scroll y did not match. (old, new) = ({},{})",
+        //         self.scroll.scroll_y, new_y
+        //     );
+        // }
+        // new_y
+        self.scroll.scroll_y as u16
+    }
+
+    fn fine_scroll_x(&self) -> u8 {
+        self.x & 0b111
+    }
+
+    fn fine_scroll_y(&self) -> u8 {
+        (self.v >> 12) as u8 & 0b111
+    }
+
+    fn coarse_scroll_x(&self) -> u8 {
+        self.v as u8 & 0x1F
+    }
+
+    fn coarse_scroll_y(&self) -> u8 {
+        (self.v >> 5) as u8 & 0x1F
     }
 }
 #[cfg(test)]
@@ -616,5 +726,62 @@ pub mod test {
         ppu.write_to_oam_addr(0x77);
         ppu.write_to_oam_addr(0x11);
         ppu.write_to_oam_addr(0x66);
+    }
+
+    #[test]
+    fn test_write_to_scroll() {
+        let mut ppu = ppu_empty_rom(Mirroring::Horizontal);
+
+        //1st Write: A B C D E F G H
+        //           0 1 1 1 0 1 1 0
+        // t = ...._...._...ABCDE
+        // x = FGH
+
+        let write = 0b0111_0110;
+        ppu.write_to_scroll(write);
+        assert_eq!(0b0000_0000_0000_1110, ppu.t);
+        assert_eq!(0b110, ppu.x);
+        assert_eq!(1, ppu.w);
+
+        //2nd Write: I J K L M N O P
+        //           1 0 0 1 1 1 0 0
+        // t = .NOP_..IJ_KLM._....
+
+        let write_2 = 0b1001_1100;
+        ppu.write_to_scroll(write_2);
+        assert_eq!(0b0100_0010_0110_1110, ppu.t);
+        assert_eq!(0, ppu.w);
+
+        ppu.v = ppu.t; //just to check our scroll_x & scroll_y look correct here...
+        assert_eq!(0b0111_0110, ppu.scroll_x());
+        assert_eq!(0b1001_1100, ppu.scroll_y());
+    }
+
+    #[test]
+    fn test_write_to_ctl() {
+        let mut ppu = ppu_empty_rom(Mirroring::Horizontal);
+
+        ppu.write_to_ctl(0b000_0011);
+
+        assert_eq!(0b0000_1100_0000_0000, ppu.t);
+
+        ppu.v = ppu.t;
+        assert_eq!(ppu.nametable_select(), 0b11);
+    }
+
+    #[test]
+    fn test_write_to_ppu_addr() {
+        let mut ppu = ppu_empty_rom(Mirroring::Horizontal);
+
+        ppu.t = 0b0100_0000_0000_0000; //also check bit 14 is cleared
+
+        ppu.write_to_ppu_addr(0b1010_1011);
+        assert_eq!(0b0010_1011_0000_0000, ppu.t);
+        assert_eq!(1, ppu.w);
+
+        ppu.write_to_ppu_addr(0b1100_1010);
+        assert_eq!(0b0010_1011_1100_1010, ppu.t);
+        assert_eq!(ppu.t, ppu.v);
+        assert_eq!(0, ppu.w);
     }
 }

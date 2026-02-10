@@ -29,8 +29,8 @@ pub struct PpuTrace {
     pub dot: u16,
     pub status: u8,
     pub mask: u8,
-    pub scroll_x: u8,
-    pub scroll_y: u8,
+    pub t: u16,
+    pub v: u16,
     pub sprite_zero_x: u8,
     pub sprite_zero_y: u8,
 }
@@ -115,15 +115,15 @@ impl PpuTraceFormatter {
         let mut out = String::new();
         write!(
             out,
-            "V:{:<3} H:{:<3} PS:{:02X} M:{:02X} SX:{:3} SY:{:<3} 0X:{:<3} 0Y:{:<3}",
+            "V:{:<3} H:{:<3} PS:{:02X} M:{:02X} SX:{:<3} SY:{:<3} t:{:04X} v:{:04X}",
             ppu_trace.scanline,
             ppu_trace.dot,
             ppu_trace.status,
             ppu_trace.mask,
-            ppu_trace.scroll_x,
-            ppu_trace.scroll_y,
             ppu_trace.sprite_zero_x,
             ppu_trace.sprite_zero_y,
+            ppu_trace.t,
+            ppu_trace.v,
         );
         out
     }

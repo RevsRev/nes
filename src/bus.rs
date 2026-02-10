@@ -245,14 +245,14 @@ impl<'a> Mem for BusImpl<'a> {
 impl<'call> Tick for BusImpl<'call> {
     fn tick(&mut self, cycles: u8) {
         // let nmi_before = self.ppu.poll(&InterruptType::Nmi).is_some();
-        self.ppu.tick(3 * cycles);
-        // let nmi_after = self.ppu.poll(&InterruptType::Nmi).is_some();
-        //
-        self.apu.tick(cycles);
 
-        if self.ppu.new_frame {
-            (self.gameloop_callback)(&self.ppu, &self.apu, &mut self.joypad)
+        for _ in 0..3 * cycles {
+            self.ppu.tick(1);
+            if self.ppu.new_frame {
+                (self.gameloop_callback)(&self.ppu, &self.apu, &mut self.joypad)
+            }
         }
+        self.apu.tick(cycles);
 
         // if !nmi_before && nmi_after {
         //     (self.gameloop_callback)(&self.ppu)

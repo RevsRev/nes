@@ -28,8 +28,8 @@ pub fn render(frame: &mut Frame, ppu: &PPU) {
 }
 
 pub fn background_pixel_at(ppu: &PPU, x: usize, y: usize) -> u8 {
-    let scrolled_x = (x + ppu.scroll.scroll_x as usize) % 512;
-    let scrolled_y = (y + ppu.scroll.scroll_y as usize) % 480;
+    let scrolled_x = (x + ppu.scroll_x() as usize) % 512;
+    let scrolled_y = (y + ppu.scroll_y() as usize) % 480;
 
     let tile_x = (scrolled_x % 256) / 8;
     let tile_y = (scrolled_y % 240) / 8;
@@ -62,8 +62,8 @@ pub fn background_pixel_at(ppu: &PPU, x: usize, y: usize) -> u8 {
 }
 
 fn render_background(frame: &mut Frame, ppu: &PPU) {
-    let scroll_x = (ppu.scroll.scroll_x) as usize;
-    let scroll_y = (ppu.scroll.scroll_y) as usize;
+    let scroll_x = (ppu.scroll_x()) as usize;
+    let scroll_y = (ppu.scroll_y()) as usize;
 
     let (main_nametable, second_nametable) = get_nametables(ppu);
 
@@ -98,23 +98,21 @@ fn render_background(frame: &mut Frame, ppu: &PPU) {
 }
 
 fn get_nametables(ppu: &PPU) -> (&[u8], &[u8]) {
-    let (main_nametable, second_nametable) = match (
-        &ppu.rom.borrow().screen_mirroring,
-        ppu.ctl.nametable_address(),
-    ) {
-        (Mirroring::Vertical, 0x2000)
-        | (Mirroring::Vertical, 0x2800)
-        | (Mirroring::Horizontal, 0x2000)
-        | (Mirroring::Horizontal, 0x2400) => (&ppu.vram[0..0x400], &ppu.vram[0x400..0x800]),
-        (Mirroring::Vertical, 0x2400)
-        | (Mirroring::Vertical, 0x2C00)
-        | (Mirroring::Horizontal, 0x2800)
-        | (Mirroring::Horizontal, 0x2C00) => (&ppu.vram[0x400..0x800], &ppu.vram[0..0x400]),
-        (_, _) => panic!(
-            "Unsupported mirroring type {:?}",
-            ppu.rom.borrow().screen_mirroring
-        ),
-    };
+    let (main_nametable, second_nametable) =
+        match (&ppu.rom.borrow().screen_mirroring, ppu.nametable_address()) {
+            (Mirroring::Vertical, 0x2000)
+            | (Mirroring::Vertical, 0x2800)
+            | (Mirroring::Horizontal, 0x2000)
+            | (Mirroring::Horizontal, 0x2400) => (&ppu.vram[0..0x400], &ppu.vram[0x400..0x800]),
+            (Mirroring::Vertical, 0x2400)
+            | (Mirroring::Vertical, 0x2C00)
+            | (Mirroring::Horizontal, 0x2800)
+            | (Mirroring::Horizontal, 0x2C00) => (&ppu.vram[0x400..0x800], &ppu.vram[0..0x400]),
+            (_, _) => panic!(
+                "Unsupported mirroring type {:?}",
+                ppu.rom.borrow().screen_mirroring
+            ),
+        };
     (main_nametable, second_nametable)
 }
 

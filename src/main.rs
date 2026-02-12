@@ -106,16 +106,15 @@ fn main() {
         .create_texture_target(PixelFormatEnum::RGB24, 256, 240)
         .unwrap();
 
-    let mut frame = Frame::new();
     let mut event_loop_sound_frame = Arc::new(Mutex::new(SoundFrame::new()));
     let audio_sound_frame = event_loop_sound_frame.clone();
     let halt = Arc::new(AtomicBool::new(false));
 
     let gameloop_callback = move |ppu: &PPU, apu: &APU, joypad: &mut Joypad| {
-        io::render::render(&mut frame, ppu);
+        // io::render::render(&mut frame, ppu);
         io::audio::sound(&mut event_loop_sound_frame, apu);
 
-        texture.update(None, &frame.data, 256 * 3).unwrap();
+        texture.update(None, &ppu.frame.data, 256 * 3).unwrap();
         canvas.copy(&texture, None, None).unwrap();
         canvas.present();
 

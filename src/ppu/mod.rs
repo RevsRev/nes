@@ -1,16 +1,18 @@
 use std::{cell::RefCell, rc::Rc};
 
+use palette::SYSTEM_PALLETE;
 use registers::{mask::MaskRegister, scroll::ScrollRegister, status::StatusRegister};
 
 use crate::{
     interrupt::{Interrupt, InterruptImpl},
-    io::render::background_pixel_at,
+    io::render::frame::Frame,
     ppu::registers::ctl::ControlRegister,
     rom::{Mirroring, Rom},
     trace::PpuTrace,
     traits::tick::Tick,
 };
 
+pub mod palette;
 pub mod registers;
 
 pub struct PPU {
@@ -24,6 +26,8 @@ pub struct PPU {
     t: u16,
     x: u8,
     w: u8,
+
+    pub frame: Frame,
 
     pub scroll: ScrollRegister,
 
@@ -76,6 +80,14 @@ impl Tick for PPU {
 
             if self.frame_dots == 257 && is_rendering_enabled {
                 self.v = (self.v & 0b0111_1011_0001_1111) | (self.t & 0b0000_0100_0001_1111);
+            }
+
+            if is_rendering_enabled && self.scanline < 240 && self.frame_dots < 256 {
+                self.render_background();
+            }
+
+            if self.scanline == 239 && self.frame_dots == 255 {
+                self.render_sprites();
             }
 
             if self.scanline == 261
@@ -138,6 +150,8 @@ impl PPU {
             t: 0,
             x: 0,
             w: 0,
+
+            frame: Frame::new(),
 
             scroll: ScrollRegister::new(),
 
@@ -395,7 +409,7 @@ impl PPU {
             return false;
         }
 
-        return background_pixel_at(self, x, y) != 0;
+        return self.background_pixel_at(x, y) != 0;
     }
 
     pub fn nametable_address(&self) -> u16 {
@@ -442,27 +456,29 @@ impl PPU {
     }
 
     pub fn scroll_x(&self) -> u16 {
-        // let new_x = (self.v & 0x1F) << 3 | (self.x as u16 & 0b111);
+        let new_x = (self.v & 0x1F) << 3 | (self.x as u16 & 0b111);
+        new_x
         // if new_x != self.scroll.scroll_x as u16 {
         //     panic!(
         //         "New and old scroll x did not match.\n\t(v,t) = ({:04X}, {:04X})\n\t(old, new) = ({},{})",
         //         self.v, self.t, self.scroll.scroll_x, new_x
         //     );
         // }
-        // new_x
-        self.scroll.scroll_x as u16
+        // // new_x
+        // self.scroll.scroll_x as u16
     }
 
     pub fn scroll_y(&self) -> u16 {
-        // let new_y = ((self.v >> 2) & 0b1111_1000) | ((self.v >> 12) & 0b111);
+        let new_y = ((self.v >> 2) & 0b1111_1000) | ((self.v >> 12) & 0b111);
+        new_y
         // if new_y != self.scroll.scroll_y as u16 {
         //     panic!(
         //         "New and old scroll y did not match. (old, new) = ({},{})",
         //         self.scroll.scroll_y, new_y
         //     );
         // }
-        // new_y
-        self.scroll.scroll_y as u16
+        // // new_y
+        // self.scroll.scroll_y as u16
     }
 
     fn fine_scroll_x(&self) -> u8 {
@@ -479,6 +495,178 @@ impl PPU {
 
     fn coarse_scroll_y(&self) -> u8 {
         (self.v >> 5) as u8 & 0x1F
+    }
+
+    fn render_background(&mut self) {
+        let name_table = match (
+            &self.rom.borrow().screen_mirroring,
+            self.nametable_address(),
+        ) {
+            (Mirroring::Vertical, 0x2000)
+            | (Mirroring::Vertical, 0x2800)
+            | (Mirroring::Horizontal, 0x2000)
+            | (Mirroring::Horizontal, 0x2400) => (&self.vram[0..0x400]),
+            (Mirroring::Vertical, 0x2400)
+            | (Mirroring::Vertical, 0x2C00)
+            | (Mirroring::Horizontal, 0x2800)
+            | (Mirroring::Horizontal, 0x2C00) => (&self.vram[0x400..0x800]),
+            (_, _) => panic!(
+                "Unsupported mirroring type {:?}",
+                self.rom.borrow().screen_mirroring
+            ),
+        };
+
+        let bank = self.ctl.bknd_pattern_addr();
+
+        let attribute_table = &name_table[0x3C0..0x400];
+
+        let col = self.coarse_scroll_y() as u16;
+        let row = self.coarse_scroll_x() as u16;
+        let tile_idx = col * 16 + row;
+        let tile = &self.rom.borrow().chr_rom
+            [(bank + tile_idx * 16) as usize..=(bank + tile_idx * 16 + 15) as usize];
+        let palette = self.background_pallette(attribute_table, col as usize, row as usize);
+
+        let upper = tile[self.fine_scroll_y() as usize] << self.fine_scroll_x();
+        let lower = tile[self.fine_scroll_y() as usize + 8usize] << self.fine_scroll_x();
+
+        let value = (1 & lower) << 1 | (1 & upper);
+
+        let rgb = match value {
+            0 => SYSTEM_PALLETE[self.palette_table[0] as usize],
+            1 => SYSTEM_PALLETE[palette[1] as usize],
+            2 => SYSTEM_PALLETE[palette[2] as usize],
+            3 => SYSTEM_PALLETE[palette[3] as usize],
+            _ => panic!("Impossible!"),
+        };
+
+        self.frame
+            .set_pixel(self.frame_dots as usize, self.scanline as usize, rgb);
+    }
+
+    fn render_sprites(&mut self) {
+        for i in (0..self.oam_data.len()).step_by(4).rev() {
+            let tile_idx = self.oam_data[i + 1] as u16;
+            let tile_x = self.oam_data[i + 3] as usize;
+            let tile_y = self.oam_data[i] as usize;
+
+            //load "settings" from the third byte
+            let flip_vertical = (self.oam_data[i + 2] >> 7) & 1 == 1;
+            let flip_horizontal = (self.oam_data[i + 2] >> 6) & 1 == 1;
+            let pallette_idx = self.oam_data[i + 2] & 0b11;
+
+            let sprite_pallette = self.sprite_pallette(pallette_idx);
+
+            let bank = self.ctl.sprite_pattern_addr();
+
+            let tile = &self.rom.borrow().chr_rom
+                [(bank + tile_idx * 16) as usize..=(bank + tile_idx * 16 + 15) as usize];
+
+            for y in 0..8 {
+                let mut upper = tile[y];
+                let mut lower = tile[y + 8];
+
+                for x in (0..8).rev() {
+                    let value = (1 & lower) << 1 | (1 & upper);
+                    upper = upper >> 1;
+                    lower = lower >> 1;
+                    let rgb = match value {
+                        0 => continue,
+                        1 => SYSTEM_PALLETE[sprite_pallette[1] as usize],
+                        2 => SYSTEM_PALLETE[sprite_pallette[2] as usize],
+                        3 => SYSTEM_PALLETE[sprite_pallette[3] as usize],
+                        _ => panic!("Impossible!"),
+                    };
+                    match (flip_horizontal, flip_vertical) {
+                        (false, false) => self.frame.set_pixel(tile_x + x, tile_y + y, rgb),
+                        (true, false) => self.frame.set_pixel(tile_x + 7 - x, tile_y + y, rgb),
+                        (false, true) => self.frame.set_pixel(tile_x + x, tile_y + 7 - y, rgb),
+                        (true, true) => self.frame.set_pixel(tile_x + 7 - x, tile_y + 7 - y, rgb),
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn background_pixel_at(&self, x: usize, y: usize) -> u8 {
+        let scrolled_x = (x + self.scroll_x() as usize) % 512;
+        let scrolled_y = (y + self.scroll_y() as usize) % 480;
+
+        let tile_x = (scrolled_x % 256) / 8;
+        let tile_y = (scrolled_y % 240) / 8;
+
+        //TODO - SCROLLING?
+        let nametable = match (
+            &self.rom.borrow().screen_mirroring,
+            self.nametable_address(),
+        ) {
+            (Mirroring::Vertical, 0x2000)
+            | (Mirroring::Vertical, 0x2800)
+            | (Mirroring::Horizontal, 0x2000)
+            | (Mirroring::Horizontal, 0x2400) => (&self.vram[0..0x400]),
+            (Mirroring::Vertical, 0x2400)
+            | (Mirroring::Vertical, 0x2C00)
+            | (Mirroring::Horizontal, 0x2800)
+            | (Mirroring::Horizontal, 0x2C00) => (&self.vram[0x400..0x800]),
+            (_, _) => panic!(
+                "Unsupported mirroring type {:?}",
+                self.rom.borrow().screen_mirroring
+            ),
+        };
+
+        let tile_idx = nametable[32 * tile_y + tile_x] as u16;
+
+        let fine_y = scrolled_y % 8;
+        let bank = self.ctl.bknd_pattern_addr();
+
+        let lo_byte = &self.rom.borrow().chr_rom[(bank + tile_idx * 16) as usize + fine_y];
+        let hi_byte = &self.rom.borrow().chr_rom[(bank + tile_idx * 16) as usize + fine_y + 8];
+
+        let fine_x = 7 - (scrolled_x % 8);
+        let bit = 1 << fine_x;
+
+        let pixel_lo = (lo_byte & bit) >> fine_x;
+        let pixel_hi = (hi_byte & bit) >> fine_x;
+
+        let pixel = pixel_hi << 1 | pixel_lo;
+
+        pixel
+    }
+
+    fn sprite_pallette(&self, pallette_idx: u8) -> [u8; 4] {
+        let start = 0x11 + (pallette_idx * 4) as usize;
+        [
+            0,
+            self.palette_table[start],
+            self.palette_table[start + 1],
+            self.palette_table[start + 2],
+        ]
+    }
+
+    fn background_pallette(
+        &self,
+        attribute_table: &[u8],
+        tile_column: usize,
+        tile_row: usize,
+    ) -> [u8; 4] {
+        let attr_table_index = 8 * (tile_row / 4) + tile_column / 4;
+        let attr_byte = attribute_table[attr_table_index];
+
+        let pallette_index = match ((tile_column % 4) / 2, (tile_row % 4) / 2) {
+            (0, 0) => attr_byte & 0b11,
+            (1, 0) => (attr_byte >> 2) & 0b11,
+            (0, 1) => (attr_byte >> 4) & 0b11,
+            (1, 1) => (attr_byte >> 6) & 0b11,
+            (_, _) => panic!("Impossible!"),
+        };
+
+        let pallette_start: usize = 1 + (pallette_index as usize) * 4;
+        [
+            self.palette_table[0],
+            self.palette_table[pallette_start],
+            self.palette_table[pallette_start + 1],
+            self.palette_table[pallette_start + 2],
+        ]
     }
 }
 #[cfg(test)]

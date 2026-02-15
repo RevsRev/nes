@@ -1,6 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use registers::{mask::MaskRegister, status::StatusRegister};
+use sdl2::sys::SDL_PixelType;
 
 use crate::{
     interrupt::{Interrupt, InterruptImpl},
@@ -66,24 +67,24 @@ impl Tick for PPU {
             let is_rendering_enabled =
                 (self.scanline < 240 || self.scanline == 261) && self.mask.is_rendering_enabled();
 
+            if self.frame_dots == 256 && is_rendering_enabled {
+                self.increment_y();
+            }
+
+            //TODO - This should also be doing some work on 328 & 336 (updating shift registers).
+            //But current implementation breaks coarse x, resulting in weird offset behvaiour
+            if is_rendering_enabled && (self.frame_dots <= 256) {
+                if self.frame_dots % 8 == 0 && self.frame_dots != 0 {
+                    self.increment_coarse_x();
+                }
+            }
+
             if self.scanline < 240 && self.frame_dots < 256 {
                 self.render_background();
             }
 
             if self.scanline == 240 && self.frame_dots == 256 {
                 self.render_sprites();
-            }
-
-            if self.frame_dots == 256 && is_rendering_enabled {
-                self.increment_y();
-            }
-
-            if is_rendering_enabled && (self.frame_dots <= 255 || self.frame_dots >= 328) {
-                self.x = self.x + 1;
-                if self.x == 8 {
-                    self.x = 0;
-                    self.increment_coarse_x();
-                }
             }
 
             if self.frame_dots == 257 && is_rendering_enabled {
@@ -558,9 +559,7 @@ impl PPU {
         let mut upper = tile[y];
         let mut lower = tile[y + 8];
 
-        let x = self.fine_scroll_x() as usize;
-
-        let bit_flag = 7 - x;
+        let bit_flag = 7 - ((self.frame_dots + self.fine_scroll_x() as usize) % 8);
         upper = upper >> bit_flag;
         lower = lower >> bit_flag;
         let value = (1 & lower) << 1 | (1 & upper);
@@ -573,10 +572,8 @@ impl PPU {
             _ => panic!("Impossible!"),
         };
 
-        let pixel_x = tile_x * 8 + x;
-        let pixel_y = tile_y * 8 + y;
-
-        self.frame.set_pixel(pixel_x, pixel_y, rgb);
+        self.frame
+            .set_pixel(self.frame_dots, self.scanline as usize, rgb);
     }
 
     fn sprite_pallette(&self, pallette_idx: u8) -> [u8; 4] {

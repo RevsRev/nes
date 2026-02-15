@@ -1,10 +1,10 @@
 use std::{cell::RefCell, rc::Rc};
 
-use registers::{mask::MaskRegister, scroll::ScrollRegister, status::StatusRegister};
+use registers::{mask::MaskRegister, status::StatusRegister};
 
 use crate::{
     interrupt::{Interrupt, InterruptImpl},
-    io::render::{Rect, background_pixel_at, frame::Frame, palette::SYSTEM_PALLETE},
+    io::render::{background_pixel_at, frame::Frame, palette::SYSTEM_PALLETE},
     ppu::registers::ctl::ControlRegister,
     rom::{Mirroring, Rom},
     trace::PpuTrace,
@@ -27,8 +27,6 @@ pub struct PPU {
     t: u16,
     x: u8,
     w: u8,
-
-    pub scroll: ScrollRegister,
 
     pub frame: Frame,
 
@@ -152,8 +150,6 @@ impl PPU {
             t: 0,
             x: 0,
             w: 0,
-
-            scroll: ScrollRegister::new(),
 
             frame: Frame::new(),
 
@@ -356,7 +352,6 @@ impl PPU {
     }
 
     pub fn write_to_scroll(&mut self, value: u8) -> u8 {
-        self.scroll.write(value, self.w == 0);
         if self.w == 0 {
             self.x = value & 0b111;
             self.t = (self.t & 0b0111_1111_1110_0000) | (value as u16 >> 3);
@@ -416,13 +411,6 @@ impl PPU {
 
     pub fn nametable_address(&self) -> u16 {
         0x2000 | (self.v & 0b0000_1100_0000_0000)
-        // match self.nametable_select() {
-        //     0 => 0x2000,
-        //     1 => 0x2400,
-        //     2 => 0x2800,
-        //     3 => 0x2C00,
-        //     _ => panic!("Impossible!"),
-        // }
     }
 
     fn increment_y(&mut self) {
@@ -457,27 +445,11 @@ impl PPU {
     }
 
     pub fn scroll_x(&self) -> u16 {
-        let new_x = (self.v & 0x1F) << 3 | (self.x as u16 & 0b111);
-        // if new_x != self.scroll.scroll_x as u16 {
-        //     panic!(
-        //         "New and old scroll x did not match.\n\t(v,t) = ({:04X}, {:04X})\n\t(old, new) = ({},{})",
-        //         self.v, self.t, self.scroll.scroll_x, new_x
-        //     );
-        // }
-        new_x
-        // self.scroll.scroll_x as u16
+        (self.v & 0x1F) << 3 | (self.x as u16 & 0b111)
     }
 
     pub fn scroll_y(&self) -> u16 {
-        let new_y = ((self.v >> 2) & 0b1111_1000) | ((self.v >> 12) & 0b111);
-        // if new_y != self.scroll.scroll_y as u16 {
-        //     panic!(
-        //         "New and old scroll y did not match. (old, new) = ({},{})",
-        //         self.scroll.scroll_y, new_y
-        //     );
-        // }
-        new_y
-        // self.scroll.scroll_y as u16
+        ((self.v >> 2) & 0b1111_1000) | ((self.v >> 12) & 0b111)
     }
 
     fn fine_scroll_x(&self) -> u8 {

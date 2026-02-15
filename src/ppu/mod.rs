@@ -68,8 +68,11 @@ impl Tick for PPU {
             let is_rendering_enabled =
                 (self.scanline < 240 || self.scanline == 261) && self.mask.is_rendering_enabled();
 
-            if self.scanline == 240 && self.frame_dots == 256 {
+            if self.scanline < 240 && self.frame_dots < 256 {
                 self.render_background();
+            }
+
+            if self.scanline == 240 && self.frame_dots == 256 {
                 self.render_sprites();
             }
 
@@ -77,16 +80,16 @@ impl Tick for PPU {
                 self.increment_y();
             }
 
-            if is_rendering_enabled
-                && self.frame_dots != 0
-                && self.frame_dots % 8 == 0
-                && (self.frame_dots <= 256 || self.frame_dots >= 328)
-            {
-                self.increment_coarse_x();
+            if is_rendering_enabled && (self.frame_dots <= 255 || self.frame_dots >= 328) {
+                self.x = self.x + 1;
+                if self.x == 8 {
+                    self.x = 0;
+                    self.increment_coarse_x();
+                }
             }
 
             if self.frame_dots == 257 && is_rendering_enabled {
-                self.v = (self.v & 0b0111_1011_0001_1111) | (self.t & 0b0000_0100_0001_1111);
+                self.v = (self.v & 0b0111_1011_1110_0000) | (self.t & 0b0000_0100_0001_1111);
             }
 
             if self.scanline == 261
@@ -412,18 +415,17 @@ impl PPU {
     }
 
     pub fn nametable_address(&self) -> u16 {
-        // 0x2000 | (self.v & 0b0000_1100_0000_0000)
-        match self.nametable_select() {
-            0 => 0x2000,
-            1 => 0x2400,
-            2 => 0x2800,
-            3 => 0x2C00,
-            _ => panic!("Impossible!"),
-        }
+        0x2000 | (self.v & 0b0000_1100_0000_0000)
+        // match self.nametable_select() {
+        //     0 => 0x2000,
+        //     1 => 0x2400,
+        //     2 => 0x2800,
+        //     3 => 0x2C00,
+        //     _ => panic!("Impossible!"),
+        // }
     }
 
     fn increment_y(&mut self) {
-        //y increment
         if (self.v & 0x7000) != 0x7000 {
             self.v = self.v + 0x1000;
         } else {
@@ -455,27 +457,27 @@ impl PPU {
     }
 
     pub fn scroll_x(&self) -> u16 {
-        // let new_x = (self.v & 0x1F) << 3 | (self.x as u16 & 0b111);
+        let new_x = (self.v & 0x1F) << 3 | (self.x as u16 & 0b111);
         // if new_x != self.scroll.scroll_x as u16 {
         //     panic!(
         //         "New and old scroll x did not match.\n\t(v,t) = ({:04X}, {:04X})\n\t(old, new) = ({},{})",
         //         self.v, self.t, self.scroll.scroll_x, new_x
         //     );
         // }
-        // new_x
-        self.scroll.scroll_x as u16
+        new_x
+        // self.scroll.scroll_x as u16
     }
 
     pub fn scroll_y(&self) -> u16 {
-        // let new_y = ((self.v >> 2) & 0b1111_1000) | ((self.v >> 12) & 0b111);
+        let new_y = ((self.v >> 2) & 0b1111_1000) | ((self.v >> 12) & 0b111);
         // if new_y != self.scroll.scroll_y as u16 {
         //     panic!(
         //         "New and old scroll y did not match. (old, new) = ({},{})",
         //         self.scroll.scroll_y, new_y
         //     );
         // }
-        // new_y
-        self.scroll.scroll_y as u16
+        new_y
+        // self.scroll.scroll_y as u16
     }
 
     fn fine_scroll_x(&self) -> u8 {
@@ -495,54 +497,31 @@ impl PPU {
     }
 
     fn render_background(&mut self) {
-        let scroll_x = (self.scroll_x()) as usize;
-        let scroll_y = (self.scroll_y()) as usize;
-
-        let (main_nametable, second_nametable) = self.get_nametables();
-
-        self.render_name_table(
-            main_nametable,
-            Rect::new(scroll_x, scroll_y, WIDTH, HEIGHT),
-            -(scroll_x as isize),
-            -(scroll_y as isize),
-        );
-
-        if scroll_x > 0 {
-            self.render_name_table(
-                second_nametable,
-                Rect::new(0, 0, scroll_x, HEIGHT),
-                (256 - scroll_x) as isize,
-                0,
-            );
-        } else if scroll_y > 0 {
-            self.render_name_table(
-                second_nametable,
-                Rect::new(0, 0, WIDTH, scroll_y),
-                0,
-                (240 - scroll_y) as isize,
-            );
-        }
+        let nametable = self.get_nametable();
+        self.render_name_table(nametable);
     }
 
-    fn get_nametables(&self) -> (usize, usize) {
-        let (main_nametable, second_nametable) = match (
-            &self.rom.borrow().screen_mirroring,
-            self.nametable_address(),
-        ) {
-            (Mirroring::Vertical, 0x2000)
-            | (Mirroring::Vertical, 0x2800)
-            | (Mirroring::Horizontal, 0x2000)
-            | (Mirroring::Horizontal, 0x2400) => (0, 0x400),
-            (Mirroring::Vertical, 0x2400)
-            | (Mirroring::Vertical, 0x2C00)
-            | (Mirroring::Horizontal, 0x2800)
-            | (Mirroring::Horizontal, 0x2C00) => (0x400, 0),
-            (_, _) => panic!(
-                "Unsupported mirroring type {:?}",
-                self.rom.borrow().screen_mirroring
-            ),
-        };
-        (main_nametable, second_nametable)
+    fn get_nametable(&self) -> usize {
+        let nt_select = (self.nametable_address() >> 10) & 0b11;
+
+        match self.rom.borrow().screen_mirroring {
+            Mirroring::Vertical => {
+                return match nt_select {
+                    0b00 | 0b11 => 0x000,
+                    0b10 | 0b01 => 0x400,
+                    _ => unreachable!("Impossible!"),
+                };
+            }
+            Mirroring::Horizontal => {
+                return match nt_select {
+                    0b00 | 0b01 => 0x000,
+                    0b10 | 0b11 => 0x400,
+                    _ => unreachable!("Impossible!"),
+                };
+            }
+
+            Mirroring::FourScreen => todo!("FourScreen mirroring is not implemented"),
+        }
     }
 
     fn render_sprites(&mut self) {
@@ -589,60 +568,43 @@ impl PPU {
         }
     }
 
-    fn render_name_table(
-        &mut self,
-        name_table_start: usize,
-        view_port: Rect,
-        shift_x: isize,
-        shift_y: isize,
-    ) {
+    fn render_name_table(&mut self, name_table_start: usize) {
         let name_table = &self.vram[name_table_start..name_table_start + 0x400];
         let bank = self.ctl.bknd_pattern_addr();
 
         let attribute_table = &name_table[0x3C0..0x400];
 
-        for i in 0..0x3C0 {
-            let col = i % 32;
-            let row = i / 32;
-            let tile_idx = name_table[i] as u16;
-            let tile = &self.rom.borrow().chr_rom
-                [(bank + tile_idx * 16) as usize..=(bank + tile_idx * 16 + 15) as usize];
-            let palette = self.background_pallette(attribute_table, col, row);
+        let tile_x = self.coarse_scroll_x() as usize;
+        let tile_y = self.coarse_scroll_y() as usize;
 
-            for y in 0..8 {
-                let mut upper = tile[y];
-                let mut lower = tile[y + 8];
+        let tile_idx = name_table[32 * tile_y + tile_x] as u16;
+        let tile = &self.rom.borrow().chr_rom
+            [(bank + tile_idx * 16) as usize..=(bank + tile_idx * 16 + 15) as usize];
+        let palette = self.background_pallette(attribute_table, tile_x, tile_y);
 
-                for x in (0..8).rev() {
-                    let value = (1 & lower) << 1 | (1 & upper);
-                    upper = upper >> 1;
-                    lower = lower >> 1;
+        let y = self.fine_scroll_y() as usize;
+        let mut upper = tile[y];
+        let mut lower = tile[y + 8];
 
-                    let rgb = match value {
-                        0 => SYSTEM_PALLETE[self.palette_table[0] as usize],
-                        1 => SYSTEM_PALLETE[palette[1] as usize],
-                        2 => SYSTEM_PALLETE[palette[2] as usize],
-                        3 => SYSTEM_PALLETE[palette[3] as usize],
-                        _ => panic!("Impossible!"),
-                    };
+        let x = self.fine_scroll_x() as usize;
 
-                    let pixel_x = col * 8 + x;
-                    let pixel_y = row * 8 + y;
+        let bit_flag = 7 - x;
+        upper = upper >> bit_flag;
+        lower = lower >> bit_flag;
+        let value = (1 & lower) << 1 | (1 & upper);
 
-                    if (pixel_x >= view_port.x1
-                        && pixel_x < view_port.x2
-                        && pixel_y >= view_port.y1
-                        && pixel_y < view_port.y2)
-                    {
-                        self.frame.set_pixel(
-                            (shift_x + pixel_x as isize) as usize,
-                            (shift_y + pixel_y as isize) as usize,
-                            rgb,
-                        );
-                    }
-                }
-            }
-        }
+        let rgb = match value {
+            0 => SYSTEM_PALLETE[self.palette_table[0] as usize],
+            1 => SYSTEM_PALLETE[palette[1] as usize],
+            2 => SYSTEM_PALLETE[palette[2] as usize],
+            3 => SYSTEM_PALLETE[palette[3] as usize],
+            _ => panic!("Impossible!"),
+        };
+
+        let pixel_x = tile_x * 8 + x;
+        let pixel_y = tile_y * 8 + y;
+
+        self.frame.set_pixel(pixel_x, pixel_y, rgb);
     }
 
     fn sprite_pallette(&self, pallette_idx: u8) -> [u8; 4] {

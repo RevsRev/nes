@@ -9,11 +9,11 @@ pub mod palette;
 pub const WIDTH: usize = 256;
 pub const HEIGHT: usize = 240;
 
-struct Rect {
-    x1: usize,
-    y1: usize,
-    x2: usize,
-    y2: usize,
+pub struct Rect {
+    pub x1: usize,
+    pub y1: usize,
+    pub x2: usize,
+    pub y2: usize,
 }
 
 impl Rect {

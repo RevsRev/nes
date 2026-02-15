@@ -249,6 +249,7 @@ impl<'call> Tick for BusImpl<'call> {
         for _ in 0..3 * cycles {
             self.ppu.tick(1);
             if self.ppu.new_frame {
+                self.ppu.render();
                 (self.gameloop_callback)(&self.ppu, &self.apu, &mut self.joypad)
             }
         }

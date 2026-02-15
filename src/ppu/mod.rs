@@ -67,6 +67,12 @@ impl Tick for PPU {
 
             let is_rendering_enabled =
                 (self.scanline < 240 || self.scanline == 261) && self.mask.is_rendering_enabled();
+
+            if self.scanline == 240 && self.frame_dots == 256 {
+                self.render_background();
+                self.render_sprites();
+            }
+
             if self.frame_dots == 256 && is_rendering_enabled {
                 self.increment_y();
             }
@@ -486,11 +492,6 @@ impl PPU {
 
     fn coarse_scroll_y(&self) -> u8 {
         (self.v >> 5) as u8 & 0x1F
-    }
-
-    pub fn render(&mut self) {
-        self.render_background();
-        self.render_sprites();
     }
 
     fn render_background(&mut self) {

@@ -25,6 +25,7 @@ pub struct CpuTrace {
 }
 
 pub struct PpuTrace {
+    pub frame: u64,
     pub scanline: u16,
     pub dot: u16,
     pub status: u8,
@@ -115,7 +116,8 @@ impl PpuTraceFormatter {
         let mut out = String::new();
         write!(
             out,
-            "V:{:<3} H:{:<3} PS:{:02X} M:{:02X} SX:{:<3} SY:{:<3} t:{:04X} v:{:04X}",
+            "F: {:<4} V:{:<3} H:{:<3} PS:{:02X} M:{:02X} SX:{:<3} SY:{:<3} t:{:04X} v:{:04X}",
+            ppu_trace.frame,
             ppu_trace.scanline,
             ppu_trace.dot,
             ppu_trace.status,

@@ -32,7 +32,7 @@ impl MaskRegister {
 
     pub fn is_rendering_enabled(&self) -> bool {
         has_flag(self.value, ENABLE_SPRITE_RENDERING)
-            && has_flag(self.value, ENABLE_BACKGROUND_RENDERING)
+            || has_flag(self.value, ENABLE_BACKGROUND_RENDERING)
     }
 
     pub fn is_left_side_clipping_window_enabled(&self) -> bool {

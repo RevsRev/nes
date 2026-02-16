@@ -179,6 +179,7 @@ impl PPU {
 
     pub fn trace(&self) -> PpuTrace {
         PpuTrace {
+            frame: self.total_frames,
             scanline: self.scanline,
             dot: self.frame_dots as u16,
             status: self.status.snapshot(),

@@ -113,7 +113,8 @@ impl Rom {
 
     pub fn write_to_chr_rom(&mut self, addr: usize, data: u8) -> u8 {
         if !self.allow_chr_writes {
-            panic!("Attempt to write to chr rom space {:#04X}", addr);
+            return 0;
+            // panic!("Attempt to write to chr rom space {:#04X}", addr);
         }
 
         let retval = self.chr_rom[addr];

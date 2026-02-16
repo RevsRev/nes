@@ -113,7 +113,7 @@ impl Rom {
 
     pub fn write_to_chr_rom(&mut self, addr: usize, data: u8) -> u8 {
         if !self.allow_chr_writes {
-            return 0;
+            return 0; //Going to ignore rather than producing a fatal error
             // panic!("Attempt to write to chr rom space {:#04X}", addr);
         }
 

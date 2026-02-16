@@ -434,12 +434,12 @@ mod test {
         let nes_init = NesInit {
             cycles: 8,
             register_a: 0,
-            register_x: 1,
-            status: 0x07,
-            stack_pointer: 0xF4,
-            ppu_frame_cycles: 27,
+            register_x: 0,
+            status: 0x04,
+            stack_pointer: 0xFD,
+            ppu_frame_cycles: 25,
         };
-        should_match_mesen(rom, nes_test_log, Some(nes_init), 206076);
+        should_match_mesen(rom, nes_test_log, Some(nes_init), -1);
     }
 
     #[test]

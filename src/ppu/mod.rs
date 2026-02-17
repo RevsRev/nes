@@ -22,8 +22,6 @@ struct SpriteShift {
     lo: u8,
     hi: u8,
     palette_idx: u8,
-    flip_h: bool,
-    flip_v: bool,
 }
 
 pub struct PPU {
@@ -74,10 +72,6 @@ impl Tick for PPU {
                 self.store_trace();
             }
 
-            if self.is_sprite_0_hit() {
-                self.status.set_sprite_0_hit(true);
-            }
-
             let is_rendering_enabled =
                 (self.scanline < 240 || self.scanline == 261) && self.mask.is_rendering_enabled();
 
@@ -95,6 +89,9 @@ impl Tick for PPU {
 
             if self.scanline < 240 && self.frame_dots < 256 {
                 self.render_background();
+                if self.is_sprite_0_hit() {
+                    self.status.set_sprite_0_hit(true);
+                }
                 self.render_sprites();
             }
 
@@ -422,8 +419,8 @@ impl PPU {
             return false;
         }
 
-        self.frame.get_bg_pixel_at(x, y) != 0
-        // return self.frame.get_bg_pixel_at(x, y) != 0 && self.frame.get_sprite_pixel_at(x, y) != 0;
+        // self.frame.get_bg_pixel_at(x, y) != 0
+        return self.frame.get_bg_pixel_at(x, y) != 0 && self.frame.get_sprite_pixel_at(x, y) != 0;
     }
 
     pub fn nametable_address(&self) -> u16 {
@@ -580,8 +577,6 @@ impl PPU {
                 lo: lo,
                 hi: hi,
                 palette_idx: self.oam_data[i + 2] & 0b11,
-                flip_h,
-                flip_v,
             });
 
             if self.scanline_sprites.len() == 8 {

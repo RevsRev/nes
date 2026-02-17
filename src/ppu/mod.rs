@@ -394,8 +394,8 @@ impl PPU {
         let x = self.frame_dots;
         let y = self.scanline as usize;
 
-        let sprite_x = self.oam_data[0] as usize;
-        let sprite_y = self.oam_data[3] as usize;
+        let sprite_x = self.oam_data[3] as usize;
+        let sprite_y = self.oam_data[0] as usize;
 
         if x <= 7usize && self.mask.is_left_side_clipping_window_enabled() {
             return false;

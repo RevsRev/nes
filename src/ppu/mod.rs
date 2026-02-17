@@ -17,6 +17,15 @@ pub mod registers;
 pub const WIDTH: usize = 256;
 pub const HEIGHT: usize = 240;
 
+struct SpriteShift {
+    start_x: u8,
+    lo: u8,
+    hi: u8,
+    palette_idx: u8,
+    flip_h: bool,
+    flip_v: bool,
+}
+
 pub struct PPU {
     pub rom: Rc<RefCell<Rom>>,
     pub palette_table: [u8; 32],
@@ -47,6 +56,7 @@ pub struct PPU {
     total_frames: u64,
     pub scanline: u16,
     pub new_frame: bool,
+    scanline_sprites: Vec<SpriteShift>,
 }
 
 impl Tick for PPU {
@@ -56,6 +66,10 @@ impl Tick for PPU {
         self.new_frame = false;
 
         for _ in 0..cycles {
+            if self.frame_dots == 0 {
+                self.compute_sprites();
+            }
+
             if self.ppu_cycles_this_cpu_cycle == 2 {
                 self.store_trace();
             }
@@ -81,10 +95,6 @@ impl Tick for PPU {
 
             if self.scanline < 240 && self.frame_dots < 256 {
                 self.render_background();
-            }
-
-            if self.scanline == 240 && self.frame_dots == 0 {
-                self.frame.clear_sprite_pixels();
                 self.render_sprites();
             }
 
@@ -171,6 +181,7 @@ impl PPU {
             frame_dots: 0,
             scanline: 0,
             new_frame: false,
+            scanline_sprites: Vec::new(),
         }
     }
 
@@ -533,59 +544,76 @@ impl PPU {
         }
     }
 
-    fn render_sprites(&mut self) {
+    fn compute_sprites(&mut self) {
+        self.scanline_sprites.clear();
+
         for i in (0..self.oam_data.len()).step_by(4).rev() {
-            let tile_idx = self.oam_data[i + 1] as u16;
-            let tile_x = self.oam_data[i + 3] as usize;
-            let tile_y = self.oam_data[i] as usize;
+            let tile_y = self.oam_data[i] as u16;
+            let sprite_height = self.ctl.sprite_size() as u16;
 
-            //load "settings" from the third byte
-            let flip_vertical = (self.oam_data[i + 2] >> 7) & 1 == 1;
-            let flip_horizontal = (self.oam_data[i + 2] >> 6) & 1 == 1;
-            let pallette_idx = self.oam_data[i + 2] & 0b11;
+            if !(tile_y <= self.scanline && self.scanline < tile_y + sprite_height) {
+                continue;
+            }
 
-            let sprite_pallette = self.sprite_pallette(pallette_idx);
+            let flip_v = (self.oam_data[i + 2] >> 7) & 1 == 1;
+            let y = if flip_v {
+                7 - (self.scanline - tile_y) as usize
+            } else {
+                (self.scanline - tile_y) as usize
+            };
 
             let bank = self.ctl.sprite_pattern_addr();
-
+            let tile_idx = self.oam_data[i + 1] as u16;
             let tile = &self.rom.borrow().chr_rom
                 [(bank + tile_idx * 16) as usize..=(bank + tile_idx * 16 + 15) as usize];
 
-            for y in 0..8 {
-                let mut upper = tile[y];
-                let mut lower = tile[y + 8];
+            let flip_h = (self.oam_data[i + 2] >> 6) & 1 == 1;
 
-                for x in (0..8).rev() {
-                    let value = (1 & lower) << 1 | (1 & upper);
-                    upper = upper >> 1;
-                    lower = lower >> 1;
-                    let rgb = match value {
-                        0 => continue,
-                        1 => SYSTEM_PALLETE[sprite_pallette[1] as usize],
-                        2 => SYSTEM_PALLETE[sprite_pallette[2] as usize],
-                        3 => SYSTEM_PALLETE[sprite_pallette[3] as usize],
-                        _ => panic!("Impossible!"),
-                    };
-                    match (flip_horizontal, flip_vertical) {
-                        (false, false) => {
-                            self.frame
-                                .set_sprite_pixel(tile_x + x, tile_y + y, rgb, value)
-                        }
-                        (true, false) => {
-                            self.frame
-                                .set_sprite_pixel(tile_x + 7 - x, tile_y + y, rgb, value)
-                        }
-                        (false, true) => {
-                            self.frame
-                                .set_sprite_pixel(tile_x + x, tile_y + 7 - y, rgb, value)
-                        }
-                        (true, true) => {
-                            self.frame
-                                .set_sprite_pixel(tile_x + 7 - x, tile_y + 7 - y, rgb, value)
-                        }
-                    }
-                }
+            let (lo, hi) = if flip_h {
+                (tile[y].reverse_bits(), tile[y + 8].reverse_bits())
+            } else {
+                (tile[y], tile[y + 8])
+            };
+
+            self.scanline_sprites.push(SpriteShift {
+                start_x: self.oam_data[i + 3],
+                lo: lo,
+                hi: hi,
+                palette_idx: self.oam_data[i + 2] & 0b11,
+                flip_h,
+                flip_v,
+            });
+
+            if self.scanline_sprites.len() == 8 {
+                break;
             }
+        }
+    }
+
+    fn render_sprites(&mut self) {
+        for sprite_shift in &self.scanline_sprites {
+            let start_x = sprite_shift.start_x as usize;
+            if !(start_x <= self.frame_dots && self.frame_dots < start_x + 8) {
+                continue;
+            }
+
+            let bit_shift = 7 - (self.frame_dots - start_x);
+            let lo = sprite_shift.lo >> bit_shift;
+            let hi = sprite_shift.hi >> bit_shift;
+            let value = ((1 & hi) << 1) | (lo & 1);
+
+            let sprite_palette = self.sprite_pallette(sprite_shift.palette_idx);
+
+            let rgb = match value {
+                0 => continue,
+                1 => SYSTEM_PALLETE[sprite_palette[1] as usize],
+                2 => SYSTEM_PALLETE[sprite_palette[2] as usize],
+                3 => SYSTEM_PALLETE[sprite_palette[3] as usize],
+                _ => panic!("Impossible!"),
+            };
+
+            self.frame
+                .set_sprite_pixel(self.frame_dots, self.scanline as usize, rgb, value);
         }
     }
 

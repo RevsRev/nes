@@ -55,6 +55,20 @@ pub struct PPU {
     pub scanline: u16,
     pub new_frame: bool,
     scanline_sprites: Vec<SpriteShift>,
+
+    nt_addr: u16,
+    tile_idx: u16,
+    attr_table_addr: u16,
+    attr_byte: u8,
+    pattern_lo_addr: u16,
+    pattern_lo: u8,
+    pattern_hi_addr: u16,
+    pattern_hi: u8,
+
+    bg_shift_lo: u16,
+    bg_shift_hi: u16,
+    attr_shift_lo: u16,
+    attr_shift_hi: u16,
 }
 
 impl Tick for PPU {
@@ -79,12 +93,8 @@ impl Tick for PPU {
                 self.increment_y();
             }
 
-            //TODO - This should also be doing some work on 328 & 336 (updating shift registers).
-            //But current implementation breaks coarse x, resulting in weird offset behvaiour
-            if is_rendering_enabled && (self.frame_dots <= 256) {
-                if self.frame_dots % 8 == 0 && self.frame_dots != 0 {
-                    self.increment_coarse_x();
-                }
+            if is_rendering_enabled && (self.frame_dots < 256 || self.frame_dots >= 326) {
+                self.fetch_tile();
             }
 
             if self.scanline < 240 && self.frame_dots < 256 {
@@ -179,6 +189,20 @@ impl PPU {
             scanline: 0,
             new_frame: false,
             scanline_sprites: Vec::new(),
+
+            nt_addr: 0,
+            tile_idx: 0,
+            attr_table_addr: 0,
+            attr_byte: 0,
+            pattern_lo_addr: 0,
+            pattern_lo: 0,
+            pattern_hi_addr: 0,
+            pattern_hi: 0,
+
+            bg_shift_lo: 0,
+            bg_shift_hi: 0,
+            attr_shift_lo: 0,
+            attr_shift_hi: 0,
         }
     }
 
@@ -482,42 +506,90 @@ impl PPU {
         (self.v >> 5) as u8 & 0x1F
     }
 
-    fn render_background(&mut self) {
-        let nt_select = (self.nametable_address() >> 10) & 0b11;
-        let nametable = self.get_nametable(nt_select as u8);
+    fn fetch_tile(&mut self) {
+        match self.frame_dots % 8 {
+            0 => {
+                if self.frame_dots < 256 {
+                    self.increment_coarse_x();
+                }
 
-        let name_table = &self.vram[nametable..nametable + 0x400];
-        let bank = self.ctl.bknd_pattern_addr();
+                let nt_select = ((self.nametable_address() >> 10) & 0b11) as u8;
+                self.nt_addr = self.get_nametable(nt_select) as u16;
+            }
+            1 => {
+                let tile_x = self.coarse_scroll_x() as u16;
+                let tile_y = self.coarse_scroll_y() as u16;
+                self.tile_idx = self.vram[(self.nt_addr + 32 * tile_y + tile_x) as usize] as u16;
+            }
+            2 => {
+                let tile_x = self.coarse_scroll_x() as u16;
+                let tile_y = self.coarse_scroll_y() as u16;
 
-        let attribute_table = &name_table[0x3C0..0x400];
+                let nt_select = ((self.nametable_address() >> 10) & 0b11) as u8;
+                let nt_addr = self.get_nametable(nt_select) as u16;
 
-        let tile_x = self.coarse_scroll_x() as usize;
-        let tile_y = self.coarse_scroll_y() as usize;
+                self.attr_table_addr = nt_addr + 0x3C0 + 8 * (tile_y / 4) + tile_x / 4;
+            }
+            3 => {
+                self.attr_byte = self.vram[self.attr_table_addr as usize];
+            }
+            4 => {
+                let bank = self.ctl.bknd_pattern_addr();
+                self.pattern_lo_addr = bank + self.tile_idx * 16 + self.fine_scroll_y() as u16;
+            }
+            5 => {
+                self.pattern_lo = self.rom.borrow().chr_rom[self.pattern_lo_addr as usize];
+            }
+            6 => {
+                let bank = self.ctl.bknd_pattern_addr();
+                self.pattern_hi_addr = bank + self.tile_idx * 16 + self.fine_scroll_y() as u16 + 8;
+            }
+            7 => {
+                self.pattern_hi = self.rom.borrow().chr_rom[self.pattern_hi_addr as usize];
 
-        let tile_idx = name_table[32 * tile_y + tile_x] as u16;
-        let tile = &self.rom.borrow().chr_rom
-            [(bank + tile_idx * 16) as usize..=(bank + tile_idx * 16 + 15) as usize];
-        let palette = self.background_pallette(attribute_table, tile_x, tile_y);
+                self.bg_shift_lo = (self.bg_shift_lo & 0xFF00) | self.pattern_lo as u16;
+                self.bg_shift_hi = (self.bg_shift_hi & 0xFF00) | self.pattern_hi as u16;
 
-        let y = self.fine_scroll_y() as usize;
-        let mut upper = tile[y];
-        let mut lower = tile[y + 8];
+                let palette_lo = if self.attr_byte & 0b01 != 0 {
+                    0xFF
+                } else {
+                    0x00
+                };
+                let palette_hi = if self.attr_byte & 0b10 != 0 {
+                    0xFF
+                } else {
+                    0x00
+                };
 
-        let bit_flag = 7 - ((self.frame_dots + self.fine_scroll_x() as usize) % 8);
-        upper = upper >> bit_flag;
-        lower = lower >> bit_flag;
-        let value = (1 & lower) << 1 | (1 & upper);
-
-        let rgb = match value {
-            0 => SYSTEM_PALLETE[self.palette_table[0] as usize],
-            1 => SYSTEM_PALLETE[palette[1] as usize],
-            2 => SYSTEM_PALLETE[palette[2] as usize],
-            3 => SYSTEM_PALLETE[palette[3] as usize],
-            _ => panic!("Impossible!"),
+                self.attr_shift_lo = (self.attr_shift_lo & 0xFF00) | palette_lo;
+                self.attr_shift_hi = (self.attr_shift_hi & 0xFF00) | palette_hi;
+            }
+            _ => {}
         };
+    }
+
+    fn render_background(&mut self) {
+        let bit_index = 15 - self.fine_scroll_x();
+        let bg_lo = (self.bg_shift_lo >> bit_index) & 1;
+        let bg_hi = (self.bg_shift_hi >> bit_index) & 1;
+        let bg_value = ((1 & bg_hi) << 1 | bg_lo) as u8;
+
+        let attr_lo = (self.attr_shift_lo >> bit_index) & 1;
+        let attr_hi = (self.attr_shift_hi >> bit_index) & 1;
+        let palette_bits = ((attr_hi << 1) | attr_lo) as u8;
+        let palette_index = (palette_bits << 2) | bg_value;
+        let system_palette_index = self.palette_table[palette_index as usize] as usize;
+
+        let rgb = SYSTEM_PALLETE[system_palette_index];
+
+        //shift the registers
+        self.bg_shift_lo = self.bg_shift_lo << 1;
+        self.bg_shift_hi = self.bg_shift_hi << 1;
+        self.attr_shift_lo = self.attr_shift_lo << 1;
+        self.attr_shift_hi = self.attr_shift_lo << 1;
 
         self.frame
-            .set_background_pixel(self.frame_dots, self.scanline as usize, rgb, value);
+            .set_background_pixel(self.frame_dots, self.scanline as usize, rgb, bg_value);
     }
 
     fn get_nametable(&self, nt_select: u8) -> usize {

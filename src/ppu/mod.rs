@@ -509,10 +509,6 @@ impl PPU {
     fn fetch_tile(&mut self) {
         match self.frame_dots % 8 {
             0 => {
-                if self.frame_dots < 256 {
-                    self.increment_coarse_x();
-                }
-
                 let nt_select = ((self.nametable_address() >> 10) & 0b11) as u8;
                 self.nt_addr = self.get_nametable(nt_select) as u16;
             }
@@ -550,19 +546,20 @@ impl PPU {
                 self.bg_shift_lo = (self.bg_shift_lo & 0xFF00) | self.pattern_lo as u16;
                 self.bg_shift_hi = (self.bg_shift_hi & 0xFF00) | self.pattern_hi as u16;
 
-                let palette_lo = if self.attr_byte & 0b01 != 0 {
-                    0xFF
-                } else {
-                    0x00
-                };
-                let palette_hi = if self.attr_byte & 0b10 != 0 {
-                    0xFF
-                } else {
-                    0x00
-                };
+                let shift =
+                    ((self.coarse_scroll_y() % 4) / 2) * 4 + ((self.coarse_scroll_x() % 4) / 2) * 2;
+                let palette_bits = (self.attr_byte >> shift) & 0b11;
+
+                let palette_lo = if palette_bits & 0b01 != 0 { 0xFF } else { 0x00 };
+                let palette_hi = if palette_bits & 0b10 != 0 { 0xFF } else { 0x00 };
 
                 self.attr_shift_lo = (self.attr_shift_lo & 0xFF00) | palette_lo;
                 self.attr_shift_hi = (self.attr_shift_hi & 0xFF00) | palette_hi;
+
+                self.attr_shift_lo = (self.attr_shift_lo & 0xFF00) | palette_lo;
+                self.attr_shift_hi = (self.attr_shift_hi & 0xFF00) | palette_hi;
+
+                self.increment_coarse_x();
             }
             _ => {}
         };
@@ -576,6 +573,7 @@ impl PPU {
 
         let attr_lo = (self.attr_shift_lo >> bit_index) & 1;
         let attr_hi = (self.attr_shift_hi >> bit_index) & 1;
+
         let palette_bits = ((attr_hi << 1) | attr_lo) as u8;
         let palette_index = (palette_bits << 2) | bg_value;
         let system_palette_index = self.palette_table[palette_index as usize] as usize;
@@ -586,7 +584,7 @@ impl PPU {
         self.bg_shift_lo = self.bg_shift_lo << 1;
         self.bg_shift_hi = self.bg_shift_hi << 1;
         self.attr_shift_lo = self.attr_shift_lo << 1;
-        self.attr_shift_hi = self.attr_shift_lo << 1;
+        self.attr_shift_hi = self.attr_shift_hi << 1;
 
         self.frame
             .set_background_pixel(self.frame_dots, self.scanline as usize, rgb, bg_value);

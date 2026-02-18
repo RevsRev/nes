@@ -556,9 +556,6 @@ impl PPU {
                 self.attr_shift_lo = (self.attr_shift_lo & 0xFF00) | palette_lo;
                 self.attr_shift_hi = (self.attr_shift_hi & 0xFF00) | palette_hi;
 
-                self.attr_shift_lo = (self.attr_shift_lo & 0xFF00) | palette_lo;
-                self.attr_shift_hi = (self.attr_shift_hi & 0xFF00) | palette_hi;
-
                 self.increment_coarse_x();
             }
             _ => {}
@@ -689,32 +686,6 @@ impl PPU {
             self.palette_table[start],
             self.palette_table[start + 1],
             self.palette_table[start + 2],
-        ]
-    }
-
-    fn background_pallette(
-        &self,
-        attribute_table: &[u8],
-        tile_column: usize,
-        tile_row: usize,
-    ) -> [u8; 4] {
-        let attr_table_index = 8 * (tile_row / 4) + tile_column / 4;
-        let attr_byte = attribute_table[attr_table_index];
-
-        let pallette_index = match ((tile_column % 4) / 2, (tile_row % 4) / 2) {
-            (0, 0) => attr_byte & 0b11,
-            (1, 0) => (attr_byte >> 2) & 0b11,
-            (0, 1) => (attr_byte >> 4) & 0b11,
-            (1, 1) => (attr_byte >> 6) & 0b11,
-            (_, _) => panic!("Impossible!"),
-        };
-
-        let pallette_start: usize = 1 + (pallette_index as usize) * 4;
-        [
-            self.palette_table[0],
-            self.palette_table[pallette_start],
-            self.palette_table[pallette_start + 1],
-            self.palette_table[pallette_start + 2],
         ]
     }
 }

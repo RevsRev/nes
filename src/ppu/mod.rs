@@ -93,8 +93,15 @@ impl Tick for PPU {
                 self.increment_y();
             }
 
-            if is_rendering_enabled && (self.frame_dots < 256 || self.frame_dots >= 326) {
+            if is_rendering_enabled && (self.frame_dots < 256 || self.frame_dots >= 320) {
                 self.fetch_tile();
+                if self.frame_dots >= 328 && self.frame_dots < 336 {
+                    //shift the registers
+                    self.bg_shift_lo = self.bg_shift_lo << 1;
+                    self.bg_shift_hi = self.bg_shift_hi << 1;
+                    self.attr_shift_lo = self.attr_shift_lo << 1;
+                    self.attr_shift_hi = self.attr_shift_hi << 1;
+                }
             }
 
             if self.scanline < 240 && self.frame_dots < 256 {
@@ -572,10 +579,15 @@ impl PPU {
         let attr_hi = (self.attr_shift_hi >> bit_index) & 1;
 
         let palette_bits = ((attr_hi << 1) | attr_lo) as u8;
-        let palette_index = (palette_bits << 2) | bg_value;
-        let system_palette_index = self.palette_table[palette_index as usize] as usize;
 
-        let rgb = SYSTEM_PALLETE[system_palette_index];
+        let rgb = if bg_value == 0 {
+            SYSTEM_PALLETE[self.palette_table[0] as usize]
+        } else {
+            let palette_index = (palette_bits << 2) | bg_value;
+            let system_palette_index = self.palette_table[palette_index as usize] as usize;
+
+            SYSTEM_PALLETE[system_palette_index]
+        };
 
         //shift the registers
         self.bg_shift_lo = self.bg_shift_lo << 1;

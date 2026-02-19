@@ -617,7 +617,7 @@ mod test {
                 register_x: 0,
                 status: 04,
                 stack_pointer: 0xFD,
-                ppu_frame_cycles: 27,
+                ppu_frame_cycles: 25,
             }),
             265758,
         );

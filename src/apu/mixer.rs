@@ -20,20 +20,23 @@ impl Mixer {
             return;
         }
 
-        let pulse_out = if pulse1 == 0 && pulse2 == 0 {
+        let pulse_out = if pulse1 + pulse2 == 0 {
             0.0
         } else {
             95.8 / (8128.0 / (pulse1 as f32 + pulse2 as f32) + 100.0)
         };
 
-        let noise_out = 0.0;
-        let dmc_out = 0.0;
+        let noise_out = 0;
+        let dmc_out = 0;
 
-        let tnd_out = if triangle_out == 0 && noise_out == 0.0 && dmc_out == 0.0 {
+        let tnd_out = if triangle_out + noise_out + dmc_out == 0 {
             0.0
         } else {
             159.79
-                / (1.0 / (triangle_out as f32 / 8227.0 + noise_out / 12241.0 + dmc_out / 22638.0)
+                / (1.0
+                    / (triangle_out as f32 / 8227.0
+                        + noise_out as f32 / 12241.0
+                        + dmc_out as f32 / 22638.0)
                     + 100.0)
         };
 

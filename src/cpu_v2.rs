@@ -1,5 +1,5 @@
 use crate::interrupt::{Interrupt, InterruptImpl};
-use crate::opp::{AddressingMode, OpCode, OpCodeBehaviour};
+use crate::opp::{AddressingMode, OPCODES_MAP, OpCode, OpCodeBehaviour};
 use crate::trace::{CpuTrace, CpuTraceFormatOptions, CpuTraceFormatter};
 use crate::traits::bus::Bus;
 use crate::traits::cpu::Cpu;
@@ -48,6 +48,15 @@ pub struct CpuV2<T: Bus> {
     halt: Arc<AtomicBool>,
 
     total_cycles: u64,
+
+    //Internal state
+    instruction_cycle: u8,
+    op_cycle: u8,
+    nmi_at_fetch: bool, //TODO - I wonder if we can get rid of this?
+    op: OpCode,
+    resolved_addr: u16,
+    resolved_mem_read: u16,
+    dummy_read: bool,
 }
 
 impl<T: Bus> Cpu<T> for CpuV2<T> {}
@@ -497,6 +506,14 @@ impl<T: Bus> CpuV2<T> {
             operand_address: Option::None,
             halt: halt,
             total_cycles: 0,
+
+            instruction_cycle: 0,
+            op_cycle: 0,
+            nmi_at_fetch: false,
+            op: **OPCODES_MAP.get(&0x00).unwrap(),
+            resolved_addr: 0x0000,
+            resolved_mem_read: 0x0000,
+            dummy_read: false,
         }
     }
 
@@ -528,7 +545,221 @@ impl<T: Bus> CpuV2<T> {
         self.trace_reg_y = 0;
     }
 
-    fn format_fatal_error(&mut self, opcode: &&OpCode, s: String) -> String {
+    fn tick_2(&mut self) -> Result<bool, String> {
+        let instruction_cycle = 0;
+        match instruction_cycle {
+            0 => {
+                self.op_cycle = 0;
+                self.fetch()
+            }
+            1 => match self.op.mode {
+                AddressingMode::Accumulator => self.execute_op(),
+                AddressingMode::Implied => {
+                    self.resolved_addr = self.program_counter;
+                    self.execute_op()
+                }
+                AddressingMode::Immediate => {
+                    self.resolved_addr = self.program_counter;
+                    self.program_counter = self.program_counter + 1;
+                    self.execute_op()
+                }
+                _ => self.evaluate_operand(),
+            },
+            c => {
+                if c - 2 > self.op.mode.base_cycles() {
+                    self.evaluate_operand()
+                } else if self.dummy_read {
+                    self.dummy_read = false;
+                    self.mem_read(self.resolved_addr).map(|_| true)
+                } else {
+                    self.execute_op()
+                }
+            }
+        }
+        .map_err(|s| self.format_fatal_error(s))
+    }
+
+    fn execute_op(&mut self) -> Result<bool, String> {
+        todo!()
+    }
+
+    fn evaluate_operand(&mut self) -> Result<bool, String> {
+        let evaluate_cycle = self.instruction_cycle - 1;
+        match (self.op.mode, evaluate_cycle) {
+            (AddressingMode::Accumulator, _)
+            | (AddressingMode::Implied, _)
+            | (AddressingMode::Immediate, _) => {
+                return Err(format!(
+                    "AddressingMode {} should have been handled already",
+                    self.op.mode
+                ));
+            }
+            (AddressingMode::Relative, 0) => {
+                let value = self.mem_read(self.program_counter)? as i8;
+                self.program_counter = self.program_counter + 1;
+                self.resolved_addr = self.program_counter.wrapping_add(value as u16);
+            }
+            (AddressingMode::ZeroPage, 0) => {
+                self.resolved_addr = self.mem_read(self.program_counter)? as u16;
+                self.program_counter = self.program_counter + 1;
+            }
+            (AddressingMode::Absolute, 0) => {
+                self.resolved_addr = self.mem_read(self.program_counter)? as u16;
+                self.program_counter = self.program_counter + 1;
+            }
+            (AddressingMode::Absolute, 1) => {
+                self.resolved_addr =
+                    self.resolved_addr | ((self.mem_read(self.program_counter)? as u16) << 8);
+                self.program_counter = self.program_counter + 1;
+            }
+            (AddressingMode::ZeroPage_X, 0) => {
+                self.resolved_addr = self.mem_read(self.program_counter)? as u16;
+            }
+            (AddressingMode::ZeroPage_X, 1) => {
+                self.resolved_addr = self.resolved_addr.wrapping_add(self.register_x as u16);
+                self.program_counter = self.program_counter + 1;
+            }
+            (AddressingMode::ZeroPage_Y, 0) => {
+                self.resolved_addr = self.mem_read(self.program_counter)? as u16;
+            }
+            (AddressingMode::ZeroPage_Y, 1) => {
+                self.resolved_addr = self.resolved_addr.wrapping_add(self.register_y as u16);
+                self.program_counter = self.program_counter + 1;
+            }
+            (AddressingMode::Absolute_X, 0) => {
+                self.resolved_addr = self.mem_read(self.program_counter)? as u16;
+                self.program_counter = self.program_counter + 1;
+            }
+            (AddressingMode::Absolute_X, 1) => {
+                let base =
+                    self.resolved_addr | ((self.mem_read(self.program_counter)? as u16) << 8);
+                self.resolved_addr = base.wrapping_add(self.register_x as u16);
+                if Self::page_boundary_crossed(base, self.resolved_addr)
+                    || self.op.behaviour == OpCodeBehaviour::MemoryWrite
+                {
+                    self.dummy_read = true;
+                }
+                self.program_counter = self.program_counter + 1;
+            }
+            (AddressingMode::Absolute_Y, 0) => {
+                self.resolved_addr = self.mem_read(self.program_counter)? as u16;
+                self.program_counter = self.program_counter + 1;
+            }
+            (AddressingMode::Absolute_Y, 1) => {
+                let base =
+                    self.resolved_addr | ((self.mem_read(self.program_counter)? as u16) << 8);
+                self.resolved_addr = base.wrapping_add(self.register_y as u16);
+                if Self::page_boundary_crossed(base, self.resolved_addr)
+                    || self.op.behaviour == OpCodeBehaviour::MemoryWrite
+                {
+                    self.dummy_read = true;
+                }
+                self.program_counter = self.program_counter + 1;
+            }
+            (AddressingMode::Indirect_X, 0) => {
+                self.resolved_addr = (self
+                    .mem_read(self.program_counter)?
+                    .wrapping_add(self.register_x) as u16)
+                    << 8; //shift the ptr to the hi bits temporarily
+            }
+            (AddressingMode::Indirect_X, 1) => {
+                self.mem_read(self.resolved_addr)?;
+                self.program_counter = self.program_counter + 1;
+            }
+            (AddressingMode::Indirect_X, 2) => {
+                let lo = self.mem_read(self.resolved_addr >> 8)? as u16;
+                self.resolved_addr = self.resolved_addr | lo;
+                self.program_counter = self.program_counter + 1;
+            }
+            (AddressingMode::Indirect_X, 3) => {
+                let hi =
+                    self.mem_read(((self.resolved_addr >> 8) as u8).wrapping_add(1) as u16)? as u16;
+                self.resolved_addr = hi << 8 | (self.resolved_addr & 0x00FF);
+            }
+            (AddressingMode::Indirect_Y, 0) => {
+                self.resolved_addr = (self.mem_read(self.program_counter)? as u16) << 8;
+                self.program_counter = self.program_counter + 1;
+            }
+            (AddressingMode::Indirect_Y, 1) => {
+                let lo = self.mem_read(self.resolved_addr >> 8)? as u16;
+                self.resolved_addr = self.resolved_addr | lo;
+            }
+            (AddressingMode::Indirect_Y, 2) => {
+                let hi =
+                    self.mem_read(((self.resolved_addr >> 8) as u8).wrapping_add(1) as u16)? as u16;
+                let deref_base = hi << 8 | (self.resolved_addr & 0x00FF);
+                self.resolved_addr = deref_base.wrapping_add(self.register_y as u16);
+                if Self::page_boundary_crossed(self.resolved_addr, deref_base)
+                    || self.op.behaviour == OpCodeBehaviour::MemoryWrite
+                {
+                    self.dummy_read = true;
+                }
+            }
+            (AddressingMode::Indirect, 0) => {
+                self.resolved_mem_read = self.mem_read(self.program_counter)? as u16;
+                self.program_counter = self.program_counter + 1;
+            }
+            (AddressingMode::Indirect, 1) => {
+                self.resolved_mem_read =
+                    self.resolved_mem_read | ((self.mem_read(self.program_counter)? as u16) << 8);
+                self.program_counter = self.program_counter + 1;
+            }
+            (AddressingMode::Indirect, 2) => {
+                //Nasty bug for indirect reads on a page boundary!
+                //If we are at a page boundry e.g. 0x02FF, then we read the lo from 0x02FF and the hi
+                //from 0x0200, i.e. the page address (02) is the same and the index on the page
+                //wraps around
+                let page = (self.resolved_mem_read >> 8) as u8;
+                let index = (self.resolved_mem_read & 0xFF) as u8;
+                let first = ((page as u16) << 8) + (index as u16);
+
+                self.resolved_addr = self.mem_read(first)? as u16;
+            }
+            (AddressingMode::Indirect, 3) => {
+                let page = (self.resolved_mem_read >> 8) as u8;
+                let index = (self.resolved_mem_read & 0xFF) as u8;
+                let second = ((page as u16) << 8) + (index.wrapping_add(1) as u16);
+                self.resolved_addr = self.resolved_addr | ((self.mem_read(second)? as u16) << 8);
+            }
+            (mode, cycle) => {
+                return Err(format!("Unimplemented mode and cycle {}, {}", mode, cycle));
+            }
+        };
+        Ok(true)
+    }
+
+    fn fetch(&mut self) -> Result<bool, String> {
+        let nmi_at_fetch = self.interrupt.borrow().poll_nmi().is_some();
+
+        self.reads.clear();
+        self.writes.clear();
+        self.cache_trace_state();
+
+        self.bus.borrow_mut().signal_cpu_start(); //TODO - This can probably be removed soon :)
+
+        let op = self.mem_read(self.program_counter)?;
+        self.program_counter = self.program_counter + 1;
+
+        match opp::OPCODES_MAP.get(&op) {
+            Some(o) => {
+                self.op = **o;
+                Ok(true)
+            }
+            None => Err(format!("Opcode {:x} is not recognised", op)),
+        }
+    }
+
+    fn cache_trace_state(&mut self) {
+        self.trace_cycles = self.total_cycles;
+        self.trace_pc = self.program_counter;
+        self.trace_sp = self.stack_pointer;
+        self.trace_status = self.status;
+        self.trace_reg_a = self.register_a;
+        self.trace_reg_x = self.register_x;
+        self.trace_reg_y = self.register_y;
+    }
+
+    fn format_fatal_error(&mut self, s: String) -> String {
         let registers_and_pointers = format!(
             "A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}",
             self.register_a, self.register_x, self.register_y, self.status, self.stack_pointer
@@ -565,7 +796,7 @@ impl<T: Bus> CpuV2<T> {
             s,
             last_cpu_trace,
             self.program_counter,
-            opcode.code,
+            self.op.code,
             registers_and_pointers,
             self.reads,
             self.writes

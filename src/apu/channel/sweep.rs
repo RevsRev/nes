@@ -1,5 +1,10 @@
 use crate::apu::registers::divider::Divider;
 
+pub enum SweepChangeMethod {
+    ONES_COMPLIMENT,
+    TWOS_COMPLIMENT,
+}
+
 pub struct Sweep {
     data: u8,
     enabled: bool,
@@ -9,10 +14,11 @@ pub struct Sweep {
     reload_flag: bool,
 
     muted: bool,
+    change_method: SweepChangeMethod,
 }
 
 impl Sweep {
-    pub fn new() -> Self {
+    pub fn new(change_method: SweepChangeMethod) -> Self {
         Sweep {
             data: 0xFF,
             enabled: true,
@@ -22,6 +28,7 @@ impl Sweep {
             reload_flag: false,
 
             muted: false,
+            change_method: change_method,
         }
     }
 
@@ -42,14 +49,16 @@ impl Sweep {
     pub fn on_frame(&mut self, current_period: u16) -> u16 {
         let clocked = self.divider.clock();
 
-        let sign: i16 = match self.negate_flag {
-            true => -1,
-            false => 1,
+        let change_amount = (current_period >> self.shift_count) as i16;
+
+        let signed_change_amount = match (self.negate_flag, &self.change_method) {
+            (false, _) => change_amount,
+            (true, SweepChangeMethod::ONES_COMPLIMENT) => (-1 * change_amount).wrapping_sub(1),
+            (true, SweepChangeMethod::TWOS_COMPLIMENT) => -1 * change_amount,
         };
 
-        let change_amount: i16 = sign * ((current_period >> self.shift_count) as i16);
         let target_period: u16 = (current_period as i16)
-            .wrapping_add(change_amount)
+            .wrapping_add(signed_change_amount)
             .clamp(0, 0b0000_0111_1111_1111)
             .try_into()
             .unwrap();

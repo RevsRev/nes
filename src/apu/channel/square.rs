@@ -1,6 +1,6 @@
 use crate::{
     apu::{
-        channel::sweep::Sweep,
+        channel::sweep::{Sweep, SweepChangeMethod},
         registers::{divider::Divider, frame::FrameClock},
     },
     trace::PulseTrace,
@@ -142,10 +142,10 @@ pub struct SquareChannel {
 }
 
 impl SquareChannel {
-    pub fn new() -> Self {
+    pub fn new(change_method: SweepChangeMethod) -> Self {
         SquareChannel {
             envelope: Envelope::new(),
-            sweep: Sweep::new(),
+            sweep: Sweep::new(change_method),
             sequence_step: 0,
             timer: Divider::new(0xFFFF),
             length_counter_idx: 0xFF,

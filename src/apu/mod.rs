@@ -3,7 +3,11 @@ use std::{cell::RefCell, rc::Rc};
 use crate::{
     apu::{
         channel::{
-            dmc::DmcChannel, noise::NoiseChannel, square::SquareChannel, triangle::TriangleChannel,
+            dmc::DmcChannel,
+            noise::NoiseChannel,
+            square::SquareChannel,
+            sweep::SweepChangeMethod::{ONES_COMPLIMENT, TWOS_COMPLIMENT},
+            triangle::TriangleChannel,
         },
         mixer::Mixer,
         registers::{frame::FrameCounter, status::Status},
@@ -36,8 +40,8 @@ pub struct APU {
 
 impl APU {
     pub fn new(interrupt: Rc<RefCell<InterruptImpl>>) -> Self {
-        let pulse_1 = Rc::new(RefCell::new(SquareChannel::new()));
-        let pulse_2 = Rc::new(RefCell::new(SquareChannel::new()));
+        let pulse_1 = Rc::new(RefCell::new(SquareChannel::new(ONES_COMPLIMENT)));
+        let pulse_2 = Rc::new(RefCell::new(SquareChannel::new(TWOS_COMPLIMENT)));
         let triangle = Rc::new(RefCell::new(TriangleChannel::new()));
         let noise = Rc::new(RefCell::new(NoiseChannel::new()));
         let dmc = Rc::new(RefCell::new(DmcChannel::new()));

@@ -679,17 +679,17 @@ impl<T: Bus> CpuV2<T> {
                 self.program_counter = self.program_counter + 1;
             }
             (AddressingMode::ZeroPage_X, 0) => {
-                self.resolved_addr = self.mem_read(self.program_counter)? as u16;
+                self.resolved_mem_read = self.mem_read(self.program_counter)?;
             }
             (AddressingMode::ZeroPage_X, 1) => {
-                self.resolved_addr = self.resolved_addr.wrapping_add(self.register_x as u16);
+                self.resolved_addr = self.resolved_mem_read.wrapping_add(self.register_x) as u16;
                 self.program_counter = self.program_counter + 1;
             }
             (AddressingMode::ZeroPage_Y, 0) => {
-                self.resolved_addr = self.mem_read(self.program_counter)? as u16;
+                self.resolved_mem_read = self.mem_read(self.program_counter)?;
             }
             (AddressingMode::ZeroPage_Y, 1) => {
-                self.resolved_addr = self.resolved_addr.wrapping_add(self.register_y as u16);
+                self.resolved_addr = self.resolved_mem_read.wrapping_add(self.register_y) as u16;
                 self.program_counter = self.program_counter + 1;
             }
             (AddressingMode::Absolute_X, 0) => {

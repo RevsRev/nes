@@ -426,7 +426,7 @@ impl<T: Bus> CpuV2<T> {
 
     //TODO - Move instruction cycle out of this level
     fn interrupt_oam_data(&mut self, page_hi: u8) -> Result<bool, String> {
-        if self.instruction_cycle == 0 && self.total_cycles % 1 == 0 {
+        if self.instruction_cycle == 0 && self.total_cycles % 2 == 1 {
             return Ok(true);
         }
 

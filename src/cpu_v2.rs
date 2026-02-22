@@ -723,23 +723,21 @@ impl<T: Bus> CpuV2<T> {
                 self.program_counter = self.program_counter + 1;
             }
             (AddressingMode::Indirect_X, 0) => {
-                self.resolved_addr = (self
+                self.resolved_mem_read = self
                     .mem_read(self.program_counter)?
-                    .wrapping_add(self.register_x) as u16)
-                    << 8; //shift the ptr to the hi bits temporarily
+                    .wrapping_add(self.register_x)
             }
             (AddressingMode::Indirect_X, 1) => {
-                self.mem_read(self.resolved_addr)?;
+                self.mem_read(self.resolved_mem_read as u16)?; //dummy read
                 self.program_counter = self.program_counter + 1;
             }
             (AddressingMode::Indirect_X, 2) => {
-                let lo = self.mem_read(self.resolved_addr >> 8)? as u16;
-                self.resolved_addr = self.resolved_addr | lo;
+                let lo = self.mem_read(self.resolved_mem_read as u16)? as u16;
+                self.resolved_addr = lo;
             }
             (AddressingMode::Indirect_X, 3) => {
-                let hi =
-                    self.mem_read(((self.resolved_addr >> 8) as u8).wrapping_add(1) as u16)? as u16;
-                self.resolved_addr = hi << 8 | (self.resolved_addr & 0x00FF);
+                let hi = self.mem_read(self.resolved_mem_read.wrapping_add(1) as u16)? as u16;
+                self.resolved_addr = (hi << 8) | self.resolved_addr;
             }
             (AddressingMode::Indirect_Y, 0) => {
                 self.resolved_mem_read = self.mem_read(self.program_counter)?;

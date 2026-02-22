@@ -728,7 +728,6 @@ impl<T: Bus> CpuV2<T> {
             (AddressingMode::Indirect_X, 2) => {
                 let lo = self.mem_read(self.resolved_addr >> 8)? as u16;
                 self.resolved_addr = self.resolved_addr | lo;
-                self.program_counter = self.program_counter + 1;
             }
             (AddressingMode::Indirect_X, 3) => {
                 let hi =

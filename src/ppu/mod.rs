@@ -118,7 +118,6 @@ impl Tick for PPU {
             self.v = (self.v & 0b0000_0100_0001_1111) | (self.t & 0b0111_1011_1110_0000);
         }
 
-        self.frame_dots += 1;
         if self.scanline == 241 && self.frame_dots == 1 {
             self.status.set_vblank(true);
             self.status.set_sprite_0_hit(false);
@@ -132,6 +131,8 @@ impl Tick for PPU {
             self.interrupt.borrow_mut().set_nmi(None);
             self.status.set_sprite_0_hit(false);
         }
+
+        self.frame_dots += 1;
 
         if self.frame_dots == 340
             && self.scanline == 261
@@ -221,15 +222,10 @@ impl PPU {
         }
     }
 
-    pub fn store_trace(&mut self) {
-        if self.tracing {
-            self.trace = Some(self.trace());
-        }
-    }
-
     pub fn take_trace(&mut self) -> Option<PpuTrace> {
-        // self.trace.take()
-        Some(self.trace())
+        let retval = self.trace.take();
+        self.trace = Some(self.trace());
+        retval
     }
 
     pub fn read_data(&mut self) -> Result<u8, String> {

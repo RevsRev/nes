@@ -92,16 +92,24 @@ impl<'call, T: Cpu<BusImpl>> NES<'call, T> {
     {
         //TODO - Need to wire this in
         // (self.gameloop_callback)(&self.ppu, &self.apu, &mut self.joypad)
+        //
+        let mut take_first_ppu_trace = true;
 
         loop {
             for master_clock in 0..12 {
-                self.ppu.borrow_mut().tick()?;
                 if master_clock % 3 == 0 {
                     self.cpu.tick()?;
                     self.apu.borrow_mut().tick()?;
                 }
 
-                if self.tracing {
+                self.ppu.borrow_mut().tick()?;
+
+                if take_first_ppu_trace && master_clock % 3 == 1 {
+                    take_first_ppu_trace = false;
+                    self.ppu.borrow_mut().take_trace();
+                }
+
+                if master_clock % 3 == 1 && self.tracing {
                     match self.cpu.take_trace() {
                         Some(cpu_trace) => {
                             let nes_trace = NesTrace {

@@ -395,8 +395,7 @@ impl<T: Bus> CpuV2<T> {
         if self.halt.load(Ordering::Relaxed) {
             return Ok(true);
         }
-
-        Ok(false)
+        self.tick_2() //We haven't processed anything, so we should start the next cycle
     }
 
     fn interrupt_irq(&mut self) -> Result<bool, String> {

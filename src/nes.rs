@@ -95,11 +95,25 @@ impl<'call, T: Cpu<BusImpl>> NES<'call, T> {
 
         loop {
             for master_clock in 0..12 {
+                self.ppu.borrow_mut().tick()?;
                 if master_clock % 3 == 0 {
                     self.cpu.tick()?;
                     self.apu.borrow_mut().tick()?;
                 }
-                self.ppu.borrow_mut().tick()?;
+
+                if self.tracing {
+                    match self.cpu.take_trace() {
+                        Some(cpu_trace) => {
+                            self.trace = Option::Some(NesTrace {
+                                cpu_trace: cpu_trace,
+                                ppu_trace: self.ppu.borrow_mut().take_trace().unwrap(),
+                                apu_trace: self.apu.borrow_mut().trace().unwrap(),
+                            });
+                        }
+                        None => {}
+                    }
+                }
+
                 let new_frame = self.ppu.borrow_mut().new_frame;
                 if new_frame {
                     (self.gameloop_callback)(

@@ -228,7 +228,8 @@ impl PPU {
     }
 
     pub fn take_trace(&mut self) -> Option<PpuTrace> {
-        self.trace.take()
+        // self.trace.take()
+        Some(self.trace())
     }
 
     pub fn read_data(&mut self) -> Result<u8, String> {

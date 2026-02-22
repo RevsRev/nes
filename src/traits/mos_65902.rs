@@ -1,4 +1,4 @@
-use super::{bus::Bus, mos_6502_registers::Registers};
+use super::{bus::Bus, mos_6502_registers::Registers, tick::Tick};
 
 //Flags
 pub const CARRY_FLAG: u8 = 0b0000_0001;
@@ -18,7 +18,7 @@ pub const BRK_INTERRUPT_ADDRESS: u16 = 0xFFFE;
 pub const PC_START_ADDRESS: u16 = 0xFFFC;
 pub const HALT_VALUE: u16 = 0x00FF;
 
-pub trait MOS6502<T: Bus>: Registers {
+pub trait MOS6502<T: Bus>: Registers + Tick {
     fn get_cycles(&self) -> u64;
     fn set_cycles(&mut self, value: u64);
 

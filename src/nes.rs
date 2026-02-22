@@ -14,12 +14,12 @@ use crate::rom::Rom;
 use crate::trace::{CpuTraceFormatOptions, CpuTraceFormatter, NesTrace, NesTraceFormatter};
 use crate::traits::cpu::Cpu;
 use crate::traits::mos_65902::MOS6502;
+use crate::traits::tick::Tick;
 use crate::traits::tracing::Tracing;
 
 pub struct NES<'call, T: Cpu<BusImpl<'call>>> {
     tracing: bool,
     pub trace: Option<NesTrace>,
-
     pub cpu: T,
     pub bus: Rc<RefCell<BusImpl<'call>>>,
 }
@@ -73,24 +73,37 @@ impl<'call, T: Cpu<BusImpl<'call>>> NES<'call, T> {
         F: FnMut(&mut NES<T>),
     {
         loop {
-            let mut apu_tr = self.bus.borrow_mut().apu.trace();
-            match self.cpu.step_with_callback(&mut |_| {}) {
-                Ok(b) => match b {
-                    true => {}
-                    false => break,
-                },
-                Err(s) => {
-                    return Err(s);
+            for master_clock in 0..12 {
+                if master_clock % 3 == 0 {
+                    self.cpu.tick();
+                    self.bus.borrow_mut().apu.tick();
                 }
+                self.bus.borrow_mut().ppu.tick();
             }
 
-            if self.tracing {
-                self.trace = Option::Some(NesTrace {
-                    cpu_trace: self.cpu.take_trace().take().unwrap(),
-                    ppu_trace: self.bus.borrow_mut().ppu.take_trace().unwrap(),
-                    apu_trace: apu_tr.take().unwrap(),
-                });
+            if self.cpu.should_halt() {
+                return Ok(());
             }
+
+            //TODO - Fix tracing
+            // let mut apu_tr = self.bus.borrow_mut().apu.trace();
+            // match self.cpu.step_with_callback(&mut |_| {}) {
+            //     Ok(b) => match b {
+            //         true => {}
+            //         false => break,
+            //     },
+            //     Err(s) => {
+            //         return Err(s);
+            //     }
+            // }
+            //
+            // if self.tracing {
+            //     self.trace = Option::Some(NesTrace {
+            //         cpu_trace: self.cpu.take_trace().take().unwrap(),
+            //         ppu_trace: self.bus.borrow_mut().ppu.take_trace().unwrap(),
+            //         apu_trace: apu_tr.take().unwrap(),
+            //     });
+            // }
             callback(self);
         }
         Result::Ok(())

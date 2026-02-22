@@ -62,7 +62,11 @@ pub struct CpuV2<T: Bus> {
     check_for_interrupts: bool,
 }
 
-impl<T: Bus> Cpu<T> for CpuV2<T> {}
+impl<T: Bus> Cpu<T> for CpuV2<T> {
+    fn should_halt(&self) -> bool {
+        self.halt.load(Ordering::Relaxed)
+    }
+}
 
 impl<T: Bus> MOS6502<T> for CpuV2<T> {
     fn get_cycles(&self) -> u64 {

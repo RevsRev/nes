@@ -417,7 +417,10 @@ impl<T: Bus> CpuV2<T> {
                 self.status = self.status | INTERRUPT_DISABLE_FLAG;
                 Ok(true)
             }
-            6 => Ok(true),
+            6 => {
+                self.interrupt.borrow_mut().take_irq();
+                Ok(true)
+            }
             c => Err(format!("Unexpected irq interrupt cycle {}", c)),
         }
     }
@@ -790,8 +793,6 @@ impl<T: Bus> CpuV2<T> {
         self.reads.clear();
         self.writes.clear();
         self.cache_trace_state();
-
-        self.bus.borrow_mut().signal_cpu_start(); //TODO - This can probably be removed soon :)
 
         let op = self.mem_read(self.program_counter)?;
         self.program_counter = self.program_counter + 1;
@@ -2178,9 +2179,7 @@ mod test {
         }
     }
 
-    impl Bus for BusStub {
-        fn signal_cpu_start(&mut self) {}
-    }
+    impl Bus for BusStub {}
 
     impl Mem for BusStub {
         fn mem_read(&mut self, addr: u16) -> Result<u8, String> {

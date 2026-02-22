@@ -49,7 +49,6 @@ pub struct PPU {
     trace: Option<PpuTrace>,
 
     pub frame_dots: usize,
-    ppu_cycles_this_cpu_cycle: u16,
     total_ppu_cycles: u64,
     total_frames: u64,
     pub scanline: u16,
@@ -79,10 +78,6 @@ impl Tick for PPU {
 
         if self.frame_dots == 0 {
             self.compute_sprites();
-        }
-
-        if self.ppu_cycles_this_cpu_cycle == 2 {
-            self.store_trace();
         }
 
         let is_rendering_enabled =
@@ -128,9 +123,7 @@ impl Tick for PPU {
             self.status.set_vblank(true);
             self.status.set_sprite_0_hit(false);
             if self.ctl.generate_vblank_nmi() {
-                self.interrupt
-                    .borrow_mut()
-                    .set_nmi(Some(self.ppu_cycles_this_cpu_cycle));
+                self.interrupt.borrow_mut().set_nmi(Some(0));
             }
         }
 
@@ -158,7 +151,6 @@ impl Tick for PPU {
             self.new_frame = true;
             self.total_frames = self.total_frames + 1;
         }
-        self.ppu_cycles_this_cpu_cycle = self.ppu_cycles_this_cpu_cycle + 1;
         Ok(())
     }
 }
@@ -188,7 +180,6 @@ impl PPU {
             tracing: false,
             trace: None,
 
-            ppu_cycles_this_cpu_cycle: 0,
             total_ppu_cycles: 0,
             total_frames: 0,
             frame_dots: 0,
@@ -238,10 +229,6 @@ impl PPU {
 
     pub fn take_trace(&mut self) -> Option<PpuTrace> {
         self.trace.take()
-    }
-
-    pub fn on_cpu_cycle_start(&mut self) {
-        self.ppu_cycles_this_cpu_cycle = 0;
     }
 
     pub fn read_data(&mut self) -> Result<u8, String> {
@@ -357,9 +344,7 @@ impl PPU {
         let before_nmi_status = self.ctl.generate_vblank_nmi();
         let retval = self.ctl.update(value);
         if !before_nmi_status && self.ctl.generate_vblank_nmi() && self.status.is_vblank() {
-            self.interrupt
-                .borrow_mut()
-                .set_nmi(Some(self.ppu_cycles_this_cpu_cycle));
+            self.interrupt.borrow_mut().set_nmi(Some(0));
         }
         retval
     }

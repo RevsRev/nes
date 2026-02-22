@@ -23,29 +23,21 @@ pub struct BusImpl {
     cpu_vram: [u8; 2048],
     rom: Rc<RefCell<Rom>>,
     open_bus: u8,
-    pub ppu: PPU,
-    pub apu: APU,
-    interrupt: Rc<RefCell<InterruptImpl>>,
+    pub ppu: Rc<RefCell<PPU>>,
+    pub apu: Rc<RefCell<APU>>,
     pub joypad: Joypad,
 }
 
 impl BusImpl {
-    pub fn new(rom: Rom, interrupt: Rc<RefCell<InterruptImpl>>) -> BusImpl {
-        let interrupt_ppu = interrupt.clone();
-        let interrupt_apu = interrupt.clone();
-        let apu = APU::new(interrupt_apu);
-        let rc_rom = Rc::new(RefCell::new(rom));
-        let bus_rc_rom = rc_rom.clone();
-        let ppu = PPU::new(rc_rom, interrupt_ppu);
+    pub fn new(rom: Rc<RefCell<Rom>>, ppu: Rc<RefCell<PPU>>, apu: Rc<RefCell<APU>>) -> BusImpl {
         let joypad = Joypad::new();
 
         BusImpl {
             cpu_vram: [0; 2048],
-            rom: bus_rc_rom,
+            rom: rom,
             open_bus: 0,
             ppu: ppu,
             apu: apu,
-            interrupt: interrupt,
 
             joypad,
         }
@@ -82,11 +74,7 @@ impl fmt::Display for BusImpl {
         )
     }
 }
-impl Bus for BusImpl {
-    fn signal_cpu_start(&mut self) {
-        self.ppu.on_cpu_cycle_start();
-    }
-}
+impl Bus for BusImpl {}
 
 impl Mem for BusImpl {
     fn mem_read(&mut self, addr: u16) -> Result<u8, String> {
@@ -101,12 +89,12 @@ impl Mem for BusImpl {
             }
 
             0x2002 => {
-                let status_read = self.ppu.read_status();
+                let status_read = self.ppu.borrow_mut().read_status();
                 let ret_val = (status_read & 0xE0) | (self.open_bus & 0x1F);
                 Ok(ret_val)
             }
-            0x2004 => Result::Ok(self.ppu.read_oam_data()),
-            0x2007 => self.ppu.read_data(),
+            0x2004 => Result::Ok(self.ppu.borrow_mut().read_oam_data()),
+            0x2007 => self.ppu.borrow_mut().read_data(),
 
             0x2008..=PPU_REGISTERS_MIRRORS_END => {
                 let mirror_down_addr = addr & 0b0010_0000_0000_0111;
@@ -120,7 +108,7 @@ impl Mem for BusImpl {
             // )),
             0x4014 => Result::Err(format!("Unexpected mem read from 0x4014")),
 
-            0x4015 => self.apu.read_status(),
+            0x4015 => self.apu.borrow_mut().read_status(),
 
             0x4016 => {
                 let read = self.joypad.read();
@@ -159,57 +147,166 @@ impl Mem for BusImpl {
                 self.cpu_vram[mirror_down_addr as usize] = data;
                 Result::Ok(retval)
             }
-            0x2000 => Result::Ok(self.ppu.write_to_ctl(data)),
-            0x2001 => Result::Ok(self.ppu.write_to_mask(data)),
+            0x2000 => Result::Ok(self.ppu.borrow_mut().write_to_ctl(data)),
+            0x2001 => Result::Ok(self.ppu.borrow_mut().write_to_mask(data)),
             0x2002 => Result::Ok(0),
-            0x2003 => Result::Ok(self.ppu.write_to_oam_addr(data)),
-            0x2004 => Result::Ok(self.ppu.write_to_oam_data(data)),
-            0x2005 => Result::Ok(self.ppu.write_to_scroll(data)),
-            0x2006 => Result::Ok(self.ppu.write_to_ppu_addr(data)),
-            0x2007 => self.ppu.write_data(data),
+            0x2003 => Result::Ok(self.ppu.borrow_mut().write_to_oam_addr(data)),
+            0x2004 => Result::Ok(self.ppu.borrow_mut().write_to_oam_data(data)),
+            0x2005 => Result::Ok(self.ppu.borrow_mut().write_to_scroll(data)),
+            0x2006 => Result::Ok(self.ppu.borrow_mut().write_to_ppu_addr(data)),
+            0x2007 => self.ppu.borrow_mut().write_data(data),
 
             0x2008..=PPU_REGISTERS_MIRRORS_END => {
                 let mirror_down_addr = addr & 0b0010_0000_0000_0111;
                 Result::Ok(self.mem_write(mirror_down_addr, data)?)
             }
 
-            0x4000 => Result::Ok(self.apu.pulse_1.borrow_mut().write_to_envelope(data)),
-            0x4001 => Result::Ok(self.apu.pulse_1.borrow_mut().write_to_sweep(data)),
-            0x4002 => Result::Ok(self.apu.pulse_1.borrow_mut().write_to_timerl(data)),
-            0x4003 => Result::Ok(self.apu.pulse_1.borrow_mut().write_to_len_timerh(data)),
-            0x4004 => Result::Ok(self.apu.pulse_2.borrow_mut().write_to_envelope(data)),
-            0x4005 => Result::Ok(self.apu.pulse_2.borrow_mut().write_to_sweep(data)),
-            0x4006 => Result::Ok(self.apu.pulse_2.borrow_mut().write_to_timerl(data)),
-            0x4007 => Result::Ok(self.apu.pulse_2.borrow_mut().write_to_len_timerh(data)),
-            0x4008 => Result::Ok(self.apu.triangle.borrow_mut().write_to_linear_counter(data)),
-            0x4009 => Result::Ok(self.apu.triangle.borrow_mut().write_to_unused(data)),
-            0x400A => Result::Ok(self.apu.triangle.borrow_mut().write_to_timerl(data)),
-            0x400B => Result::Ok(self.apu.triangle.borrow_mut().write_to_len_timerh(data)),
+            0x4000 => Result::Ok(
+                self.apu
+                    .borrow_mut()
+                    .pulse_1
+                    .borrow_mut()
+                    .write_to_envelope(data),
+            ),
+            0x4001 => Result::Ok(
+                self.apu
+                    .borrow_mut()
+                    .pulse_1
+                    .borrow_mut()
+                    .write_to_sweep(data),
+            ),
+            0x4002 => Result::Ok(
+                self.apu
+                    .borrow_mut()
+                    .pulse_1
+                    .borrow_mut()
+                    .write_to_timerl(data),
+            ),
+            0x4003 => Result::Ok(
+                self.apu
+                    .borrow_mut()
+                    .pulse_1
+                    .borrow_mut()
+                    .write_to_len_timerh(data),
+            ),
+            0x4004 => Result::Ok(
+                self.apu
+                    .borrow_mut()
+                    .pulse_2
+                    .borrow_mut()
+                    .write_to_envelope(data),
+            ),
+            0x4005 => Result::Ok(
+                self.apu
+                    .borrow_mut()
+                    .pulse_2
+                    .borrow_mut()
+                    .write_to_sweep(data),
+            ),
+            0x4006 => Result::Ok(
+                self.apu
+                    .borrow_mut()
+                    .pulse_2
+                    .borrow_mut()
+                    .write_to_timerl(data),
+            ),
+            0x4007 => Result::Ok(
+                self.apu
+                    .borrow_mut()
+                    .pulse_2
+                    .borrow_mut()
+                    .write_to_len_timerh(data),
+            ),
+            0x4008 => Result::Ok(
+                self.apu
+                    .borrow_mut()
+                    .triangle
+                    .borrow_mut()
+                    .write_to_linear_counter(data),
+            ),
+            0x4009 => Result::Ok(
+                self.apu
+                    .borrow_mut()
+                    .triangle
+                    .borrow_mut()
+                    .write_to_unused(data),
+            ),
+            0x400A => Result::Ok(
+                self.apu
+                    .borrow_mut()
+                    .triangle
+                    .borrow_mut()
+                    .write_to_timerl(data),
+            ),
+            0x400B => Result::Ok(
+                self.apu
+                    .borrow_mut()
+                    .triangle
+                    .borrow_mut()
+                    .write_to_len_timerh(data),
+            ),
             0x400C => Result::Ok(
                 self.apu
+                    .borrow_mut()
                     .noise
                     .borrow_mut()
                     .write_to_env_loop_len_ctr_halt_cvol(data),
             ),
-            0x400D => Result::Ok(self.apu.noise.borrow_mut().write_unused(data)),
-            0x400E => Result::Ok(self.apu.noise.borrow_mut().write_noise_mode_period(data)),
-            0x400F => Result::Ok(self.apu.noise.borrow_mut().write_len_counter_load(data)),
-            0x4010 => Result::Ok(self.apu.dmc.borrow_mut().write_to_flags_and_rate(data)),
-            0x4011 => Result::Ok(self.apu.dmc.borrow_mut().write_to_direct_load(data)),
-            0x4012 => Result::Ok(self.apu.dmc.borrow_mut().write_to_sample_address(data)),
-            0x4013 => Result::Ok(self.apu.dmc.borrow_mut().write_to_sample_length(data)),
+            0x400D => Result::Ok(self.apu.borrow_mut().noise.borrow_mut().write_unused(data)),
+            0x400E => Result::Ok(
+                self.apu
+                    .borrow_mut()
+                    .noise
+                    .borrow_mut()
+                    .write_noise_mode_period(data),
+            ),
+            0x400F => Result::Ok(
+                self.apu
+                    .borrow_mut()
+                    .noise
+                    .borrow_mut()
+                    .write_len_counter_load(data),
+            ),
+            0x4010 => Result::Ok(
+                self.apu
+                    .borrow_mut()
+                    .dmc
+                    .borrow_mut()
+                    .write_to_flags_and_rate(data),
+            ),
+            0x4011 => Result::Ok(
+                self.apu
+                    .borrow_mut()
+                    .dmc
+                    .borrow_mut()
+                    .write_to_direct_load(data),
+            ),
+            0x4012 => Result::Ok(
+                self.apu
+                    .borrow_mut()
+                    .dmc
+                    .borrow_mut()
+                    .write_to_sample_address(data),
+            ),
+            0x4013 => Result::Ok(
+                self.apu
+                    .borrow_mut()
+                    .dmc
+                    .borrow_mut()
+                    .write_to_sample_length(data),
+            ),
 
             0x4015 => {
-                let retval = Result::Ok(self.apu.write_to_status(data));
+                let retval = Result::Ok(self.apu.borrow_mut().write_to_status(data));
                 retval
             }
-            0x4017 => Result::Ok(self.apu.write_to_frame_counter(data)),
+            0x4017 => Result::Ok(self.apu.borrow_mut().write_to_frame_counter(data)),
 
             0x4016 => Result::Ok(self.joypad.write(data)),
 
             // https://wiki.nesdev.com/w/index.php/PPU_programmer_reference#OAM_DMA_.28.244014.29_.3E_write
             0x4014 => {
-                Result::Ok(self.ppu.write_to_oam_dma(data))
+                Result::Ok(self.ppu.borrow_mut().write_to_oam_dma(data))
 
                 // todo: handle this eventually
                 // let add_cycles: u16 = if self.cycles % 2 == 1 { 514 } else { 513 };

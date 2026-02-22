@@ -21,6 +21,8 @@ pub struct NES<'call, T: Cpu<BusImpl>> {
     tracing: bool,
     pub trace: Option<NesTrace>,
     pub cpu: T,
+    pub ppu: Rc<RefCell<PPU>>,
+    pub apu: Rc<RefCell<APU>>,
     pub bus: Rc<RefCell<BusImpl>>,
 
     gameloop_callback: Box<dyn FnMut(&PPU, &APU, &mut Joypad) + 'call>,
@@ -43,15 +45,32 @@ where
 {
     let interrupt = Rc::new(RefCell::new(InterruptImpl::new()));
     let interrupt_cpu = interrupt.clone();
-    let bus = Rc::new(RefCell::new(BusImpl::new(rom, interrupt)));
+
+    let interrupt_ppu = interrupt.clone();
+    let interrupt_apu = interrupt.clone();
+    let ppu_rom = Rc::new(RefCell::new(rom));
+    let bus_rom = ppu_rom.clone();
+    let new_ppu = PPU::new(ppu_rom, interrupt_ppu);
+    let new_apu = APU::new(interrupt_apu);
+
+    let ppu = Rc::new(RefCell::new(new_ppu));
+    let apu = Rc::new(RefCell::new(new_apu));
+
+    let bus = Rc::new(RefCell::new(BusImpl::new(
+        bus_rom,
+        ppu.clone(),
+        apu.clone(),
+    )));
     let mut cpu = CpuV2::new(Rc::clone(&bus), interrupt_cpu, halt);
-    bus.borrow_mut().ppu.set_tracing(tracing);
-    bus.borrow_mut().apu.set_tracing(tracing);
+    ppu.borrow_mut().set_tracing(tracing);
+    apu.borrow_mut().set_tracing(tracing);
     cpu.set_tracing(tracing);
     cpu.reset();
 
     NES {
         cpu,
+        ppu,
+        apu,
         bus,
         tracing: tracing,
         trace: None,
@@ -63,8 +82,8 @@ impl<'call, T: Cpu<BusImpl>> NES<'call, T> {
     pub fn set_tracing(&mut self, tracing: bool) {
         self.tracing = tracing;
         self.cpu.set_tracing(tracing);
-        self.bus.borrow_mut().apu.set_tracing(tracing);
-        self.bus.borrow_mut().ppu.set_tracing(tracing);
+        self.ppu.borrow_mut().set_tracing(tracing);
+        self.apu.borrow_mut().set_tracing(tracing);
     }
 
     pub fn run_with_callback<F>(&mut self, mut callback: F) -> Result<(), String>
@@ -78,13 +97,14 @@ impl<'call, T: Cpu<BusImpl>> NES<'call, T> {
             for master_clock in 0..12 {
                 if master_clock % 3 == 0 {
                     self.cpu.tick()?;
-                    self.bus.borrow_mut().apu.tick()?;
+                    self.apu.borrow_mut().tick()?;
                 }
-                self.bus.borrow_mut().ppu.tick()?;
-                if self.bus.borrow_mut().ppu.new_frame {
+                self.ppu.borrow_mut().tick()?;
+                let new_frame = self.ppu.borrow_mut().new_frame;
+                if new_frame {
                     (self.gameloop_callback)(
-                        &self.bus.borrow_mut().ppu,
-                        &self.bus.borrow_mut().apu,
+                        &self.ppu.borrow_mut(),
+                        &self.apu.borrow_mut(),
                         &mut self.bus.borrow_mut().joypad,
                     )
                 }
@@ -805,7 +825,7 @@ mod test {
                 nes.cpu.set_register_x(init.register_x);
                 nes.cpu.set_status(init.status);
                 nes.cpu.set_stack_pointer(init.stack_pointer);
-                nes.bus.borrow_mut().ppu.frame_dots = init.ppu_frame_cycles;
+                nes.ppu.borrow_mut().frame_dots = init.ppu_frame_cycles;
             }
             None => {}
         }

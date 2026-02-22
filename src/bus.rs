@@ -19,7 +19,7 @@ const PRG_RAM_END: u16 = 0x7FFF;
 const ROM_START: u16 = 0x8000;
 const ROM_END: u16 = 0xFFFF;
 
-pub struct BusImpl<'call> {
+pub struct BusImpl {
     cpu_vram: [u8; 2048],
     rom: Rc<RefCell<Rom>>,
     open_bus: u8,
@@ -27,18 +27,10 @@ pub struct BusImpl<'call> {
     pub apu: APU,
     interrupt: Rc<RefCell<InterruptImpl>>,
     pub joypad: Joypad,
-    gameloop_callback: Box<dyn FnMut(&PPU, &APU, &mut Joypad) + 'call>,
 }
 
-impl<'a> BusImpl<'a> {
-    pub fn new<'call, F>(
-        rom: Rom,
-        interrupt: Rc<RefCell<InterruptImpl>>,
-        gameloop_callback: F,
-    ) -> BusImpl<'call>
-    where
-        F: FnMut(&PPU, &APU, &mut Joypad) + 'call,
-    {
+impl BusImpl {
+    pub fn new(rom: Rom, interrupt: Rc<RefCell<InterruptImpl>>) -> BusImpl {
         let interrupt_ppu = interrupt.clone();
         let interrupt_apu = interrupt.clone();
         let apu = APU::new(interrupt_apu);
@@ -56,7 +48,6 @@ impl<'a> BusImpl<'a> {
             interrupt: interrupt,
 
             joypad,
-            gameloop_callback: Box::from(gameloop_callback),
         }
     }
 
@@ -81,7 +72,7 @@ impl<'a> BusImpl<'a> {
     }
 }
 
-impl<'a> fmt::Display for BusImpl<'a> {
+impl fmt::Display for BusImpl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -91,13 +82,13 @@ impl<'a> fmt::Display for BusImpl<'a> {
         )
     }
 }
-impl<'a> Bus for BusImpl<'a> {
+impl Bus for BusImpl {
     fn signal_cpu_start(&mut self) {
         self.ppu.on_cpu_cycle_start();
     }
 }
 
-impl<'a> Mem for BusImpl<'a> {
+impl Mem for BusImpl {
     fn mem_read(&mut self, addr: u16) -> Result<u8, String> {
         let value = match addr {
             RAM..=RAM_MIRRORS_END => {

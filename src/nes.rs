@@ -17,14 +17,16 @@ use crate::traits::mos_65902::MOS6502;
 use crate::traits::tick::Tick;
 use crate::traits::tracing::Tracing;
 
-pub struct NES<'call, T: Cpu<BusImpl<'call>>> {
+pub struct NES<'call, T: Cpu<BusImpl>> {
     tracing: bool,
     pub trace: Option<NesTrace>,
     pub cpu: T,
-    pub bus: Rc<RefCell<BusImpl<'call>>>,
+    pub bus: Rc<RefCell<BusImpl>>,
+
+    gameloop_callback: Box<dyn FnMut(&PPU, &APU, &mut Joypad) + 'call>,
 }
 
-impl<'call, T: Cpu<BusImpl<'call>>> fmt::Display for NES<'call, T> {
+impl<'call, T: Cpu<BusImpl>> fmt::Display for NES<'call, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "\ncpu: {}, \nbus: {}", self.cpu, self.bus.borrow())
     }
@@ -35,17 +37,13 @@ pub fn nes_with_cpu_v2<'call, F>(
     halt: Arc<AtomicBool>,
     tracing: bool,
     gameloop_callback: F,
-) -> NES<'call, CpuV2<BusImpl<'call>>>
+) -> NES<'call, CpuV2<BusImpl>>
 where
     F: FnMut(&PPU, &APU, &mut Joypad) + 'call,
 {
     let interrupt = Rc::new(RefCell::new(InterruptImpl::new()));
     let interrupt_cpu = interrupt.clone();
-    let bus = Rc::new(RefCell::new(BusImpl::new(
-        rom,
-        interrupt,
-        gameloop_callback,
-    )));
+    let bus = Rc::new(RefCell::new(BusImpl::new(rom, interrupt)));
     let mut cpu = CpuV2::new(Rc::clone(&bus), interrupt_cpu, halt);
     bus.borrow_mut().ppu.set_tracing(tracing);
     bus.borrow_mut().apu.set_tracing(tracing);
@@ -57,10 +55,11 @@ where
         bus,
         tracing: tracing,
         trace: None,
+        gameloop_callback: Box::from(gameloop_callback),
     }
 }
 
-impl<'call, T: Cpu<BusImpl<'call>>> NES<'call, T> {
+impl<'call, T: Cpu<BusImpl>> NES<'call, T> {
     pub fn set_tracing(&mut self, tracing: bool) {
         self.tracing = tracing;
         self.cpu.set_tracing(tracing);
@@ -78,10 +77,17 @@ impl<'call, T: Cpu<BusImpl<'call>>> NES<'call, T> {
         loop {
             for master_clock in 0..12 {
                 if master_clock % 3 == 0 {
-                    self.cpu.tick();
-                    self.bus.borrow_mut().apu.tick();
+                    self.cpu.tick()?;
+                    self.bus.borrow_mut().apu.tick()?;
                 }
-                self.bus.borrow_mut().ppu.tick();
+                self.bus.borrow_mut().ppu.tick()?;
+                if self.bus.borrow_mut().ppu.new_frame {
+                    (self.gameloop_callback)(
+                        &self.bus.borrow_mut().ppu,
+                        &self.bus.borrow_mut().apu,
+                        &mut self.bus.borrow_mut().joypad,
+                    )
+                }
             }
 
             if self.cpu.should_halt() {
@@ -166,7 +172,7 @@ mod test {
         reader.lines().filter_map(Result::ok).collect()
     }
 
-    fn construct_nes(rom: Rom, halt: &Arc<AtomicBool>) -> NES<'_, impl Cpu<BusImpl<'_>>> {
+    fn construct_nes(rom: Rom, halt: &Arc<AtomicBool>) -> NES<'_, impl Cpu<BusImpl>> {
         //rust doesn't like polymorphism at runtime, so switch here to run different tests :(
         return nes_with_cpu_v2(
             rom,

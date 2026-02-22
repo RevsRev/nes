@@ -78,7 +78,7 @@ impl APU {
 
     pub fn write_to_frame_counter(&mut self, data: u8) -> u8 {
         let r = self.frame.borrow_mut().write(data);
-        let countdown = if self.cpu_cycles % 2 == 0 { 2 } else { 3 };
+        let countdown = if self.cpu_cycles % 2 == 0 { 1 } else { 2 };
         self.frame.borrow_mut().set_reset_timer_countdown(countdown);
         r
     }

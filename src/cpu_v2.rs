@@ -205,7 +205,6 @@ impl<T: Bus> Tracing for CpuV2<T> {
 
 impl<T: Bus> Mem for CpuV2<T> {
     fn mem_read(&mut self, addr: u16) -> Result<u8, std::string::String> {
-        self.tick(1);
         let read = self.bus.borrow_mut().mem_read(addr)?;
 
         self.reads.push((addr, read));
@@ -213,7 +212,6 @@ impl<T: Bus> Mem for CpuV2<T> {
     }
 
     fn mem_write(&mut self, addr: u16, data: u8) -> Result<u8, std::string::String> {
-        self.tick(1);
         let retval = self.bus.borrow_mut().mem_write(addr, data)?;
         self.writes.push((addr, retval));
         Result::Ok(retval)
@@ -904,26 +902,7 @@ impl<T: Bus> CpuV2<T> {
         old_high != new_high
     }
 
-    fn assign_status(&mut self, value: u8) {
-        self.status = value;
-        self.tick(1);
-    }
-
-    fn assign_program_counter(&mut self, value: u16) {
-        self.program_counter = value;
-        self.tick(1);
-    }
-
-    fn assign_register_a(&mut self, value: u8) {
-        self.register_a = value;
-        self.tick(1);
-    }
-
     fn set_status_flags(&mut self, flags: &[(u8, bool)]) {
-        self.set_status_flags_with_tick(flags, false);
-    }
-
-    fn set_status_flags_with_tick(&mut self, flags: &[(u8, bool)], tick: bool) {
         let mut set = 0;
         let mut clear = 0;
 
@@ -935,10 +914,6 @@ impl<T: Bus> CpuV2<T> {
         }
 
         self.status = (self.status | set) & !clear;
-
-        if tick {
-            self.tick(1);
-        }
     }
 
     fn unexpected_op_cycle<S>(&self, c: u8) -> Result<S, String> {
@@ -1723,7 +1698,6 @@ impl<T: Bus> CpuV2<T> {
                 };
 
                 self.mem_write(self.resolved_addr, value)?;
-                self.tick(1);
 
                 self.set_status_flags(&[
                     (
@@ -1748,7 +1722,6 @@ impl<T: Bus> CpuV2<T> {
                 let value = (self.resolved_mem_read << 1) | (self.status & CARRY_FLAG);
 
                 self.mem_write(self.resolved_addr, value)?;
-                self.tick(1); //dummy write
                 self.register_a = self.register_a & value;
 
                 self.set_status_flags(&[
@@ -1778,7 +1751,6 @@ impl<T: Bus> CpuV2<T> {
 
                 let value = self.resolved_mem_read >> 1 | ((self.status & CARRY_FLAG) << 7);
                 self.mem_write(self.resolved_addr, value)?;
-                self.tick(1); //dummy write
 
                 let mut result = self.register_a;
                 let mut carry = match result.checked_add(value) {

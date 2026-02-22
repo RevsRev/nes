@@ -50,13 +50,16 @@ pub struct CpuV2<T: Bus> {
     total_cycles: u64,
 
     //Internal state
-    instruction_cycle: u8,
-    op_cycle: u8,
+    instruction_cycle: u16,
+    current_op_cycle: u8,
+    current_op_start: u8,
     nmi_at_fetch: bool, //TODO - I wonder if we can get rid of this?
     op: OpCode,
     resolved_addr: u16,
-    resolved_mem_read: u16,
+    resolved_mem_read: u8,
     dummy_read: bool,
+    should_branch: bool,
+    check_for_interrupts: bool,
 }
 
 impl<T: Bus> Cpu<T> for CpuV2<T> {}
@@ -74,238 +77,15 @@ impl<T: Bus> MOS6502<T> for CpuV2<T> {
     where
         F: for<'a> FnMut(&'a Self),
     {
-        let nmi_at_step_start = self.interrupt.borrow().poll_nmi().is_some();
-
-        self.reads.clear();
-        self.writes.clear();
-        self.trace_cycles = self.total_cycles;
-        self.trace_pc = self.program_counter;
-        self.trace_sp = self.stack_pointer;
-        self.trace_status = self.status;
-        self.trace_reg_a = self.register_a;
-        self.trace_reg_x = self.register_x;
-        self.trace_reg_y = self.register_y;
-
-        //FETCH
-        self.bus.borrow_mut().signal_cpu_start();
-        let op = self.mem_read(self.program_counter);
-        self.program_counter = self.program_counter + 1;
-
-        let opcode = op.and_then(|o| {
-            let option = opp::OPCODES_MAP.get(&o);
-            match option {
-                Some(o) => Result::Ok(o),
-                None => Result::Err(format!("Opcode {:x} is not recognised", o)),
+        loop {
+            if self.tick_2()? {
+                return Ok(false);
             }
-        })?;
-
-        let execution_result: Result<(), String> = match opcode.code {
-            0x69 | 0x65 | 0x75 | 0x6D | 0x7D | 0x79 | 0x61 | 0x71 => self.adc(&opcode),
-
-            0x29 | 0x25 | 0x35 | 0x2D | 0x3D | 0x39 | 0x21 | 0x31 => self.and(&opcode),
-
-            0x0A | 0x06 | 0x16 | 0x0E | 0x1E => self.asl(&opcode),
-
-            0x90 => self.bcc(&opcode),
-
-            0xB0 => self.bcs(&opcode),
-
-            0xF0 => self.beq(&opcode),
-
-            0x24 | 0x2C => self.bit(&opcode),
-
-            0x30 => self.bmi(&opcode),
-
-            0xD0 => self.bne(&opcode),
-
-            0x10 => self.bpl(&opcode),
-
-            0x50 => self.bvc(&opcode),
-
-            0x70 => self.bvs(&opcode),
-
-            0x18 => self.clc(&opcode),
-
-            0xD8 => self.cld(&opcode),
-
-            0x58 => self.cli(&opcode),
-
-            0xB8 => self.clv(&opcode),
-
-            0xC9 | 0xC5 | 0xD5 | 0xCD | 0xDD | 0xD9 | 0xC1 | 0xD1 => self.cmp(&opcode),
-
-            0xE0 | 0xE4 | 0xEC => self.cpx(&opcode),
-
-            0xC0 | 0xC4 | 0xCC => self.cpy(&opcode),
-
-            0xC6 | 0xD6 | 0xCE | 0xDE => self.dec(&opcode),
-
-            0xC7 | 0xD7 | 0xCF | 0xDF | 0xDB | 0xC3 | 0xD3 => self.dcp(&opcode),
-
-            0xCA => self.dex(&opcode),
-
-            0x88 => self.dey(&opcode),
-
-            0x49 | 0x45 | 0x55 | 0x4D | 0x5D | 0x59 | 0x41 | 0x51 => self.eor(&opcode),
-
-            0xE6 | 0xF6 | 0xEE | 0xFE => self.inc(&opcode),
-
-            0xE8 => self.inx(),
-
-            0xC8 => self.iny(&opcode),
-
-            0xE7 | 0xF7 | 0xEF | 0xFF | 0xFB | 0xE3 | 0xF3 => self.isb(&opcode),
-
-            0x4C | 0x6C => self.jmp(&opcode),
-
-            0x20 => self.jsr(&opcode),
-
-            0xa9 | 0xa5 | 0xb5 | 0xad | 0xbd | 0xb9 | 0xa1 | 0xb1 => self.lda(&opcode),
-
-            0xA2 | 0xA6 | 0xB6 | 0xAE | 0xBE => self.ldx(&opcode),
-
-            0xA7 | 0xB7 | 0xAF | 0xBF | 0xA3 | 0xB3 => self.lax(&opcode),
-
-            0xA0 | 0xA4 | 0xB4 | 0xAC | 0xBC => self.ldy(&opcode),
-
-            0x4A | 0x46 | 0x56 | 0x4E | 0x5E => self.lsr(&opcode),
-
-            0xEA | 0x1A | 0x3A | 0x5A | 0x7A | 0xDA | 0xFA => self.nop(&opcode),
-
-            0x04 | 0x14 | 0x34 | 0x44 | 0x54 | 0x64 | 0x74 | 0x80 | 0x82 | 0x89 | 0xC2 | 0xD4
-            | 0xE2 | 0xF4 => self.dop(&opcode),
-
-            0x0C | 0x1C | 0x3C | 0x5C | 0x7C | 0xDC | 0xFC => self.top(&opcode),
-
-            0x09 | 0x05 | 0x15 | 0x0D | 0x1D | 0x19 | 0x01 | 0x11 => self.ora(&opcode),
-
-            0x48 => self.pha(&opcode),
-
-            0x08 => self.php(&opcode),
-
-            0x68 => self.pla(&opcode),
-
-            0x28 => self.plp(&opcode),
-
-            0x2A | 0x26 | 0x36 | 0x2E | 0x3E => self.rol(&opcode),
-
-            0x6A | 0x66 | 0x76 | 0x6E | 0x7E => self.ror(&opcode),
-
-            0x27 | 0x37 | 0x2F | 0x3F | 0x3B | 0x23 | 0x33 => self.rla(&opcode),
-
-            0x67 | 0x77 | 0x6F | 0x7F | 0x7B | 0x63 | 0x73 => self.rra(&opcode),
-
-            0x40 => self.rti(&opcode),
-
-            0x60 => self.rts(&opcode),
-
-            0x87 | 0x97 | 0x83 | 0x8F => self.sax(&opcode),
-
-            0xE9 | 0xE5 | 0xF5 | 0xED | 0xFD | 0xF9 | 0xE1 | 0xF1 | 0xEB => self.sbc(&opcode),
-
-            0x38 => self.sec(&opcode),
-
-            0xF8 => self.sed(&opcode),
-
-            0x78 => self.sei(&opcode),
-
-            0x07 | 0x17 | 0x0F | 0x1F | 0x1B | 0x03 | 0x13 => self.slo(&opcode),
-
-            0x47 | 0x57 | 0x4F | 0x5F | 0x5B | 0x43 | 0x53 => self.sre(&opcode),
-
-            0x85 | 0x95 | 0x8d | 0x9d | 0x99 | 0x81 | 0x91 => self.sta(&opcode),
-
-            0x86 | 0x96 | 0x8E => self.stx(&opcode),
-
-            0x84 | 0x94 | 0x8C => self.sty(&opcode),
-
-            0xAA => self.tax(),
-
-            0xA8 => self.tay(),
-
-            0xBA => self.tsx(),
-
-            0x8A => self.txa(),
-
-            0x9A => self.txs(),
-
-            0x98 => self.tya(),
-
-            0x00 => {
-                let break_result = self.brk(&opcode);
-                break_result.map(|v| {
-                    if v {
-                        self.halt.store(true, Ordering::Relaxed);
-                    }
-                    ()
-                })
-            }
-            _ => todo!(),
-        };
-
-        match execution_result {
-            Ok(_) => {}
-            Err(s) => {
-                return Err(self.format_fatal_error(opcode, s));
+            if self.instruction_cycle == 0 {
+                callback(self);
+                break;
             }
         }
-
-        let oam_stall = self.interrupt.borrow().poll_oam_data();
-        match oam_stall {
-            Some(page_hi) => {
-                self.tick(1);
-                //oam started on an odd cycle (tick made it even)
-                if self.total_cycles % 2 == 0 {
-                    self.tick(1);
-                }
-                for i in 0..256 {
-                    let value = self.mem_read(((page_hi as u16) << 8) | i)?;
-                    self.mem_write(0x4014, value)?;
-                }
-                self.interrupt.borrow_mut().take_oam_data();
-            }
-            None => {}
-        }
-
-        //pretty horrible logic to get the traces to line up with mesen emulator... Once we have a
-        //working emulator can probably just always take the nmi here without the ppu cycles check
-        let ppu_cycles = ((self.total_cycles - self.trace_cycles) * 3) as u16;
-        let take_nmi_set_this_frame = match self.interrupt.borrow().poll_nmi() {
-            None => false,
-            Some(cycles) => cycles < ppu_cycles - 3,
-        };
-        if nmi_at_step_start || take_nmi_set_this_frame {
-            self.interrupt.borrow_mut().take_nmi();
-            self.interrupt_nmi()?;
-        }
-
-        self.store_trace(&opcode);
-        callback(self);
-
-        if self.halt.load(Ordering::Relaxed) {
-            return Ok(false);
-        }
-
-        if !Self::get_flag(self.status, INTERRUPT_DISABLE_FLAG)
-            && self.interrupt.borrow_mut().poll_irq()
-        {
-            self.stack_push_u16(self.program_counter);
-            self.stack_push((self.status & !BREAK_FLAG) | BREAK2_FLAG);
-
-            let pc = self.mem_read_u16(0xFFFE);
-
-            match pc {
-                Ok(val) => {
-                    self.set_status_flags(&[(INTERRUPT_DISABLE_FLAG, true)]);
-                    self.program_counter = val;
-                    self.tick(7);
-                }
-                Err(s) => {
-                    return Err(self.format_fatal_error(opcode, s));
-                }
-            }
-        }
-
         return Ok(true);
     }
 
@@ -472,7 +252,6 @@ impl<T: Bus> fmt::Display for CpuV2<T> {
 
 impl<T: Bus> Tick for CpuV2<T> {
     fn tick(&mut self, cycles: u8) {
-        self.total_cycles += cycles as u64;
         self.bus.borrow_mut().tick(cycles);
     }
 }
@@ -508,21 +287,24 @@ impl<T: Bus> CpuV2<T> {
             total_cycles: 0,
 
             instruction_cycle: 0,
-            op_cycle: 0,
+            current_op_cycle: 0,
+            current_op_start: 0xFF,
             nmi_at_fetch: false,
             op: **OPCODES_MAP.get(&0x00).unwrap(),
             resolved_addr: 0x0000,
             resolved_mem_read: 0x0000,
             dummy_read: false,
+            check_for_interrupts: false,
+            should_branch: false,
         }
     }
 
-    fn store_trace(&mut self, op: &OpCode) {
+    fn store_trace(&mut self) {
         if self.tracing {
             self.trace = Option::Some(CpuTrace {
                 cpu_cycles: self.trace_cycles,
                 pc: self.trace_pc,
-                op_code: (*op).to_owned(),
+                op_code: self.op,
                 absolute_address: self.operand_address,
                 register_a: self.trace_reg_a,
                 register_x: self.trace_reg_x,
@@ -546,59 +328,340 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn tick_2(&mut self) -> Result<bool, String> {
-        let instruction_cycle = 0;
-        match instruction_cycle {
-            0 => {
-                self.op_cycle = 0;
-                self.fetch()
-            }
-            1 => match self.op.mode {
-                AddressingMode::Accumulator => self.execute_op(),
-                AddressingMode::Implied => {
-                    self.resolved_addr = self.program_counter;
-                    self.execute_op()
+        //TODO - Remember to map err for this result at a higher level
+
+        println!(
+            "{} - ic: {} oc: {}",
+            self.op.mnemonic, self.instruction_cycle, self.current_op_cycle
+        );
+
+        if !self.check_for_interrupts {
+            match self.fetch_decode_execute()? {
+                true => {
+                    self.instruction_cycle = self.instruction_cycle + 1;
+                    self.total_cycles = self.total_cycles + 1;
+                    return Ok(false);
                 }
-                AddressingMode::Immediate => {
-                    self.resolved_addr = self.program_counter;
-                    self.program_counter = self.program_counter + 1;
-                    self.execute_op()
-                }
-                _ => self.evaluate_operand(),
-            },
-            c => {
-                if c - 2 > self.op.mode.base_cycles() {
-                    self.evaluate_operand()
-                } else if self.dummy_read {
-                    self.dummy_read = false;
-                    self.mem_read(self.resolved_addr).map(|_| true)
-                } else {
-                    self.execute_op()
+                false => {
+                    self.instruction_cycle = 0;
+                    self.check_for_interrupts = true;
                 }
             }
         }
-        .map_err(|s| self.format_fatal_error(s))
+
+        let nmi_interrupt = self.interrupt.borrow().poll_nmi();
+        let nmi_in_progress = match nmi_interrupt {
+            Some(_) => self.interrupt_nmi(),
+            None => Ok(false),
+        }?;
+
+        if nmi_in_progress {
+            self.instruction_cycle = self.instruction_cycle + 1;
+            self.total_cycles = self.total_cycles + 1;
+            return Ok(false);
+        }
+
+        let oam_stall = self.interrupt.borrow().poll_oam_data();
+        let oam_stall_in_progress = match oam_stall {
+            Some(page_hi) => {
+                let result = self.interrupt_oam_data(page_hi);
+                result
+            }
+            None => Ok(false),
+        }?;
+
+        if oam_stall_in_progress {
+            self.total_cycles = self.total_cycles + 1;
+            return Ok(false);
+        }
+
+        let irq_interrupt = self.interrupt.borrow().poll_irq();
+        let irq_in_progress = if irq_interrupt {
+            self.interrupt_irq()
+        } else {
+            Ok(false)
+        }?;
+        if irq_in_progress {
+            self.total_cycles = self.total_cycles + 1;
+            self.instruction_cycle = self.instruction_cycle + 1;
+            return Ok(false);
+        }
+
+        self.store_trace();
+
+        self.check_for_interrupts = false;
+        self.instruction_cycle = 0;
+
+        if self.halt.load(Ordering::Relaxed) {
+            return Ok(true);
+        }
+
+        Ok(false)
     }
 
-    fn execute_op(&mut self) -> Result<bool, String> {
-        todo!()
+    fn interrupt_irq(&mut self) -> Result<bool, String> {
+        match self.instruction_cycle {
+            0 => self
+                .stack_push((self.program_counter >> 8) as u8)
+                .map(|_| true),
+            1 => self.stack_push(self.program_counter as u8).map(|_| true),
+            2 => self
+                .stack_push((self.status & !BREAK_FLAG) | BREAK2_FLAG)
+                .map(|_| true),
+            3 => {
+                self.program_counter = self.mem_read(BRK_INTERRUPT_ADDRESS)? as u16;
+                Ok(true)
+            }
+            4 => {
+                self.program_counter = (self.program_counter & 0x00FF)
+                    | ((self.mem_read(BRK_INTERRUPT_ADDRESS + 1)? as u16) << 8);
+                Ok(true)
+            }
+            5 => {
+                self.status = self.status | INTERRUPT_DISABLE_FLAG;
+                Ok(true)
+            }
+            6 => Ok(true),
+            c => Err(format!("Unexpected irq interrupt cycle {}", c)),
+        }
     }
 
-    fn evaluate_operand(&mut self) -> Result<bool, String> {
+    //TODO - Move instruction cycle out of this level
+    fn interrupt_oam_data(&mut self, page_hi: u8) -> Result<bool, String> {
+        if self.instruction_cycle == 0 && self.total_cycles % 1 == 0 {
+            return Ok(true);
+        }
+
+        if self.instruction_cycle == 0 {
+            self.instruction_cycle = self.instruction_cycle + 1;
+            self.total_cycles = self.total_cycles + 1;
+            return Ok(true);
+        }
+
+        if self.instruction_cycle <= 512 {
+            if self.instruction_cycle % 2 == 1 {
+                self.resolved_addr =
+                    self.mem_read((page_hi as u16) << 8 | (self.instruction_cycle - 1))? as u16;
+            } else {
+                self.mem_write(0x4014, self.resolved_addr as u8)?;
+            }
+            self.instruction_cycle = self.instruction_cycle + 1;
+            return Ok(true);
+        }
+
+        self.mem_write(0x4014, self.resolved_addr as u8)?;
+        self.interrupt.borrow_mut().take_oam_data();
+        self.instruction_cycle = 0;
+        Ok(false)
+    }
+
+    fn fetch_decode_execute(&mut self) -> Result<bool, String> {
+        if self.instruction_cycle == 0 {
+            self.fetch()?;
+
+            if self.op.mode == AddressingMode::Implied {
+                self.resolved_addr = self.program_counter;
+            } else if self.op.mode == AddressingMode::Immediate {
+                self.resolved_addr = self.program_counter;
+                self.program_counter = self.program_counter + 1;
+            } else if self.op.mode == AddressingMode::Relative {
+                let result = self.mem_read(self.program_counter).map(|mem| mem as i8);
+                match result {
+                    Ok(value) => {
+                        self.program_counter = self.program_counter + 1;
+                        self.resolved_addr = self.program_counter.wrapping_add(value as u16);
+                    }
+                    Err(s) => return Err(s),
+                }
+            }
+            return Ok(true);
+        }
+        if self.instruction_cycle < 1 + self.op.mode.base_cycles() as u16 {
+            self.evaluate_operand()?;
+            return Ok(true);
+        }
+        if self.dummy_read {
+            self.dummy_read = false;
+            self.mem_read(self.resolved_addr)?;
+            return Ok(true);
+        }
+
+        if self.current_op_start == 0xFF {
+            self.current_op_start = self.instruction_cycle as u8;
+        }
+
+        //Special case for JMP. Should execute immediately without consuming a cycle
+        if self.current_op_cycle == 0 && (self.op.code == 0x4C || self.op.code == 0x6C) {
+            self.execute_op()?;
+            self.current_op_cycle = self.current_op_cycle + 1;
+        }
+
+        if self.current_op_cycle < self.op.cycles - self.current_op_start {
+            self.execute_op()?;
+            self.current_op_cycle = self.current_op_cycle + 1;
+            return Ok(true);
+        }
+        if self.should_branch {
+            self.program_counter = self.resolved_addr;
+            self.should_branch = false;
+            return Ok(true);
+        }
+        self.current_op_start = 0xFF;
+        self.current_op_cycle = 0;
+        return Ok(false);
+    }
+
+    fn execute_op(&mut self) -> Result<(), String> {
+        match self.op.code {
+            0x69 | 0x65 | 0x75 | 0x6D | 0x7D | 0x79 | 0x61 | 0x71 => self.adc(),
+
+            0x29 | 0x25 | 0x35 | 0x2D | 0x3D | 0x39 | 0x21 | 0x31 => self.and(),
+
+            0x0A | 0x06 | 0x16 | 0x0E | 0x1E => self.asl(),
+
+            0x90 => self.bcc(),
+
+            0xB0 => self.bcs(),
+
+            0xF0 => self.beq(),
+
+            0x24 | 0x2C => self.bit(),
+
+            0x30 => self.bmi(),
+
+            0xD0 => self.bne(),
+
+            0x10 => self.bpl(),
+
+            0x50 => self.bvc(),
+
+            0x70 => self.bvs(),
+
+            0x18 => self.clc(),
+
+            0xD8 => self.cld(),
+
+            0x58 => self.cli(),
+
+            0xB8 => self.clv(),
+
+            0xC9 | 0xC5 | 0xD5 | 0xCD | 0xDD | 0xD9 | 0xC1 | 0xD1 => self.cmp(),
+
+            0xE0 | 0xE4 | 0xEC => self.cpx(),
+
+            0xC0 | 0xC4 | 0xCC => self.cpy(),
+
+            0xC6 | 0xD6 | 0xCE | 0xDE => self.dec(),
+
+            0xC7 | 0xD7 | 0xCF | 0xDF | 0xDB | 0xC3 | 0xD3 => self.dcp(),
+
+            0xCA => self.dex(),
+
+            0x88 => self.dey(),
+
+            0x49 | 0x45 | 0x55 | 0x4D | 0x5D | 0x59 | 0x41 | 0x51 => self.eor(),
+
+            0xE6 | 0xF6 | 0xEE | 0xFE => self.inc(),
+
+            0xE8 => self.inx(),
+
+            0xC8 => self.iny(),
+
+            0xE7 | 0xF7 | 0xEF | 0xFF | 0xFB | 0xE3 | 0xF3 => self.isb(),
+
+            0x4C | 0x6C => self.jmp(),
+
+            0x20 => self.jsr(),
+
+            0xa9 | 0xa5 | 0xb5 | 0xad | 0xbd | 0xb9 | 0xa1 | 0xb1 => self.lda(),
+
+            0xA2 | 0xA6 | 0xB6 | 0xAE | 0xBE => self.ldx(),
+
+            0xA7 | 0xB7 | 0xAF | 0xBF | 0xA3 | 0xB3 => self.lax(),
+
+            0xA0 | 0xA4 | 0xB4 | 0xAC | 0xBC => self.ldy(),
+
+            0x4A | 0x46 | 0x56 | 0x4E | 0x5E => self.lsr(),
+
+            0xEA | 0x1A | 0x3A | 0x5A | 0x7A | 0xDA | 0xFA => self.nop(),
+
+            0x04 | 0x14 | 0x34 | 0x44 | 0x54 | 0x64 | 0x74 | 0x80 | 0x82 | 0x89 | 0xC2 | 0xD4
+            | 0xE2 | 0xF4 => self.dop(),
+
+            0x0C | 0x1C | 0x3C | 0x5C | 0x7C | 0xDC | 0xFC => self.top(),
+
+            0x09 | 0x05 | 0x15 | 0x0D | 0x1D | 0x19 | 0x01 | 0x11 => self.ora(),
+
+            0x48 => self.pha(),
+
+            0x08 => self.php(),
+
+            0x68 => self.pla(),
+
+            0x28 => self.plp(),
+
+            0x2A | 0x26 | 0x36 | 0x2E | 0x3E => self.rol(),
+
+            0x6A | 0x66 | 0x76 | 0x6E | 0x7E => self.ror(),
+
+            0x27 | 0x37 | 0x2F | 0x3F | 0x3B | 0x23 | 0x33 => self.rla(),
+
+            0x67 | 0x77 | 0x6F | 0x7F | 0x7B | 0x63 | 0x73 => self.rra(),
+
+            0x40 => self.rti(),
+
+            0x60 => self.rts(),
+
+            0x87 | 0x97 | 0x83 | 0x8F => self.sax(),
+
+            0xE9 | 0xE5 | 0xF5 | 0xED | 0xFD | 0xF9 | 0xE1 | 0xF1 | 0xEB => self.sbc(),
+
+            0x38 => self.sec(),
+
+            0xF8 => self.sed(),
+
+            0x78 => self.sei(),
+
+            0x07 | 0x17 | 0x0F | 0x1F | 0x1B | 0x03 | 0x13 => self.slo(),
+
+            0x47 | 0x57 | 0x4F | 0x5F | 0x5B | 0x43 | 0x53 => self.sre(),
+
+            0x85 | 0x95 | 0x8d | 0x9d | 0x99 | 0x81 | 0x91 => self.sta(),
+
+            0x86 | 0x96 | 0x8E => self.stx(),
+
+            0x84 | 0x94 | 0x8C => self.sty(),
+
+            0xAA => self.tax(),
+
+            0xA8 => self.tay(),
+
+            0xBA => self.tsx(),
+
+            0x8A => self.txa(),
+
+            0x9A => self.txs(),
+
+            0x98 => self.tya(),
+
+            0x00 => self.brk(),
+            _ => todo!(),
+        }
+    }
+
+    fn evaluate_operand(&mut self) -> Result<(), String> {
         let evaluate_cycle = self.instruction_cycle - 1;
-        match (self.op.mode, evaluate_cycle) {
+        Ok(match (self.op.mode, evaluate_cycle) {
             (AddressingMode::Accumulator, _)
             | (AddressingMode::Implied, _)
-            | (AddressingMode::Immediate, _) => {
+            | (AddressingMode::Immediate, _)
+            | (AddressingMode::Relative, _) => {
                 return Err(format!(
                     "AddressingMode {} should have been handled already",
                     self.op.mode
                 ));
             }
-            (AddressingMode::Relative, 0) => {
-                let value = self.mem_read(self.program_counter)? as i8;
-                self.program_counter = self.program_counter + 1;
-                self.resolved_addr = self.program_counter.wrapping_add(value as u16);
-            }
+
             (AddressingMode::ZeroPage, 0) => {
                 self.resolved_addr = self.mem_read(self.program_counter)? as u16;
                 self.program_counter = self.program_counter + 1;
@@ -696,12 +759,11 @@ impl<T: Bus> CpuV2<T> {
                 }
             }
             (AddressingMode::Indirect, 0) => {
-                self.resolved_mem_read = self.mem_read(self.program_counter)? as u16;
+                self.resolved_mem_read = self.mem_read(self.program_counter)?;
                 self.program_counter = self.program_counter + 1;
             }
             (AddressingMode::Indirect, 1) => {
-                self.resolved_mem_read =
-                    self.resolved_mem_read | ((self.mem_read(self.program_counter)? as u16) << 8);
+                self.resolved_addr = (self.mem_read(self.program_counter)? as u16) << 8;
                 self.program_counter = self.program_counter + 1;
             }
             (AddressingMode::Indirect, 2) => {
@@ -709,28 +771,26 @@ impl<T: Bus> CpuV2<T> {
                 //If we are at a page boundry e.g. 0x02FF, then we read the lo from 0x02FF and the hi
                 //from 0x0200, i.e. the page address (02) is the same and the index on the page
                 //wraps around
-                let page = (self.resolved_mem_read >> 8) as u8;
-                let index = (self.resolved_mem_read & 0xFF) as u8;
+                let page = (self.resolved_addr >> 8) as u8;
+                let index = self.resolved_mem_read;
                 let first = ((page as u16) << 8) + (index as u16);
 
-                self.resolved_addr = self.mem_read(first)? as u16;
+                self.resolved_addr = self.resolved_addr | self.mem_read(first)? as u16;
             }
             (AddressingMode::Indirect, 3) => {
-                let page = (self.resolved_mem_read >> 8) as u8;
-                let index = (self.resolved_mem_read & 0xFF) as u8;
+                let page = (self.resolved_addr >> 8) as u8;
+                let index = self.resolved_mem_read;
                 let second = ((page as u16) << 8) + (index.wrapping_add(1) as u16);
-                self.resolved_addr = self.resolved_addr | ((self.mem_read(second)? as u16) << 8);
+                self.resolved_addr =
+                    (self.resolved_addr & 0x00FF) | ((self.mem_read(second)? as u16) << 8);
             }
             (mode, cycle) => {
                 return Err(format!("Unimplemented mode and cycle {}, {}", mode, cycle));
             }
-        };
-        Ok(true)
+        })
     }
 
-    fn fetch(&mut self) -> Result<bool, String> {
-        let nmi_at_fetch = self.interrupt.borrow().poll_nmi().is_some();
-
+    fn fetch(&mut self) -> Result<(), String> {
         self.reads.clear();
         self.writes.clear();
         self.cache_trace_state();
@@ -743,9 +803,9 @@ impl<T: Bus> CpuV2<T> {
         match opp::OPCODES_MAP.get(&op) {
             Some(o) => {
                 self.op = **o;
-                Ok(true)
+                return Ok(());
             }
-            None => Err(format!("Opcode {:x} is not recognised", op)),
+            None => return Err(format!("Opcode {:x} is not recognised", op)),
         }
     }
 
@@ -839,120 +899,6 @@ impl<T: Bus> CpuV2<T> {
         return register & flag == flag;
     }
 
-    fn evaluate_operand_at_address(&mut self, opcode: &OpCode) -> Result<u16, String> {
-        let result: u16 = match opcode.mode {
-            AddressingMode::Implied => self.program_counter,
-            AddressingMode::Immediate => {
-                let addr = self.program_counter;
-                self.program_counter = self.program_counter + 1;
-                addr
-            }
-            AddressingMode::Relative => {
-                let value = self.mem_read(self.program_counter)? as i8;
-                self.program_counter = self.program_counter + 1;
-                self.program_counter.wrapping_add(value as u16)
-            }
-            AddressingMode::ZeroPage => {
-                let addr = self.mem_read(self.program_counter)? as u16;
-                self.program_counter = self.program_counter + 1;
-                addr
-            }
-            AddressingMode::Absolute => {
-                let addr = self.mem_read_u16(self.program_counter)?;
-                self.program_counter = self.program_counter + 2;
-                addr
-            }
-            AddressingMode::ZeroPage_X => {
-                let pos = self.mem_read(self.program_counter)?;
-                self.program_counter = self.program_counter + 1;
-                self.tick(1);
-                let addr = pos.wrapping_add(self.register_x) as u16;
-                addr
-            }
-            AddressingMode::ZeroPage_Y => {
-                let pos = self.mem_read(self.program_counter)?;
-                self.program_counter = self.program_counter + 1;
-                self.tick(1);
-                let addr = pos.wrapping_add(self.register_y) as u16;
-                addr
-            }
-            AddressingMode::Absolute_X => {
-                let base = self.mem_read_u16(self.program_counter)?;
-                self.program_counter = self.program_counter + 2;
-
-                let addr = base.wrapping_add(self.register_x as u16);
-
-                if Self::page_boundary_crossed(base, addr)
-                    || opcode.behaviour == OpCodeBehaviour::MemoryWrite
-                {
-                    self.mem_read(addr)?;
-                }
-                addr
-            }
-            AddressingMode::Absolute_Y => {
-                let base = self.mem_read_u16(self.program_counter)?;
-                self.program_counter = self.program_counter + 2;
-
-                let addr = base.wrapping_add(self.register_y as u16);
-
-                if Self::page_boundary_crossed(base, addr)
-                    || opcode.behaviour == OpCodeBehaviour::MemoryWrite
-                {
-                    //dummy read correct address
-                    self.mem_read(addr)?;
-                }
-                addr
-            }
-            AddressingMode::Indirect_X => {
-                let base = self.mem_read(self.program_counter)?;
-                self.program_counter = self.program_counter + 1;
-                let ptr: u8 = base.wrapping_add(self.register_x);
-                self.mem_read(ptr as u16)?;
-                let lo = self.mem_read(ptr as u16)?;
-                let hi = self.mem_read(ptr.wrapping_add(1) as u16)?;
-                (hi as u16) << 8 | (lo as u16)
-            }
-            AddressingMode::Indirect_Y => {
-                let base = self.mem_read(self.program_counter)?;
-                self.program_counter = self.program_counter + 1;
-                let lo = self.mem_read(base as u16)?;
-                let hi = self.mem_read(base.wrapping_add(1) as u16)?;
-
-                let deref_base = (hi as u16) << 8 | (lo as u16);
-                let deref = deref_base.wrapping_add(self.register_y as u16);
-
-                if Self::page_boundary_crossed(deref, deref_base)
-                    || opcode.behaviour == OpCodeBehaviour::MemoryWrite
-                {
-                    self.mem_read(deref)?;
-                }
-                deref
-            }
-            AddressingMode::Indirect => {
-                let target_addr = self.mem_read_u16(self.program_counter)?;
-                self.program_counter = self.program_counter + 2;
-
-                //Nasty bug for indirect reads on a page boundary!
-                //If we are at a page boundry e.g. 0x02FF, then we read the lo from 0x02FF and the hi
-                //from 0x0200, i.e. the page address (02) is the same and the index on the page
-                //wraps around
-                let page = (target_addr >> 8) as u8;
-                let index = (target_addr & 0xFF) as u8;
-                let first = ((page as u16) << 8) + (index as u16);
-                let second = ((page as u16) << 8) + (index.wrapping_add(1) as u16);
-
-                let lo = self.mem_read(first)? as u16;
-                let hi = self.mem_read(second)? as u16;
-
-                // let target_addr = self.mem_read_u16(begin);
-                (hi << 8) | lo
-            }
-            AddressingMode::Accumulator => panic!("Unsupported op code 'Accumulator'"),
-        };
-        self.operand_address = Option::Some(result);
-        Result::Ok(result)
-    }
-
     fn page_boundary_crossed(old_address: u16, new_address: u16) -> bool {
         let old_high = old_address >> 8;
         let new_high = new_address >> 8;
@@ -996,1067 +942,1226 @@ impl<T: Bus> CpuV2<T> {
         }
     }
 
-    fn adc(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(opcode)?;
-        let addr = eval;
-        let value = self.mem_read(addr)?;
+    fn unexpected_op_cycle<S>(&self, c: u8) -> Result<S, String> {
+        Err(format!("Unexpected {} cycle {}", self.op.mnemonic, c))
+    }
 
-        let mut result = self.register_a;
-        let mut carry = match result.checked_add(value) {
-            Some(_sum) => false,
-            None => true,
-        };
-
-        result = result.wrapping_add(value);
-
-        if Self::get_flag(self.status, CARRY_FLAG) {
-            carry = carry
-                | match result.checked_add(1) {
+    fn adc(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.resolved_mem_read = self.mem_read(self.resolved_addr)?;
+                let mut result = self.register_a;
+                let mut carry = match result.checked_add(self.resolved_mem_read) {
                     Some(_sum) => false,
                     None => true,
                 };
-            result = result.wrapping_add(1);
-        }
 
-        let set_overflow = (value ^ result) & (self.register_a ^ result) & NEGATIVE_FLAG != 0;
-
-        self.register_a = result;
-
-        self.set_status_flags(&[
-            (OVERFLOW_FLAG, set_overflow),
-            (CARRY_FLAG, carry),
-            (ZERO_FLAG, self.register_a == 0),
-            (
-                NEGATIVE_FLAG,
-                Self::get_flag(self.register_a, NEGATIVE_FLAG),
-            ),
-        ]);
-
-        Result::Ok(())
-    }
-
-    fn and(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(opcode)?;
-        let addr = eval;
-        let value = self.mem_read(addr)?;
-
-        self.register_a = self.register_a & value;
-
-        self.set_status_flags_with_tick(
-            &[
-                (ZERO_FLAG, self.register_a == 0),
-                (
-                    NEGATIVE_FLAG,
-                    Self::get_flag(self.register_a, NEGATIVE_FLAG),
-                ),
-            ],
-            false,
-        );
-
-        Result::Ok(())
-    }
-
-    fn asl(&mut self, opcode: &OpCode) -> Result<(), String> {
-        if opcode.mode == AddressingMode::Accumulator {
-            let old = self.register_a;
-
-            let new = self.register_a << 1;
-            self.assign_register_a(new);
-
-            self.set_status_flags(&[
-                (ZERO_FLAG, self.register_a == 0),
-                (CARRY_FLAG, old & NEGATIVE_FLAG == NEGATIVE_FLAG),
-                (
-                    NEGATIVE_FLAG,
-                    Self::get_flag(self.register_a, NEGATIVE_FLAG),
-                ),
-            ]);
-
-            return Result::Ok(());
-        }
-
-        let addr = self.evaluate_operand_at_address(opcode)?;
-        let old = self.mem_read(addr)?;
-
-        let value = old << 1;
-
-        self.mem_write(addr, value)?;
-        self.tick(1);
-
-        self.set_status_flags(&[
-            (ZERO_FLAG, value == 0),
-            (CARRY_FLAG, old & NEGATIVE_FLAG == NEGATIVE_FLAG),
-            (NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG)),
-        ]);
-
-        Result::Ok(())
-    }
-
-    fn sta(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let addr = self.evaluate_operand_at_address(opcode)?;
-
-        self.mem_write(addr, self.register_a)?;
-        Result::Ok(())
-    }
-
-    fn bcc(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(opcode)?;
-
-        if Self::get_flag(self.status, CARRY_FLAG) {
-            return Result::Ok(());
-        }
-        if Self::page_boundary_crossed(self.program_counter, eval) {
-            self.tick(1);
-        }
-        self.tick(1);
-        self.program_counter = eval;
-        Result::Ok(())
-    }
-
-    fn bcs(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(opcode)?;
-
-        if !Self::get_flag(self.status, CARRY_FLAG) {
-            return Result::Ok(());
-        }
-        if Self::page_boundary_crossed(self.program_counter, eval) {
-            self.tick(1);
-        }
-        self.tick(1);
-
-        self.program_counter = eval;
-        Result::Ok(())
-    }
-
-    fn beq(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(opcode)?;
-
-        if !Self::get_flag(self.status, ZERO_FLAG) {
-            return Result::Ok(());
-        }
-        if Self::page_boundary_crossed(self.program_counter, eval) {
-            self.tick(1);
-        }
-        self.tick(1);
-
-        self.program_counter = eval;
-        Result::Ok(())
-    }
-
-    fn bit(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let addr = self.evaluate_operand_at_address(opcode)?;
-        let value = self.mem_read(addr)?;
-
-        self.set_status_flags(&[
-            (ZERO_FLAG, value & self.register_a == 0),
-            (OVERFLOW_FLAG, value & OVERFLOW_FLAG == OVERFLOW_FLAG),
-            (NEGATIVE_FLAG, value & NEGATIVE_FLAG == NEGATIVE_FLAG),
-        ]);
-
-        Result::Ok(())
-    }
-
-    fn bmi(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(opcode)?;
-
-        if !Self::get_flag(self.status, NEGATIVE_FLAG) {
-            return Result::Ok(());
-        }
-        if Self::page_boundary_crossed(self.program_counter, eval) {
-            self.tick(1);
-        }
-        self.tick(1);
-        self.program_counter = eval;
-        Result::Ok(())
-    }
-
-    fn bne(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(opcode)?;
-
-        if Self::get_flag(self.status, ZERO_FLAG) {
-            return Result::Ok(());
-        }
-
-        if Self::page_boundary_crossed(self.program_counter, eval) {
-            self.tick(1);
-        }
-
-        self.tick(1);
-        self.program_counter = eval;
-        Result::Ok(())
-    }
-
-    fn bpl(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(opcode)?;
-
-        if Self::get_flag(self.status, NEGATIVE_FLAG) {
-            return Result::Ok(());
-        }
-        if Self::page_boundary_crossed(self.program_counter, eval) {
-            self.tick(1);
-        }
-
-        self.tick(1);
-        self.program_counter = eval;
-        Result::Ok(())
-    }
-
-    fn bvc(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(opcode)?;
-
-        if Self::get_flag(self.status, OVERFLOW_FLAG) {
-            return Result::Ok(());
-        }
-        if Self::page_boundary_crossed(self.program_counter, eval) {
-            self.tick(1);
-        }
-        self.tick(1);
-        self.program_counter = eval;
-        Result::Ok(())
-    }
-
-    fn bvs(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(opcode)?;
-
-        if !Self::get_flag(self.status, OVERFLOW_FLAG) {
-            return Result::Ok(());
-        }
-        if Self::page_boundary_crossed(self.program_counter, eval) {
-            self.tick(1);
-        }
-        self.tick(1);
-        self.program_counter = eval;
-        Result::Ok(())
-    }
-
-    fn clc(&mut self, _opcode: &OpCode) -> Result<(), String> {
-        self.set_status_flags_with_tick(&[(CARRY_FLAG, false)], true);
-        Result::Ok(())
-    }
-
-    fn cld(&mut self, _opcode: &OpCode) -> Result<(), String> {
-        self.set_status_flags_with_tick(&[(DECIMAL_MODE_FLAG, false)], true);
-        Result::Ok(())
-    }
-
-    fn cli(&mut self, _opcode: &OpCode) -> Result<(), String> {
-        self.set_status_flags_with_tick(&[(INTERRUPT_DISABLE_FLAG, false)], true);
-        Result::Ok(())
-    }
-
-    fn clv(&mut self, _opcode: &OpCode) -> Result<(), String> {
-        self.set_status_flags_with_tick(&[(OVERFLOW_FLAG, false)], true);
-        Result::Ok(())
-    }
-
-    fn cmp(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(opcode)?;
-        let addr = eval;
-        let value = self.mem_read(addr)?;
-
-        let sub = self.register_a.wrapping_sub(value);
-
-        self.set_status_flags(&[
-            (CARRY_FLAG, self.register_a >= value),
-            (ZERO_FLAG, self.register_a == value),
-            (NEGATIVE_FLAG, Self::get_flag(sub, NEGATIVE_FLAG)),
-        ]);
-
-        Result::Ok(())
-    }
-
-    fn cpx(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let address = self.evaluate_operand_at_address(opcode)?;
-        let value = self.mem_read(address)?;
-
-        let sub = self.register_x.wrapping_sub(value);
-
-        self.set_status_flags(&[
-            (CARRY_FLAG, self.register_x >= value),
-            (ZERO_FLAG, self.register_x == value),
-            (NEGATIVE_FLAG, Self::get_flag(sub, NEGATIVE_FLAG)),
-        ]);
-        Result::Ok(())
-    }
-
-    fn cpy(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let address = self.evaluate_operand_at_address(opcode)?;
-        let value = self.mem_read(address)?;
-
-        let sub = self.register_y.wrapping_sub(value);
-
-        self.set_status_flags(&[
-            (CARRY_FLAG, self.register_y >= value),
-            (ZERO_FLAG, self.register_y == value),
-            (NEGATIVE_FLAG, Self::get_flag(sub, NEGATIVE_FLAG)),
-        ]);
-        Result::Ok(())
-    }
-
-    fn dec(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let address = self.evaluate_operand_at_address(opcode)?;
-        let value = self.mem_read(address)?;
-
-        self.mem_write(address, value)?; //dummy write
-
-        let sub = value.wrapping_sub(1);
-
-        self.mem_write(address, sub)?;
-
-        self.set_status_flags(&[
-            (ZERO_FLAG, sub == 0),
-            (NEGATIVE_FLAG, Self::get_flag(sub, NEGATIVE_FLAG)),
-        ]);
-
-        Result::Ok(())
-    }
-
-    fn dcp(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let address = self.evaluate_operand_at_address(opcode)?;
-        let value = self.mem_read(address)?;
-
-        let sub = value.wrapping_sub(1);
-
-        self.mem_write(address, sub)?;
-        self.tick(1); //dummy write
-
-        let diff = self.register_a.wrapping_sub(sub);
-
-        self.set_status_flags(&[
-            (CARRY_FLAG, self.register_a >= sub),
-            (ZERO_FLAG, self.register_a == sub),
-            (NEGATIVE_FLAG, Self::get_flag(diff, NEGATIVE_FLAG)),
-        ]);
-
-        Result::Ok(())
-    }
-
-    fn dex(&mut self, _opcode: &OpCode) -> Result<(), String> {
-        self.register_x = self.register_x.wrapping_sub(1);
-
-        self.set_status_flags_with_tick(
-            &[
-                (ZERO_FLAG, self.register_x == 0),
-                (
-                    NEGATIVE_FLAG,
-                    Self::get_flag(self.register_x, NEGATIVE_FLAG),
-                ),
-            ],
-            true,
-        );
-
-        Result::Ok(())
-    }
-
-    fn dey(&mut self, _opcode: &OpCode) -> Result<(), String> {
-        self.register_y = self.register_y.wrapping_sub(1);
-
-        self.set_status_flags_with_tick(
-            &[
-                (ZERO_FLAG, self.register_y == 0),
-                (
-                    NEGATIVE_FLAG,
-                    Self::get_flag(self.register_y, NEGATIVE_FLAG),
-                ),
-            ],
-            true,
-        );
-        Result::Ok(())
-    }
-
-    fn eor(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(opcode)?;
-        let addr = eval;
-        let value = self.mem_read(addr)?;
-
-        self.register_a = self.register_a ^ value;
-
-        self.set_status_flags_with_tick(
-            &[
-                (ZERO_FLAG, self.register_a == 0),
-                (
-                    NEGATIVE_FLAG,
-                    Self::get_flag(self.register_a, NEGATIVE_FLAG),
-                ),
-            ],
-            false,
-        );
-
-        Result::Ok(())
-    }
-
-    fn inc(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let address = self.evaluate_operand_at_address(opcode)?;
-        let value = self.mem_read(address)?.wrapping_add(1);
-        self.mem_write(address, value)?;
-        self.tick(1);
-
-        self.set_status_flags(&[
-            (ZERO_FLAG, value == 0),
-            (NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG)),
-        ]);
-
-        Result::Ok(())
-    }
-
-    fn inx(&mut self) -> Result<(), String> {
-        self.register_x = self.register_x.wrapping_add(1);
-
-        self.set_status_flags_with_tick(
-            &[
-                (ZERO_FLAG, self.register_x == 0),
-                (
-                    NEGATIVE_FLAG,
-                    Self::get_flag(self.register_x, NEGATIVE_FLAG),
-                ),
-            ],
-            true,
-        );
-
-        Result::Ok(())
-    }
-
-    fn iny(&mut self, _opcode: &OpCode) -> Result<(), String> {
-        self.register_y = self.register_y.wrapping_add(1);
-
-        self.set_status_flags_with_tick(
-            &[
-                (ZERO_FLAG, self.register_y == 0),
-                (
-                    NEGATIVE_FLAG,
-                    Self::get_flag(self.register_y, NEGATIVE_FLAG),
-                ),
-            ],
-            true,
-        );
-
-        Result::Ok(())
-    }
-
-    fn isb(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let address = self.evaluate_operand_at_address(opcode)?;
-        let value = self.mem_read(address)?.wrapping_add(1);
-        self.mem_write(address, value)?;
-        self.tick(1); //dummy write
-
-        let c = match Self::get_flag(self.status, CARRY_FLAG) {
-            true => 1,
-            false => 0,
-        };
-
-        let a = self.register_a;
-
-        let clear_carry = match a.checked_sub(value) {
-            Some(_sub) => match _sub.checked_sub(1 - c) {
-                Some(_sub2) => false,
-                None => true,
-            },
-            None => true,
-        };
-
-        let result = a.wrapping_add(!value).wrapping_add(c); //take advantage of twos compliment
-        let set_overflow = (value ^ a) & (a ^ result) & NEGATIVE_FLAG != 0;
-
-        self.register_a = result;
-
-        self.set_status_flags(&[
-            (CARRY_FLAG, !clear_carry),
-            (ZERO_FLAG, self.register_a == 0),
-            (OVERFLOW_FLAG, set_overflow),
-            (
-                NEGATIVE_FLAG,
-                Self::get_flag(self.register_a, NEGATIVE_FLAG),
-            ),
-        ]);
-
-        Result::Ok(())
-    }
-
-    fn jmp(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let pc_jump = self.evaluate_operand_at_address(opcode)?;
-        self.program_counter = pc_jump;
-        Result::Ok(())
-    }
-
-    fn jsr(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let pc_jump = self.evaluate_operand_at_address(opcode)?;
-
-        self.stack_push_u16(self.program_counter - 1)?;
-
-        self.assign_program_counter(pc_jump);
-
-        Result::Ok(())
-    }
-
-    fn lda(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(opcode)?;
-        let addr = eval;
-        let value = self.mem_read(addr)?;
-
-        self.register_a = value;
-
-        self.set_status_flags_with_tick(
-            &[
-                (ZERO_FLAG, self.register_a == 0),
-                (
-                    NEGATIVE_FLAG,
-                    Self::get_flag(self.register_a, NEGATIVE_FLAG),
-                ),
-            ],
-            false,
-        );
-
-        Result::Ok(())
-    }
-
-    fn ldx(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(opcode)?;
-        let addr = eval;
-        let value = self.mem_read(addr)?;
-        self.register_x = value;
-
-        self.set_status_flags(&[
-            (ZERO_FLAG, self.register_x == 0),
-            (
-                NEGATIVE_FLAG,
-                Self::get_flag(self.register_x, NEGATIVE_FLAG),
-            ),
-        ]);
-        Result::Ok(())
-    }
-
-    fn lax(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(opcode)?;
-        let addr = eval;
-        let value = self.mem_read(addr)?;
-        self.register_a = value;
-        self.register_x = value;
-        self.set_status_flags(&[
-            (ZERO_FLAG, value == 0),
-            (NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG)),
-        ]);
-
-        Result::Ok(())
-    }
-
-    fn ldy(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(opcode)?;
-        let addr = eval;
-        let value = self.mem_read(addr)?;
-        self.register_y = value;
-
-        self.set_status_flags(&[
-            (ZERO_FLAG, self.register_y == 0),
-            (
-                NEGATIVE_FLAG,
-                Self::get_flag(self.register_y, NEGATIVE_FLAG),
-            ),
-        ]);
-
-        Result::Ok(())
-    }
-
-    fn lsr(&mut self, opcode: &OpCode) -> Result<(), String> {
-        if opcode.mode == AddressingMode::Accumulator {
-            let old = self.register_a;
-            self.register_a = self.register_a >> 1;
-
-            self.set_status_flags_with_tick(
-                &[
+                result = result.wrapping_add(self.resolved_mem_read);
+
+                if Self::get_flag(self.status, CARRY_FLAG) {
+                    carry = carry
+                        | match result.checked_add(1) {
+                            Some(_sum) => false,
+                            None => true,
+                        };
+                    result = result.wrapping_add(1);
+                }
+
+                let set_overflow =
+                    (self.resolved_mem_read ^ result) & (self.register_a ^ result) & NEGATIVE_FLAG
+                        != 0;
+
+                self.register_a = result;
+
+                self.set_status_flags(&[
+                    (OVERFLOW_FLAG, set_overflow),
+                    (CARRY_FLAG, carry),
                     (ZERO_FLAG, self.register_a == 0),
-                    (CARRY_FLAG, old & CARRY_FLAG == CARRY_FLAG),
                     (
                         NEGATIVE_FLAG,
                         Self::get_flag(self.register_a, NEGATIVE_FLAG),
                     ),
-                ],
-                true,
-            );
+                ])
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
+    }
 
-            return Result::Ok(());
+    fn and(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.resolved_mem_read = self.mem_read(self.resolved_addr)?;
+                self.register_a = self.register_a & self.resolved_mem_read;
+
+                self.set_status_flags(&[
+                    (ZERO_FLAG, self.register_a == 0),
+                    (
+                        NEGATIVE_FLAG,
+                        Self::get_flag(self.register_a, NEGATIVE_FLAG),
+                    ),
+                ])
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
+    }
+
+    fn asl(&mut self) -> Result<(), String> {
+        if self.op.mode == AddressingMode::Accumulator {
+            return Ok(match self.current_op_cycle {
+                0 => {
+                    let old = self.register_a;
+                    self.register_a = self.register_a << 1;
+                    self.set_status_flags(&[
+                        (ZERO_FLAG, self.register_a == 0),
+                        (CARRY_FLAG, old & NEGATIVE_FLAG == NEGATIVE_FLAG),
+                        (
+                            NEGATIVE_FLAG,
+                            Self::get_flag(self.register_a, NEGATIVE_FLAG),
+                        ),
+                    ]);
+                }
+                c => return self.unexpected_op_cycle(c),
+            });
         }
 
-        let addr = self.evaluate_operand_at_address(opcode)?;
-        let old = self.mem_read(addr)?;
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.resolved_mem_read = self.mem_read(self.resolved_addr)?;
+            }
+            1 => {
+                self.mem_write(self.resolved_addr, self.resolved_mem_read << 1);
+            }
+            2 => {
+                let old = self.resolved_mem_read;
+                let value = self.resolved_mem_read << 1;
+                self.set_status_flags(&[
+                    (ZERO_FLAG, value == 0),
+                    (CARRY_FLAG, old & NEGATIVE_FLAG == NEGATIVE_FLAG),
+                    (NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG)),
+                ]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
+    }
 
-        let value = old >> 1;
+    fn sta(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.mem_write(self.resolved_addr, self.register_a);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
+    }
 
-        self.mem_write(addr, value)?;
-        self.tick(1); //dummy write...
+    fn branch_if_true(&mut self, condition: bool) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                if condition {
+                    if Self::page_boundary_crossed(self.program_counter, self.resolved_addr) {
+                        self.dummy_read = true;
+                    }
+                    self.should_branch = true;
+                }
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
+    }
 
-        self.set_status_flags(&[
-            (ZERO_FLAG, value == 0),
-            (CARRY_FLAG, old & CARRY_FLAG == CARRY_FLAG),
-            (NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG)),
-        ]);
+    fn bcc(&mut self) -> Result<(), String> {
+        self.branch_if_true(!Self::get_flag(self.status, CARRY_FLAG))
+    }
 
+    fn bcs(&mut self) -> Result<(), String> {
+        self.branch_if_true(Self::get_flag(self.status, CARRY_FLAG))
+    }
+
+    fn beq(&mut self) -> Result<(), String> {
+        self.branch_if_true(Self::get_flag(self.status, ZERO_FLAG))
+    }
+
+    fn bit(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.resolved_mem_read = self.mem_read(self.resolved_addr)?;
+                self.set_status_flags(&[
+                    (ZERO_FLAG, self.resolved_mem_read & self.register_a == 0),
+                    (
+                        OVERFLOW_FLAG,
+                        self.resolved_mem_read & OVERFLOW_FLAG == OVERFLOW_FLAG,
+                    ),
+                    (
+                        NEGATIVE_FLAG,
+                        self.resolved_mem_read & NEGATIVE_FLAG == NEGATIVE_FLAG,
+                    ),
+                ]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
+    }
+
+    fn bmi(&mut self) -> Result<(), String> {
+        self.branch_if_true(Self::get_flag(self.status, NEGATIVE_FLAG))
+    }
+
+    fn bne(&mut self) -> Result<(), String> {
+        self.branch_if_true(!Self::get_flag(self.status, ZERO_FLAG))
+    }
+
+    fn bpl(&mut self) -> Result<(), String> {
+        self.branch_if_true(!Self::get_flag(self.status, NEGATIVE_FLAG))
+    }
+
+    fn bvc(&mut self) -> Result<(), String> {
+        self.branch_if_true(!Self::get_flag(self.status, OVERFLOW_FLAG))
+    }
+
+    fn bvs(&mut self) -> Result<(), String> {
+        self.branch_if_true(Self::get_flag(self.status, OVERFLOW_FLAG))
+    }
+
+    fn clc(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.set_status_flags(&[(CARRY_FLAG, false)]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
+    }
+
+    fn cld(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.set_status_flags(&[(DECIMAL_MODE_FLAG, false)]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
+    }
+
+    fn cli(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.set_status_flags(&[(INTERRUPT_DISABLE_FLAG, false)]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
+    }
+
+    fn clv(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.set_status_flags(&[(OVERFLOW_FLAG, false)]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
+    }
+
+    fn cmp(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                let value = self.mem_read(self.resolved_addr)?;
+
+                let sub = self.register_a.wrapping_sub(value);
+
+                self.set_status_flags(&[
+                    (CARRY_FLAG, self.register_a >= value),
+                    (ZERO_FLAG, self.register_a == value),
+                    (NEGATIVE_FLAG, Self::get_flag(sub, NEGATIVE_FLAG)),
+                ]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
+    }
+
+    fn cpx(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                let value = self.mem_read(self.resolved_addr)?;
+
+                let sub = self.register_x.wrapping_sub(value);
+
+                self.set_status_flags(&[
+                    (CARRY_FLAG, self.register_x >= value),
+                    (ZERO_FLAG, self.register_x == value),
+                    (NEGATIVE_FLAG, Self::get_flag(sub, NEGATIVE_FLAG)),
+                ]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
+    }
+
+    fn cpy(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                let value = self.mem_read(self.resolved_addr)?;
+
+                let sub = self.register_y.wrapping_sub(value);
+
+                self.set_status_flags(&[
+                    (CARRY_FLAG, self.register_y >= value),
+                    (ZERO_FLAG, self.register_y == value),
+                    (NEGATIVE_FLAG, Self::get_flag(sub, NEGATIVE_FLAG)),
+                ]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
+    }
+
+    fn dec(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.resolved_mem_read = self.mem_read(self.resolved_addr)?;
+            }
+            1 => {
+                self.mem_write(self.resolved_addr, self.resolved_mem_read)?;
+            }
+            2 => {
+                let sub = self.resolved_mem_read.wrapping_sub(1);
+
+                self.mem_write(self.resolved_addr, sub)?;
+
+                self.set_status_flags(&[
+                    (ZERO_FLAG, sub == 0),
+                    (NEGATIVE_FLAG, Self::get_flag(sub, NEGATIVE_FLAG)),
+                ]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
+    }
+
+    fn dcp(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.resolved_mem_read = self.mem_read(self.resolved_addr)?.wrapping_sub(1);
+            }
+            1 => {
+                self.mem_write(self.resolved_addr, self.resolved_mem_read)?;
+            }
+            2 => {
+                let diff = self.register_a.wrapping_sub(self.resolved_mem_read);
+
+                self.set_status_flags(&[
+                    (CARRY_FLAG, self.register_a >= self.resolved_mem_read),
+                    (ZERO_FLAG, self.register_a == self.resolved_mem_read),
+                    (NEGATIVE_FLAG, Self::get_flag(diff, NEGATIVE_FLAG)),
+                ]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
+    }
+
+    fn dex(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.register_x = self.register_x.wrapping_sub(1);
+
+                self.set_status_flags(&[
+                    (ZERO_FLAG, self.register_x == 0),
+                    (
+                        NEGATIVE_FLAG,
+                        Self::get_flag(self.register_x, NEGATIVE_FLAG),
+                    ),
+                ]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
+    }
+
+    fn dey(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.register_y = self.register_y.wrapping_sub(1);
+
+                self.set_status_flags(&[
+                    (ZERO_FLAG, self.register_y == 0),
+                    (
+                        NEGATIVE_FLAG,
+                        Self::get_flag(self.register_y, NEGATIVE_FLAG),
+                    ),
+                ]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
+    }
+
+    fn eor(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                let value = self.mem_read(self.resolved_addr)?;
+                self.register_a = self.register_a ^ value;
+
+                self.set_status_flags(&[
+                    (ZERO_FLAG, self.register_a == 0),
+                    (
+                        NEGATIVE_FLAG,
+                        Self::get_flag(self.register_a, NEGATIVE_FLAG),
+                    ),
+                ]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
+    }
+
+    fn inc(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.resolved_mem_read = self.mem_read(self.resolved_addr)?.wrapping_add(1);
+            }
+            1 => {
+                self.mem_write(self.resolved_addr, self.resolved_mem_read)?;
+            }
+            2 => {
+                self.set_status_flags(&[
+                    (ZERO_FLAG, self.resolved_mem_read == 0),
+                    (
+                        NEGATIVE_FLAG,
+                        Self::get_flag(self.resolved_mem_read, NEGATIVE_FLAG),
+                    ),
+                ]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
+    }
+
+    fn inx(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.register_x = self.register_x.wrapping_add(1);
+
+                self.set_status_flags(&[
+                    (ZERO_FLAG, self.register_x == 0),
+                    (
+                        NEGATIVE_FLAG,
+                        Self::get_flag(self.register_x, NEGATIVE_FLAG),
+                    ),
+                ]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
+    }
+
+    fn iny(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.register_y = self.register_y.wrapping_add(1);
+
+                self.set_status_flags(&[
+                    (ZERO_FLAG, self.register_y == 0),
+                    (
+                        NEGATIVE_FLAG,
+                        Self::get_flag(self.register_y, NEGATIVE_FLAG),
+                    ),
+                ]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
+    }
+
+    fn isb(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.resolved_mem_read = self.mem_read(self.resolved_addr)?.wrapping_add(1);
+            }
+            1 => {
+                self.mem_write(self.resolved_addr, self.resolved_mem_read)?;
+            }
+            2 => {
+                let c = match Self::get_flag(self.status, CARRY_FLAG) {
+                    true => 1,
+                    false => 0,
+                };
+
+                let a = self.register_a;
+
+                let clear_carry = match a.checked_sub(self.resolved_mem_read) {
+                    Some(_sub) => match _sub.checked_sub(1 - c) {
+                        Some(_sub2) => false,
+                        None => true,
+                    },
+                    None => true,
+                };
+
+                let result = a.wrapping_add(!self.resolved_mem_read).wrapping_add(c); //take advantage of twos compliment
+                let set_overflow = (self.resolved_mem_read ^ a) & (a ^ result) & NEGATIVE_FLAG != 0;
+
+                self.register_a = result;
+
+                self.set_status_flags(&[
+                    (CARRY_FLAG, !clear_carry),
+                    (ZERO_FLAG, self.register_a == 0),
+                    (OVERFLOW_FLAG, set_overflow),
+                    (
+                        NEGATIVE_FLAG,
+                        Self::get_flag(self.register_a, NEGATIVE_FLAG),
+                    ),
+                ]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
+    }
+
+    fn jmp(&mut self) -> Result<(), String> {
+        //TODO! This takes one cycle too many :(
+        self.program_counter = self.resolved_addr;
         Result::Ok(())
     }
 
-    fn nop(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let addr = self.evaluate_operand_at_address(opcode)?;
+    fn jsr(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.stack_push(((self.program_counter - 1) >> 8) as u8)?;
+            }
+            1 => {
+                self.stack_push((self.program_counter - 1) as u8)?;
+            }
+            2 => {
+                self.program_counter = self.resolved_addr;
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
+    }
 
-        if opcode.mode == AddressingMode::Absolute_X || opcode.mode == AddressingMode::Absolute_Y {
-            return Result::Ok(());
+    fn lda(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.resolved_mem_read = self.mem_read(self.resolved_addr)?;
+                self.register_a = self.resolved_mem_read;
+                self.set_status_flags(&[
+                    (ZERO_FLAG, self.register_a == 0),
+                    (
+                        NEGATIVE_FLAG,
+                        Self::get_flag(self.register_a, NEGATIVE_FLAG),
+                    ),
+                ]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
+    }
+
+    fn ldx(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.resolved_mem_read = self.mem_read(self.resolved_addr)?;
+                self.register_x = self.resolved_mem_read;
+                self.set_status_flags(&[
+                    (ZERO_FLAG, self.register_x == 0),
+                    (
+                        NEGATIVE_FLAG,
+                        Self::get_flag(self.register_x, NEGATIVE_FLAG),
+                    ),
+                ]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
+    }
+
+    fn lax(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                let value = self.mem_read(self.resolved_addr)?;
+                self.register_a = value;
+                self.register_x = value;
+                self.set_status_flags(&[
+                    (ZERO_FLAG, value == 0),
+                    (NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG)),
+                ]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
+    }
+
+    fn ldy(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                let value = self.mem_read(self.resolved_addr)?;
+                self.register_y = value;
+                self.set_status_flags(&[
+                    (ZERO_FLAG, self.register_y == 0),
+                    (
+                        NEGATIVE_FLAG,
+                        Self::get_flag(self.register_y, NEGATIVE_FLAG),
+                    ),
+                ]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
+    }
+
+    fn lsr(&mut self) -> Result<(), String> {
+        if self.op.mode == AddressingMode::Accumulator {
+            return Ok(match self.current_op_cycle {
+                0 => {
+                    let old = self.register_a;
+                    self.register_a = self.register_a >> 1;
+
+                    self.set_status_flags(&[
+                        (ZERO_FLAG, self.register_a == 0),
+                        (CARRY_FLAG, old & CARRY_FLAG == CARRY_FLAG),
+                        (
+                            NEGATIVE_FLAG,
+                            Self::get_flag(self.register_a, NEGATIVE_FLAG),
+                        ),
+                    ]);
+                }
+                c => return self.unexpected_op_cycle(c),
+            });
         }
 
-        self.mem_read(addr)?;
-        Result::Ok(())
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.resolved_mem_read = self.mem_read(self.resolved_addr)?;
+            }
+            1 => {
+                self.mem_write(self.resolved_addr, self.resolved_mem_read >> 1)?;
+            }
+            2 => {
+                let value = self.resolved_mem_read >> 1;
+                self.set_status_flags(&[
+                    (ZERO_FLAG, value == 0),
+                    (
+                        CARRY_FLAG,
+                        self.resolved_mem_read & CARRY_FLAG == CARRY_FLAG,
+                    ),
+                    (NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG)),
+                ]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
     }
 
-    fn dop(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let addr = self.evaluate_operand_at_address(opcode)?;
-        self.mem_read(addr)?;
-        Result::Ok(())
+    fn nop(&mut self) -> Result<(), String> {
+        //TODO - Handling of absolute_x and absolute_y? They should take a cycle :(
+        // if opcode.mode == AddressingMode::Absolute_X || opcode.mode == AddressingMode::Absolute_Y {
+        //     return Result::Ok(());
+        // }
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.mem_read(self.resolved_addr);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
     }
 
-    fn top(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let addr = self.evaluate_operand_at_address(opcode)?;
-        self.mem_read(addr)?;
-        Result::Ok(())
+    fn dop(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.mem_read(self.resolved_addr);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
     }
 
-    fn ora(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let eval = self.evaluate_operand_at_address(opcode)?;
-        let addr = eval;
-        let value = self.mem_read(addr)?;
-
-        self.register_a = self.register_a | value;
-
-        self.set_status_flags(&[
-            (ZERO_FLAG, self.register_a == 0),
-            (
-                NEGATIVE_FLAG,
-                Self::get_flag(self.register_a, NEGATIVE_FLAG),
-            ),
-        ]);
-
-        Result::Ok(())
+    fn top(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.mem_read(self.resolved_addr);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
     }
 
-    fn pha(&mut self, _opcode: &OpCode) -> Result<(), String> {
-        self.mem_read((STACK as u16) + (self.stack_pointer as u16))?; //dummy read top of stack
-        self.stack_push(self.register_a)?;
-        Result::Ok(())
+    fn ora(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                let value = self.mem_read(self.resolved_addr)?;
+                self.register_a = self.register_a | value;
+
+                self.set_status_flags(&[
+                    (ZERO_FLAG, self.register_a == 0),
+                    (
+                        NEGATIVE_FLAG,
+                        Self::get_flag(self.register_a, NEGATIVE_FLAG),
+                    ),
+                ]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
     }
 
-    fn php(&mut self, _opcode: &OpCode) -> Result<(), String> {
-        self.mem_read((STACK as u16) + (self.stack_pointer as u16))?; //dummy read top of stack
-        self.stack_push(self.status | BREAK_FLAG | BREAK2_FLAG)?;
-        Result::Ok(())
+    fn pha(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.mem_read((STACK as u16) + (self.stack_pointer as u16))?; //dummy read top of stack
+            }
+            1 => {
+                self.stack_push(self.register_a)?;
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
     }
 
-    fn pla(&mut self, _opcode: &OpCode) -> Result<(), String> {
-        self.mem_read((STACK as u16) + (self.stack_pointer as u16))?; //dummy read top of stack
-        let stack_pop = self.stack_pop()?;
-        self.assign_register_a(stack_pop);
-        self.set_status_flags(&[
-            (ZERO_FLAG, self.register_a == 0),
-            (
-                NEGATIVE_FLAG,
-                Self::get_flag(self.register_a, NEGATIVE_FLAG),
-            ),
-        ]);
-        Result::Ok(())
+    fn php(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.mem_read((STACK as u16) + (self.stack_pointer as u16))?; //dummy read top of stack
+            }
+            1 => {
+                self.stack_push(self.status | BREAK_FLAG | BREAK2_FLAG)?;
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
     }
 
-    fn plp(&mut self, _opcode: &OpCode) -> Result<(), String> {
-        self.mem_read((STACK as u16) + (self.stack_pointer as u16))?; //dummy read top of stack
-        let stack_pop = self.stack_pop()? & !(BREAK_FLAG) | BREAK2_FLAG;
-        self.assign_status(stack_pop);
-        Result::Ok(())
+    fn pla(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.mem_read((STACK as u16) + (self.stack_pointer as u16))?; //dummy read top of stack
+            }
+            1 => {
+                self.resolved_mem_read = self.stack_pop()?;
+            }
+            2 => {
+                self.register_a = self.resolved_mem_read;
+                self.set_status_flags(&[
+                    (ZERO_FLAG, self.register_a == 0),
+                    (
+                        NEGATIVE_FLAG,
+                        Self::get_flag(self.register_a, NEGATIVE_FLAG),
+                    ),
+                ]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
     }
 
-    fn rol(&mut self, opcode: &OpCode) -> Result<(), String> {
-        if opcode.mode == AddressingMode::Accumulator {
-            let old_value = self.register_a;
-            let carry = Self::get_flag(self.status, CARRY_FLAG);
+    fn plp(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.mem_read((STACK as u16) + (self.stack_pointer as u16))?; //dummy read top of stack
+            }
+            1 => {
+                self.resolved_mem_read = self.stack_pop()?;
+            }
+            2 => {
+                self.status = (self.resolved_mem_read & !BREAK_FLAG) | BREAK2_FLAG;
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
+    }
 
-            let value = match carry {
-                true => (old_value << 1) + 1,
-                false => old_value << 1,
-            };
+    fn rol(&mut self) -> Result<(), String> {
+        if self.op.mode == AddressingMode::Accumulator {
+            return Ok(match self.current_op_cycle {
+                0 => {
+                    let old_value = self.register_a;
+                    let carry = Self::get_flag(self.status, CARRY_FLAG);
 
-            self.assign_register_a(value);
+                    let value = match carry {
+                        true => (old_value << 1) + 1,
+                        false => old_value << 1,
+                    };
 
-            self.set_status_flags(&[
-                (CARRY_FLAG, old_value & NEGATIVE_FLAG == NEGATIVE_FLAG),
-                (ZERO_FLAG, value == 0),
-                (NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG)),
-            ]);
-
-            return Result::Ok(());
+                    self.register_a = value;
+                    self.set_status_flags(&[
+                        (CARRY_FLAG, old_value & NEGATIVE_FLAG == NEGATIVE_FLAG),
+                        (ZERO_FLAG, value == 0),
+                        (NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG)),
+                    ]);
+                }
+                c => return self.unexpected_op_cycle(c),
+            });
         }
 
-        let address = self.evaluate_operand_at_address(opcode)?;
-        let old_value = self.mem_read(address)?;
-        let carry = Self::get_flag(self.status, CARRY_FLAG);
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.resolved_mem_read = self.mem_read(self.resolved_addr)?;
+            }
+            1 => {
+                let carry = Self::get_flag(self.status, CARRY_FLAG);
 
-        let value = match carry {
-            true => (old_value << 1) + 1,
-            false => old_value << 1,
-        };
-
-        self.mem_write(address, value)?;
-        self.tick(1); //dummy write
-
-        self.set_status_flags(&[
-            (CARRY_FLAG, old_value & NEGATIVE_FLAG == NEGATIVE_FLAG),
-            (ZERO_FLAG, value == 0),
-            (NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG)),
-        ]);
-
-        Result::Ok(())
+                let value = match carry {
+                    true => (self.resolved_mem_read << 1) + 1,
+                    false => self.resolved_mem_read << 1,
+                };
+                self.mem_write(self.resolved_addr, value)?;
+                self.set_status_flags(&[
+                    (
+                        CARRY_FLAG,
+                        self.resolved_mem_read & NEGATIVE_FLAG == NEGATIVE_FLAG,
+                    ),
+                    (ZERO_FLAG, value == 0),
+                    (NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG)),
+                ]);
+            }
+            2 => {}
+            c => return self.unexpected_op_cycle(c),
+        })
     }
 
-    fn ror(&mut self, opcode: &OpCode) -> Result<(), String> {
-        if opcode.mode == AddressingMode::Accumulator {
-            let old_value = self.register_a;
-            let carry = Self::get_flag(self.status, CARRY_FLAG);
+    fn ror(&mut self) -> Result<(), String> {
+        if self.op.mode == AddressingMode::Accumulator {
+            return Ok(match self.current_op_cycle {
+                0 => {
+                    let old_value = self.register_a;
+                    let carry = Self::get_flag(self.status, CARRY_FLAG);
 
-            let value = match carry {
-                true => (old_value >> 1) + NEGATIVE_FLAG,
-                false => old_value >> 1,
-            };
+                    let value = match carry {
+                        true => (old_value >> 1) + NEGATIVE_FLAG,
+                        false => old_value >> 1,
+                    };
 
-            self.assign_register_a(value);
+                    self.register_a = value;
 
-            self.set_status_flags(&[
-                (CARRY_FLAG, old_value & CARRY_FLAG == CARRY_FLAG),
-                (ZERO_FLAG, value == 0),
-                (NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG)),
-            ]);
-
-            return Result::Ok(());
+                    self.set_status_flags(&[
+                        (CARRY_FLAG, old_value & CARRY_FLAG == CARRY_FLAG),
+                        (ZERO_FLAG, value == 0),
+                        (NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG)),
+                    ]);
+                }
+                c => return self.unexpected_op_cycle(c),
+            });
         }
 
-        let address = self.evaluate_operand_at_address(opcode)?;
-        let old_value = self.mem_read(address)?;
-        let carry = Self::get_flag(self.status, CARRY_FLAG);
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.resolved_mem_read = self.mem_read(self.resolved_addr)?;
+            }
+            1 => {
+                let carry = Self::get_flag(self.status, CARRY_FLAG);
 
-        let value = match carry {
-            true => (old_value >> 1) + NEGATIVE_FLAG,
-            false => old_value >> 1,
-        };
+                let value = match carry {
+                    true => (self.resolved_mem_read >> 1) + NEGATIVE_FLAG,
+                    false => self.resolved_mem_read >> 1,
+                };
 
-        self.mem_write(address, value)?;
-        self.tick(1);
+                self.mem_write(self.resolved_addr, value)?;
+                self.tick(1);
 
-        self.set_status_flags(&[
-            (CARRY_FLAG, old_value & CARRY_FLAG == CARRY_FLAG),
-            (ZERO_FLAG, value == 0),
-            (NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG)),
-        ]);
-
-        Result::Ok(())
+                self.set_status_flags(&[
+                    (
+                        CARRY_FLAG,
+                        self.resolved_mem_read & CARRY_FLAG == CARRY_FLAG,
+                    ),
+                    (ZERO_FLAG, value == 0),
+                    (NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG)),
+                ]);
+            }
+            2 => {}
+            c => return self.unexpected_op_cycle(c),
+        })
     }
 
-    fn rla(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let address = self.evaluate_operand_at_address(opcode)?;
-        let orig_value = self.mem_read(address)?;
-        let value = (orig_value << 1) | (self.status & CARRY_FLAG);
+    fn rla(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.resolved_mem_read = self.mem_read(self.resolved_addr)?;
+            }
+            1 => {
+                let value = (self.resolved_mem_read << 1) | (self.status & CARRY_FLAG);
 
-        self.mem_write(address, value)?;
-        self.tick(1); //dummy write
-        self.register_a = self.register_a & value;
+                self.mem_write(self.resolved_addr, value)?;
+                self.tick(1); //dummy write
+                self.register_a = self.register_a & value;
 
-        self.set_status_flags(&[
-            (CARRY_FLAG, orig_value & NEGATIVE_FLAG == NEGATIVE_FLAG),
-            (ZERO_FLAG, self.register_a == 0),
-            (
-                NEGATIVE_FLAG,
-                Self::get_flag(self.register_a, NEGATIVE_FLAG),
-            ),
-        ]);
-
-        Result::Ok(())
+                self.set_status_flags(&[
+                    (
+                        CARRY_FLAG,
+                        self.resolved_mem_read & NEGATIVE_FLAG == NEGATIVE_FLAG,
+                    ),
+                    (ZERO_FLAG, self.register_a == 0),
+                    (
+                        NEGATIVE_FLAG,
+                        Self::get_flag(self.register_a, NEGATIVE_FLAG),
+                    ),
+                ]);
+            }
+            2 => {}
+            c => return self.unexpected_op_cycle(c),
+        })
     }
 
-    fn rra(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let address = self.evaluate_operand_at_address(opcode)?;
-        let orig_value = self.mem_read(address)?;
+    fn rra(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.resolved_mem_read = self.mem_read(self.resolved_addr)?;
+            }
+            1 => {
+                let should_carry = Self::get_flag(self.resolved_mem_read, CARRY_FLAG);
 
-        let should_carry = Self::get_flag(orig_value, CARRY_FLAG);
+                let value = self.resolved_mem_read >> 1 | ((self.status & CARRY_FLAG) << 7);
+                self.mem_write(self.resolved_addr, value)?;
+                self.tick(1); //dummy write
 
-        let value = orig_value >> 1 | ((self.status & CARRY_FLAG) << 7);
-        self.mem_write(address, value)?;
-        self.tick(1); //dummy write
-
-        let mut result = self.register_a;
-        let mut carry = match result.checked_add(value) {
-            Some(_sum) => false,
-            None => true,
-        };
-
-        result = result.wrapping_add(value);
-
-        if should_carry {
-            carry = carry
-                | match result.checked_add(1) {
+                let mut result = self.register_a;
+                let mut carry = match result.checked_add(value) {
                     Some(_sum) => false,
                     None => true,
                 };
-            result = result.wrapping_add(1);
-        }
 
-        let set_overflow = (value ^ result) & (self.register_a ^ result) & NEGATIVE_FLAG != 0;
+                result = result.wrapping_add(value);
 
-        self.register_a = result;
+                if should_carry {
+                    carry = carry
+                        | match result.checked_add(1) {
+                            Some(_sum) => false,
+                            None => true,
+                        };
+                    result = result.wrapping_add(1);
+                }
 
-        self.set_status_flags(&[
-            (OVERFLOW_FLAG, set_overflow),
-            (CARRY_FLAG, carry),
-            (ZERO_FLAG, self.register_a == 0),
-            (
-                NEGATIVE_FLAG,
-                Self::get_flag(self.register_a, NEGATIVE_FLAG),
-            ),
-        ]);
+                let set_overflow =
+                    (value ^ result) & (self.register_a ^ result) & NEGATIVE_FLAG != 0;
 
-        Result::Ok(())
+                self.register_a = result;
+
+                self.set_status_flags(&[
+                    (OVERFLOW_FLAG, set_overflow),
+                    (CARRY_FLAG, carry),
+                    (ZERO_FLAG, self.register_a == 0),
+                    (
+                        NEGATIVE_FLAG,
+                        Self::get_flag(self.register_a, NEGATIVE_FLAG),
+                    ),
+                ]);
+            }
+            2 => {}
+            c => return self.unexpected_op_cycle(c),
+        })
     }
 
-    fn rti(&mut self, _opcode: &OpCode) -> Result<(), String> {
-        self.mem_read((STACK as u16) + (self.stack_pointer as u16))?; //dummy read top of stack
-
-        let status_pop = self.stack_pop()? | BREAK2_FLAG;
-        let pc_pop = self.stack_pop_u16()?;
-        self.status = status_pop;
-        self.assign_program_counter(pc_pop);
-        Result::Ok(())
+    fn rti(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.mem_read((STACK as u16) + (self.stack_pointer as u16))?; //dummy read top of stack
+            }
+            1 => {
+                self.status = self.stack_pop()? | BREAK2_FLAG;
+            }
+            2 => {
+                self.program_counter = self.stack_pop()? as u16;
+            }
+            3 => {
+                self.program_counter =
+                    (self.program_counter & 0x00FF) | ((self.stack_pop()? as u16) << 8);
+            }
+            4 => {}
+            c => return self.unexpected_op_cycle(c),
+        })
     }
 
-    fn rts(&mut self, _opcode: &OpCode) -> Result<(), String> {
-        self.mem_read((STACK as u16) + (self.stack_pointer as u16))?; //dummy read top of stack
-
-        let return_addr = self.stack_pop_u16()? + 1;
-        self.tick(1);
-        self.assign_program_counter(return_addr);
-        Result::Ok(())
+    fn rts(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.mem_read((STACK as u16) + (self.stack_pointer as u16))?; //dummy read top of stack
+            }
+            1 => {
+                self.program_counter = self.stack_pop()? as u16;
+            }
+            2 => {
+                self.program_counter =
+                    (self.program_counter & 0x00FF) | ((self.stack_pop()? as u16) << 8) + 1;
+            }
+            3 => {}
+            4 => {}
+            c => return self.unexpected_op_cycle(c),
+        })
     }
 
-    fn brk(&mut self, _opcode: &OpCode) -> Result<bool, String> {
-        self.stack_push_u16(self.program_counter)?;
-        self.stack_push(self.status | (BREAK_FLAG & BREAK2_FLAG))?;
+    fn brk(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.stack_push((self.program_counter >> 8) as u8)?;
+            }
+            1 => {
+                self.stack_push(self.program_counter as u8)?;
+            }
+            2 => {
+                self.stack_push(self.status | (BREAK_FLAG & BREAK2_FLAG))?;
+            }
+            3 => {
+                self.program_counter = self.mem_read(BRK_INTERRUPT_ADDRESS)? as u16;
+            }
+            4 => {
+                self.program_counter = (self.program_counter & 0x00FF)
+                    | ((self.mem_read(BRK_INTERRUPT_ADDRESS + 1)? as u16) << 8);
+            }
+            5 => {
+                if self.program_counter == HALT_VALUE {
+                    self.halt.store(true, Ordering::Relaxed);
+                } else {
+                    //we do this after the return check, because it's easier to test and doesn't make a
+                    //difference when we exit :)
 
-        self.program_counter = self.mem_read_u16(BRK_INTERRUPT_ADDRESS)?;
-        if self.program_counter == HALT_VALUE {
-            self.tick(1);
-            return Result::Ok(true);
-        }
-
-        //we do this after the return check, because it's easier to test and doesn't make a
-        //difference when we exit :)
-        self.set_status_flags(&[(INTERRUPT_DISABLE_FLAG, true)]);
-        Result::Ok(false)
+                    self.set_status_flags(&[(INTERRUPT_DISABLE_FLAG, true)]);
+                }
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
     }
 
-    fn sax(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let address = self.evaluate_operand_at_address(opcode)?;
-        let value = self.register_x & self.register_a;
-
-        self.mem_write(address, value)?;
+    fn sax(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                let value = self.register_x + self.register_a;
+                self.mem_write(self.resolved_addr, value)?;
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
 
         //Even though these flags are documented, they don't get updated (the docs are wrong)
         // self.set_status_flag(ZERO_FLAG, value == 0);
         // self.set_status_flag(NEGATIVE_FLAG, Self::get_flag(value, NEGATIVE_FLAG));
-        Result::Ok(())
     }
 
-    fn sbc(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let c = match Self::get_flag(self.status, CARRY_FLAG) {
-            true => 1,
-            false => 0,
-        };
+    fn sbc(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                let c = match Self::get_flag(self.status, CARRY_FLAG) {
+                    true => 1,
+                    false => 0,
+                };
 
-        let a = self.register_a;
-        let eval = self.evaluate_operand_at_address(opcode)?;
-        let address = eval;
-        let value = self.mem_read(address)?;
+                let a = self.register_a;
 
-        let clear_carry = match a.checked_sub(value) {
-            Some(_sub) => match _sub.checked_sub(1 - c) {
-                Some(_sub2) => false,
-                None => true,
-            },
-            None => true,
-        };
+                let value = self.mem_read(self.resolved_addr)?;
 
-        let result = a.wrapping_add(!value).wrapping_add(c); //take advantage of twos compliment
-        let set_overflow = (value ^ a) & (a ^ result) & NEGATIVE_FLAG != 0;
+                let clear_carry = match a.checked_sub(value) {
+                    Some(_sub) => match _sub.checked_sub(1 - c) {
+                        Some(_sub2) => false,
+                        None => true,
+                    },
+                    None => true,
+                };
 
-        self.register_a = result;
+                let result = a.wrapping_add(!value).wrapping_add(c); //take advantage of twos compliment
+                let set_overflow = (value ^ a) & (a ^ result) & NEGATIVE_FLAG != 0;
 
-        self.set_status_flags(&[
-            (OVERFLOW_FLAG, set_overflow),
-            (CARRY_FLAG, !clear_carry),
-            (ZERO_FLAG, self.register_a == 0),
-            (
-                NEGATIVE_FLAG,
-                Self::get_flag(self.register_a, NEGATIVE_FLAG),
-            ),
-        ]);
+                self.register_a = result;
 
-        Result::Ok(())
+                self.set_status_flags(&[
+                    (OVERFLOW_FLAG, set_overflow),
+                    (CARRY_FLAG, !clear_carry),
+                    (ZERO_FLAG, self.register_a == 0),
+                    (
+                        NEGATIVE_FLAG,
+                        Self::get_flag(self.register_a, NEGATIVE_FLAG),
+                    ),
+                ]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
     }
 
-    fn sec(&mut self, _opcode: &OpCode) -> Result<(), String> {
-        self.set_status_flags_with_tick(&[(CARRY_FLAG, true)], true);
-        Result::Ok(())
+    fn sec(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.set_status_flags(&[(CARRY_FLAG, true)]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
     }
 
-    fn sed(&mut self, _opcode: &OpCode) -> Result<(), String> {
-        self.set_status_flags_with_tick(&[(DECIMAL_MODE_FLAG, true)], true);
-        Result::Ok(())
+    fn sed(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.set_status_flags(&[(DECIMAL_MODE_FLAG, true)]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
     }
 
-    fn sei(&mut self, _opcode: &OpCode) -> Result<(), String> {
-        self.set_status_flags_with_tick(&[(INTERRUPT_DISABLE_FLAG, true)], true);
-        Result::Ok(())
+    fn sei(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.set_status_flags(&[(INTERRUPT_DISABLE_FLAG, true)]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
     }
 
-    fn slo(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let address = self.evaluate_operand_at_address(opcode)?;
-        let original = self.mem_read(address)?;
-        let value = original << 1;
-        self.mem_write(address, value)?;
-        self.tick(1); //dummy write
+    fn slo(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.resolved_mem_read = self.mem_read(self.resolved_addr)?;
+            }
+            1 => {
+                self.mem_write(self.resolved_addr, self.resolved_mem_read << 1)?;
+            }
+            2 => {
+                let result = self.register_a | (self.resolved_mem_read << 1);
 
-        let result = self.register_a | value;
+                self.register_a = result;
 
-        self.register_a = result;
-
-        self.set_status_flags(&[
-            (CARRY_FLAG, original & NEGATIVE_FLAG == NEGATIVE_FLAG),
-            (ZERO_FLAG, result == 0),
-            (NEGATIVE_FLAG, Self::get_flag(result, NEGATIVE_FLAG)),
-        ]);
-
-        Result::Ok(())
+                self.set_status_flags(&[
+                    (
+                        CARRY_FLAG,
+                        self.resolved_mem_read & NEGATIVE_FLAG == NEGATIVE_FLAG,
+                    ),
+                    (ZERO_FLAG, result == 0),
+                    (NEGATIVE_FLAG, Self::get_flag(result, NEGATIVE_FLAG)),
+                ]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
     }
 
-    fn sre(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let address = self.evaluate_operand_at_address(opcode)?;
-        let original = self.mem_read(address)?;
-        let value = original >> 1;
+    fn sre(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.resolved_mem_read = self.mem_read(self.resolved_addr)?;
+            }
+            1 => {
+                self.mem_write(self.resolved_addr, self.resolved_mem_read >> 1);
+            }
+            2 => {
+                let result = self.register_a ^ (self.resolved_mem_read >> 1);
 
-        self.mem_write(address, value)?;
-        let result = self.register_a ^ value;
+                self.register_a = result;
 
-        self.assign_register_a(result);
-
-        self.set_status_flags(&[
-            (CARRY_FLAG, original & CARRY_FLAG == CARRY_FLAG),
-            (ZERO_FLAG, result == 0),
-            (NEGATIVE_FLAG, Self::get_flag(result, NEGATIVE_FLAG)),
-        ]);
-
-        Result::Ok(())
+                self.set_status_flags(&[
+                    (
+                        CARRY_FLAG,
+                        self.resolved_mem_read & CARRY_FLAG == CARRY_FLAG,
+                    ),
+                    (ZERO_FLAG, result == 0),
+                    (NEGATIVE_FLAG, Self::get_flag(result, NEGATIVE_FLAG)),
+                ]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
     }
 
-    fn stx(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let address = self.evaluate_operand_at_address(opcode)?;
-        self.mem_write(address, self.register_x)?;
-        Result::Ok(())
+    fn stx(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.mem_write(self.resolved_addr, self.register_x)?;
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
     }
 
-    fn sty(&mut self, opcode: &OpCode) -> Result<(), String> {
-        let address = self.evaluate_operand_at_address(opcode)?;
-        self.mem_write(address, self.register_y)?;
-        Result::Ok(())
+    fn sty(&mut self) -> Result<(), String> {
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.mem_write(self.resolved_addr, self.register_y)?;
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
     }
 
     fn tax(&mut self) -> Result<(), String> {
-        self.register_x = self.register_a;
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.register_x = self.register_a;
 
-        self.set_status_flags_with_tick(
-            &[
-                (ZERO_FLAG, self.register_x == 0),
-                (
-                    NEGATIVE_FLAG,
-                    Self::get_flag(self.register_x, NEGATIVE_FLAG),
-                ),
-            ],
-            true,
-        );
-
-        Result::Ok(())
+                self.set_status_flags(&[
+                    (ZERO_FLAG, self.register_x == 0),
+                    (
+                        NEGATIVE_FLAG,
+                        Self::get_flag(self.register_x, NEGATIVE_FLAG),
+                    ),
+                ]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
     }
 
     fn tay(&mut self) -> Result<(), String> {
-        self.register_y = self.register_a;
-        self.set_status_flags_with_tick(
-            &[
-                (ZERO_FLAG, self.register_y == 0),
-                (
-                    NEGATIVE_FLAG,
-                    Self::get_flag(self.register_y, NEGATIVE_FLAG),
-                ),
-            ],
-            true,
-        );
-        Result::Ok(())
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.register_y = self.register_a;
+
+                self.set_status_flags(&[
+                    (ZERO_FLAG, self.register_y == 0),
+                    (
+                        NEGATIVE_FLAG,
+                        Self::get_flag(self.register_y, NEGATIVE_FLAG),
+                    ),
+                ]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
     }
 
     fn tsx(&mut self) -> Result<(), String> {
-        self.register_x = self.stack_pointer;
-        self.set_status_flags_with_tick(
-            &[
-                (ZERO_FLAG, self.register_x == 0),
-                (
-                    NEGATIVE_FLAG,
-                    Self::get_flag(self.register_x, NEGATIVE_FLAG),
-                ),
-            ],
-            true,
-        );
-        Result::Ok(())
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.register_x = self.stack_pointer;
+
+                self.set_status_flags(&[
+                    (ZERO_FLAG, self.register_x == 0),
+                    (
+                        NEGATIVE_FLAG,
+                        Self::get_flag(self.register_x, NEGATIVE_FLAG),
+                    ),
+                ]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
     }
 
     fn txa(&mut self) -> Result<(), String> {
-        self.assign_register_a(self.register_x);
-        self.set_status_flags(&[
-            (ZERO_FLAG, self.register_a == 0),
-            (
-                NEGATIVE_FLAG,
-                Self::get_flag(self.register_a, NEGATIVE_FLAG),
-            ),
-        ]);
-        Result::Ok(())
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.register_a = self.register_x;
+
+                self.set_status_flags(&[
+                    (ZERO_FLAG, self.register_a == 0),
+                    (
+                        NEGATIVE_FLAG,
+                        Self::get_flag(self.register_a, NEGATIVE_FLAG),
+                    ),
+                ]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
     }
 
     fn txs(&mut self) -> Result<(), String> {
-        self.stack_pointer = self.register_x;
-        self.tick(1);
-        Result::Ok(())
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.stack_pointer = self.register_x;
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
     }
 
     fn tya(&mut self) -> Result<(), String> {
-        self.register_a = self.register_y;
-        self.set_status_flags_with_tick(
-            &[
-                (ZERO_FLAG, self.register_a == 0),
-                (
-                    NEGATIVE_FLAG,
-                    Self::get_flag(self.register_a, NEGATIVE_FLAG),
-                ),
-            ],
-            true,
-        );
-        Result::Ok(())
+        Ok(match self.current_op_cycle {
+            0 => {
+                self.register_a = self.register_y;
+
+                self.set_status_flags(&[
+                    (ZERO_FLAG, self.register_a == 0),
+                    (
+                        NEGATIVE_FLAG,
+                        Self::get_flag(self.register_a, NEGATIVE_FLAG),
+                    ),
+                ]);
+            }
+            c => return self.unexpected_op_cycle(c),
+        })
     }
 
-    fn interrupt_nmi(&mut self) -> Result<(), String> {
-        self.mem_read(self.program_counter)?; //dummy read
-        self.stack_push_u16(self.program_counter)?;
-        let status = (self.status.clone() | BREAK2_FLAG) & !BREAK_FLAG;
-
-        self.stack_push(status)?;
-        self.status = self.status | INTERRUPT_DISABLE_FLAG;
-
-        self.program_counter = self.mem_read_u16(NMI_INTERRUPT_ADDRESS)?;
-        self.tick(1);
-        Result::Ok(())
+    fn interrupt_nmi(&mut self) -> Result<bool, String> {
+        match self.instruction_cycle {
+            0 => self.mem_read(self.program_counter).map(|_| true),
+            1 => self
+                .stack_push((self.program_counter >> 8) as u8)
+                .map(|_| true),
+            2 => self.stack_push(self.program_counter as u8).map(|_| true),
+            3 => {
+                let result = self
+                    .stack_push((self.status | BREAK2_FLAG) & !BREAK_FLAG)
+                    .map(|_| true);
+                self.status = self.status | INTERRUPT_DISABLE_FLAG;
+                result
+            }
+            4 => {
+                self.program_counter = self.mem_read(NMI_INTERRUPT_ADDRESS)? as u16;
+                Ok(true)
+            }
+            5 => {
+                self.program_counter = (0x00FF & self.program_counter)
+                    | ((self.mem_read(NMI_INTERRUPT_ADDRESS + 1)? as u16) << 8);
+                Ok(true)
+            }
+            6 => Ok(true),
+            7 => {
+                self.interrupt.borrow_mut().take_nmi();
+                Ok(false)
+            }
+            c => Err(format!("Unexpected cycle in NMI interrupt routine: {}", c)),
+        }
     }
 }
 
@@ -2422,7 +2527,7 @@ mod test {
         bus.borrow_mut().mem_write_vec(0x8100, &vec![0x85, 0xA1]); //3 cycles 
         cpu.reset();
         cpu.register_a = 240;
-        let _ = cpu.run_with_callback(|cpu| tracing_callback(cpu)); //brk is 7 cycles
+        let _ = cpu.run_with_callback(|cpu| tracing_callback(cpu)).unwrap(); //brk is 7 cycles
         assert_eq!(240, bus.borrow_mut().mem_read(0x00A1).unwrap());
         assert_eq!(14, cpu.get_cycles());
     }
@@ -3506,7 +3611,7 @@ mod test {
         cpu.reset();
         cpu.register_a = 0x81;
         cpu.status = cpu.status | CARRY_FLAG;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = cpu.run_with_callback(|_| {}).unwrap();
         assert_eq!(0x00, cpu.register_a);
         assert!(CARRY_FLAG & cpu.status == CARRY_FLAG);
         assert!(OVERFLOW_FLAG & cpu.status == 0);
@@ -3668,7 +3773,7 @@ mod test {
         cpu.reset();
         cpu.register_x = 0x04;
         cpu.register_a = 0xf0;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = cpu.run_with_callback(|_| {}).unwrap();
         assert!(cpu.mem_read(0xdda1).unwrap() == 0xf0);
     }
 
@@ -3686,7 +3791,7 @@ mod test {
         cpu.reset();
         cpu.register_y = 0x04;
         cpu.register_a = 0xf0;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = cpu.run_with_callback(|_| {}).unwrap();
         assert_eq!(0xf0, cpu.mem_read(0xDDA5).unwrap());
     }
 
@@ -3716,7 +3821,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x8C, 0xAA, 0xBB, 0x00]);
         cpu.reset();
         cpu.register_y = 0x05;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = cpu.run_with_callback(|_| {}).unwrap();
         assert_eq!(cpu.mem_read(0xBBAA).unwrap(), 0x05);
     }
 

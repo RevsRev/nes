@@ -7,7 +7,7 @@ pub trait Interrupt {
     fn take_dmc(&mut self) -> bool;
     fn set_dmc(&mut self, state: bool);
 
-    fn poll_irq(&mut self) -> bool;
+    fn poll_irq(&self) -> bool;
     fn take_irq(&mut self) -> bool;
     fn set_irq(&mut self, state: bool);
 
@@ -55,8 +55,8 @@ impl Interrupt for InterruptImpl {
         }
     }
 
-    fn poll_irq(&mut self) -> bool {
-        self.irq_interrupt.is_some()
+    fn poll_irq(&self) -> bool {
+        self.irq_interrupt.as_ref().is_some()
     }
 
     fn take_irq(&mut self) -> bool {

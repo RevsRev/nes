@@ -26,17 +26,17 @@ impl AddressingMode {
         match self {
             AddressingMode::Accumulator => 0,
             AddressingMode::Implied => 0,
-            AddressingMode::Immediate => 1,
-            AddressingMode::Indirect => 5,
-            AddressingMode::Relative => 1,
-            AddressingMode::ZeroPage => 2,
-            AddressingMode::ZeroPage_X => 3,
-            AddressingMode::ZeroPage_Y => 3,
-            AddressingMode::Absolute => 3,
-            AddressingMode::Absolute_X => 3, // +1 if page crossed
-            AddressingMode::Absolute_Y => 3, // +1 if page crossed
-            AddressingMode::Indirect_X => 5,
-            AddressingMode::Indirect_Y => 4, // +1 if page crossed
+            AddressingMode::Immediate => 0,
+            AddressingMode::Indirect => 4,
+            AddressingMode::Relative => 0,
+            AddressingMode::ZeroPage => 1,
+            AddressingMode::ZeroPage_X => 2,
+            AddressingMode::ZeroPage_Y => 2,
+            AddressingMode::Absolute => 2,
+            AddressingMode::Absolute_X => 2, // +1 if page crossed
+            AddressingMode::Absolute_Y => 2, // +1 if page crossed
+            AddressingMode::Indirect_X => 4,
+            AddressingMode::Indirect_Y => 3, // +1 if page crossed
         }
     }
 }

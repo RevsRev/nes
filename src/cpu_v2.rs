@@ -369,16 +369,18 @@ impl<T: Bus> CpuV2<T> {
             return Ok(false);
         }
 
-        let irq_interrupt = self.interrupt.borrow().poll_irq();
-        let irq_in_progress = if irq_interrupt {
-            self.interrupt_irq()
-        } else {
-            Ok(false)
-        }?;
-        if irq_in_progress {
-            self.total_cycles = self.total_cycles + 1;
-            self.instruction_cycle = self.instruction_cycle + 1;
-            return Ok(false);
+        if !Self::get_flag(self.status, INTERRUPT_DISABLE_FLAG) {
+            let irq_interrupt = self.interrupt.borrow().poll_irq();
+            let irq_in_progress = if irq_interrupt {
+                self.interrupt_irq()
+            } else {
+                Ok(false)
+            }?;
+            if irq_in_progress {
+                self.total_cycles = self.total_cycles + 1;
+                self.instruction_cycle = self.instruction_cycle + 1;
+                return Ok(false);
+            }
         }
 
         self.store_trace();

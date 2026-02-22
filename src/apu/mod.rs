@@ -36,6 +36,7 @@ pub struct APU {
     cpu_cycles: u8,
     sequencer_cycles: u16,
     tracing: bool,
+    trace: Option<ApuTrace>,
 }
 
 impl APU {
@@ -68,6 +69,7 @@ impl APU {
             cpu_cycles: 0,
             sequencer_cycles: 0,
             tracing: false,
+            trace: None,
         }
     }
 
@@ -93,6 +95,12 @@ impl APU {
 
     pub fn set_tracing(&mut self, tracing: bool) {
         self.tracing = tracing;
+    }
+
+    pub fn take_trace(&mut self) -> Option<ApuTrace> {
+        let retval = self.trace.take();
+        self.trace = self.trace();
+        retval
     }
 
     pub fn trace(&self) -> Option<ApuTrace> {

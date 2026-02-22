@@ -74,7 +74,7 @@ impl FrameCounter {
     pub fn step(&mut self, cycles: u8) {
         if self.cpu_cycles == 0xFFFFFFFFFFFFFFFF {
             self.cpu_cycles = 0;
-            return;
+            // return;
         }
 
         if self.cpu_cycles == self.reset_timer_countdown {
@@ -99,7 +99,6 @@ impl FrameCounter {
     }
 
     fn four_step_clock(&mut self) {
-        self.frame_cycles = self.frame_cycles + 1;
         if self.frame_cycles > 14914 {
             self.frame_cycles = 0;
         }
@@ -113,10 +112,10 @@ impl FrameCounter {
         if self.frame_cycles == 14914 && self.data & 0b0100_0000 == 0b0 {
             self.set_irq_flag(true);
         }
+        self.frame_cycles = self.frame_cycles + 1;
     }
 
     fn five_step_clock(&mut self) {
-        self.frame_cycles = self.frame_cycles + 1;
         if self.frame_cycles > 18640 {
             self.frame_cycles = 0;
         }
@@ -129,6 +128,7 @@ impl FrameCounter {
         {
             self.clock = Option::Some(FrameClock::QUARTER);
         }
+        self.frame_cycles = self.frame_cycles + 1;
     }
 
     pub fn trace(&self) -> FrameTrace {

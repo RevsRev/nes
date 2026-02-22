@@ -106,6 +106,7 @@ impl<'call, T: Cpu<BusImpl>> NES<'call, T> {
 
                 if take_first_ppu_trace && master_clock % 3 == 1 {
                     take_first_ppu_trace = false;
+                    self.apu.borrow_mut().take_trace();
                     self.ppu.borrow_mut().take_trace();
                 }
 
@@ -115,7 +116,7 @@ impl<'call, T: Cpu<BusImpl>> NES<'call, T> {
                             let nes_trace = NesTrace {
                                 cpu_trace: cpu_trace,
                                 ppu_trace: self.ppu.borrow_mut().take_trace().unwrap(),
-                                apu_trace: self.apu.borrow_mut().trace().unwrap(),
+                                apu_trace: self.apu.borrow_mut().take_trace().unwrap(),
                             };
                             trace_callback(&nes_trace);
                             self.trace = Option::Some(nes_trace);

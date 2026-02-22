@@ -735,16 +735,15 @@ impl<T: Bus> CpuV2<T> {
                 self.resolved_addr = hi << 8 | (self.resolved_addr & 0x00FF);
             }
             (AddressingMode::Indirect_Y, 0) => {
-                self.resolved_addr = (self.mem_read(self.program_counter)? as u16) << 8;
+                self.resolved_mem_read = self.mem_read(self.program_counter)?;
                 self.program_counter = self.program_counter + 1;
             }
             (AddressingMode::Indirect_Y, 1) => {
-                let lo = self.mem_read(self.resolved_addr >> 8)? as u16;
-                self.resolved_addr = self.resolved_addr | lo;
+                let lo = self.mem_read(self.resolved_mem_read as u16)? as u16;
+                self.resolved_addr = lo as u16;
             }
             (AddressingMode::Indirect_Y, 2) => {
-                let hi =
-                    self.mem_read(((self.resolved_addr >> 8) as u8).wrapping_add(1) as u16)? as u16;
+                let hi = self.mem_read(self.resolved_mem_read.wrapping_add(1) as u16)? as u16;
                 let deref_base = hi << 8 | (self.resolved_addr & 0x00FF);
                 self.resolved_addr = deref_base.wrapping_add(self.register_y as u16);
                 if Self::page_boundary_crossed(self.resolved_addr, deref_base)

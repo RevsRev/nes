@@ -436,18 +436,18 @@ impl<T: Bus> CpuV2<T> {
             return Ok(true);
         }
 
-        if self.instruction_cycle <= 512 {
-            if self.instruction_cycle % 2 == 1 {
-                self.resolved_addr =
-                    self.mem_read((page_hi as u16) << 8 | (self.instruction_cycle - 1))? as u16;
-            } else {
-                self.mem_write(0x4014, self.resolved_addr as u8)?;
-            }
-            self.instruction_cycle = self.instruction_cycle + 1;
+        let oam_cycle = self.instruction_cycle - 1;
+        if oam_cycle % 2 == 0 {
+            self.resolved_mem_read = self.mem_read(((page_hi as u16) << 8) | (oam_cycle / 2))?;
+        } else {
+            self.mem_write(0x4014, self.resolved_mem_read)?;
+        }
+        self.instruction_cycle = self.instruction_cycle + 1;
+
+        if oam_cycle < 511 {
             return Ok(true);
         }
 
-        self.mem_write(0x4014, self.resolved_addr as u8)?;
         self.interrupt.borrow_mut().take_oam_data();
         self.instruction_cycle = 0;
         Ok(false)

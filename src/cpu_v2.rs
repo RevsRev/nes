@@ -332,11 +332,6 @@ impl<T: Bus> CpuV2<T> {
     fn tick_2(&mut self) -> Result<bool, String> {
         //TODO - Remember to map err for this result at a higher level
 
-        println!(
-            "{} - ic: {} oc: {}",
-            self.op.mnemonic, self.instruction_cycle, self.current_op_cycle
-        );
-
         if !self.check_for_interrupts {
             match self.fetch_decode_execute()? {
                 true => {

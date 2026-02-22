@@ -1862,7 +1862,7 @@ impl<T: Bus> CpuV2<T> {
     fn sax(&mut self) -> Result<(), String> {
         Ok(match self.current_op_cycle {
             0 => {
-                let value = self.register_x + self.register_a;
+                let value = self.register_x & self.register_a;
                 self.mem_write(self.resolved_addr, value)?;
             }
             c => return self.unexpected_op_cycle(c),

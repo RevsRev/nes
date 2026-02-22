@@ -326,7 +326,7 @@ impl CpuTraceFormatter {
                 let first_read = cpu_trace.reads[0 + self.options.reads_offset as usize].1;
                 write!(
                     out,
-                    "{:04X}  {:02X} {:02X}     {} ${:02X}{:>48}",
+                    "{:04X}  {:02X} {:02X}     {} ${:04X}{:>48}",
                     cpu_trace.pc,
                     cpu_trace.op_code.code,
                     first_read,

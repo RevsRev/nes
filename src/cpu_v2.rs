@@ -41,7 +41,6 @@ pub struct CpuV2<T: Bus> {
     trace_reg_y: u8,
     trace_sp: u8,
     trace_status: u8,
-    operand_address: Option<u16>,
     reads: Vec<(u16, u8)>,
     writes: Vec<(u16, u8)>,
 
@@ -284,7 +283,6 @@ impl<T: Bus> CpuV2<T> {
             trace_reg_y: 0,
             reads: Vec::new(),
             writes: Vec::new(),
-            operand_address: Option::None,
             halt: halt,
             total_cycles: 0,
 
@@ -307,7 +305,7 @@ impl<T: Bus> CpuV2<T> {
                 cpu_cycles: self.trace_cycles,
                 pc: self.trace_pc,
                 op_code: self.op,
-                absolute_address: self.operand_address,
+                absolute_address: Some(self.resolved_addr),
                 register_a: self.trace_reg_a,
                 register_x: self.trace_reg_x,
                 register_y: self.trace_reg_y,
@@ -318,7 +316,6 @@ impl<T: Bus> CpuV2<T> {
             });
         }
 
-        self.operand_address = Option::None;
         self.reads.clear();
         self.writes.clear();
         self.trace_sp = 0;
@@ -1819,7 +1816,7 @@ impl<T: Bus> CpuV2<T> {
             }
             2 => {
                 self.program_counter =
-                    (self.program_counter & 0x00FF) | ((self.stack_pop()? as u16) << 8) + 1;
+                    ((self.program_counter & 0x00FF) | ((self.stack_pop()? as u16) << 8)) + 1;
             }
             3 => {}
             4 => {}

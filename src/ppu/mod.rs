@@ -72,95 +72,93 @@ pub struct PPU {
 }
 
 impl Tick for PPU {
-    fn tick(&mut self, cycles: u8) {
-        self.total_ppu_cycles += cycles as u64;
+    fn tick(&mut self) {
+        self.total_ppu_cycles += 1;
         // self.frame_cycles += cycles as usize;
         self.new_frame = false;
 
-        for _ in 0..cycles {
-            if self.frame_dots == 0 {
-                self.compute_sprites();
-            }
-
-            if self.ppu_cycles_this_cpu_cycle == 2 {
-                self.store_trace();
-            }
-
-            let is_rendering_enabled =
-                (self.scanline < 240 || self.scanline == 261) && self.mask.is_rendering_enabled();
-
-            if self.frame_dots == 256 && is_rendering_enabled {
-                self.increment_y();
-            }
-
-            if is_rendering_enabled && (self.frame_dots < 256 || self.frame_dots >= 320) {
-                self.fetch_tile();
-                if self.frame_dots >= 328 && self.frame_dots < 336 {
-                    //shift the registers
-                    self.bg_shift_lo = self.bg_shift_lo << 1;
-                    self.bg_shift_hi = self.bg_shift_hi << 1;
-                    self.attr_shift_lo = self.attr_shift_lo << 1;
-                    self.attr_shift_hi = self.attr_shift_hi << 1;
-                }
-            }
-
-            if self.scanline < 240 && self.frame_dots < 256 {
-                self.render_background();
-                if self.is_sprite_0_hit() {
-                    self.status.set_sprite_0_hit(true);
-                }
-                self.render_sprites();
-            }
-
-            if self.frame_dots == 257 && is_rendering_enabled {
-                self.v = (self.v & 0b0111_1011_1110_0000) | (self.t & 0b0000_0100_0001_1111);
-            }
-
-            if self.scanline == 261
-                && self.frame_dots >= 280
-                && self.frame_dots <= 304
-                && is_rendering_enabled
-            {
-                self.v = (self.v & 0b0000_0100_0001_1111) | (self.t & 0b0111_1011_1110_0000);
-            }
-
-            self.frame_dots += 1;
-            if self.scanline == 241 && self.frame_dots == 1 {
-                self.status.set_vblank(true);
-                self.status.set_sprite_0_hit(false);
-                if self.ctl.generate_vblank_nmi() {
-                    self.interrupt
-                        .borrow_mut()
-                        .set_nmi(Some(self.ppu_cycles_this_cpu_cycle));
-                }
-            }
-
-            if self.scanline == 261 && self.frame_dots == 1 {
-                self.status.set_vblank(false);
-                self.interrupt.borrow_mut().set_nmi(None);
-                self.status.set_sprite_0_hit(false);
-            }
-
-            if self.frame_dots == 340
-                && self.scanline == 261
-                && self.total_frames % 2 == 1
-                && self.mask.is_rendering_enabled()
-            {
-                self.frame_dots += 1;
-            }
-
-            if self.frame_dots == 341 {
-                self.frame_dots = 0;
-                self.scanline += 1;
-            }
-
-            if self.scanline == 262 {
-                self.scanline = 0;
-                self.new_frame = true;
-                self.total_frames = self.total_frames + 1;
-            }
-            self.ppu_cycles_this_cpu_cycle = self.ppu_cycles_this_cpu_cycle + 1;
+        if self.frame_dots == 0 {
+            self.compute_sprites();
         }
+
+        if self.ppu_cycles_this_cpu_cycle == 2 {
+            self.store_trace();
+        }
+
+        let is_rendering_enabled =
+            (self.scanline < 240 || self.scanline == 261) && self.mask.is_rendering_enabled();
+
+        if self.frame_dots == 256 && is_rendering_enabled {
+            self.increment_y();
+        }
+
+        if is_rendering_enabled && (self.frame_dots < 256 || self.frame_dots >= 320) {
+            self.fetch_tile();
+            if self.frame_dots >= 328 && self.frame_dots < 336 {
+                //shift the registers
+                self.bg_shift_lo = self.bg_shift_lo << 1;
+                self.bg_shift_hi = self.bg_shift_hi << 1;
+                self.attr_shift_lo = self.attr_shift_lo << 1;
+                self.attr_shift_hi = self.attr_shift_hi << 1;
+            }
+        }
+
+        if self.scanline < 240 && self.frame_dots < 256 {
+            self.render_background();
+            if self.is_sprite_0_hit() {
+                self.status.set_sprite_0_hit(true);
+            }
+            self.render_sprites();
+        }
+
+        if self.frame_dots == 257 && is_rendering_enabled {
+            self.v = (self.v & 0b0111_1011_1110_0000) | (self.t & 0b0000_0100_0001_1111);
+        }
+
+        if self.scanline == 261
+            && self.frame_dots >= 280
+            && self.frame_dots <= 304
+            && is_rendering_enabled
+        {
+            self.v = (self.v & 0b0000_0100_0001_1111) | (self.t & 0b0111_1011_1110_0000);
+        }
+
+        self.frame_dots += 1;
+        if self.scanline == 241 && self.frame_dots == 1 {
+            self.status.set_vblank(true);
+            self.status.set_sprite_0_hit(false);
+            if self.ctl.generate_vblank_nmi() {
+                self.interrupt
+                    .borrow_mut()
+                    .set_nmi(Some(self.ppu_cycles_this_cpu_cycle));
+            }
+        }
+
+        if self.scanline == 261 && self.frame_dots == 1 {
+            self.status.set_vblank(false);
+            self.interrupt.borrow_mut().set_nmi(None);
+            self.status.set_sprite_0_hit(false);
+        }
+
+        if self.frame_dots == 340
+            && self.scanline == 261
+            && self.total_frames % 2 == 1
+            && self.mask.is_rendering_enabled()
+        {
+            self.frame_dots += 1;
+        }
+
+        if self.frame_dots == 341 {
+            self.frame_dots = 0;
+            self.scanline += 1;
+        }
+
+        if self.scanline == 262 {
+            self.scanline = 0;
+            self.new_frame = true;
+            self.total_frames = self.total_frames + 1;
+        }
+        self.ppu_cycles_this_cpu_cycle = self.ppu_cycles_this_cpu_cycle + 1;
     }
 }
 

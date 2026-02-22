@@ -109,35 +109,33 @@ impl APU {
 }
 
 impl Tick for APU {
-    fn tick(&mut self, cycles: u8) {
-        for c in 0..cycles {
-            self.frame.borrow_mut().step(1);
-            let on_apu_clock_cycle = self.cpu_cycles.wrapping_add(c) % 2 == 0;
-            if on_apu_clock_cycle {
-                let emit_clock = self.frame.borrow_mut().emit_clock();
+    fn tick(&mut self) {
+        self.frame.borrow_mut().step(1);
+        let on_apu_clock_cycle = self.cpu_cycles.wrapping_add(1) % 2 == 0;
+        if on_apu_clock_cycle {
+            let emit_clock = self.frame.borrow_mut().emit_clock();
 
-                match emit_clock {
-                    Some(clock) => {
-                        self.pulse_1.borrow_mut().frame_clock(&clock);
-                        self.pulse_2.borrow_mut().frame_clock(&clock);
-                        self.triangle.borrow_mut().frame_clock(&clock);
-                    }
-                    None => {}
+            match emit_clock {
+                Some(clock) => {
+                    self.pulse_1.borrow_mut().frame_clock(&clock);
+                    self.pulse_2.borrow_mut().frame_clock(&clock);
+                    self.triangle.borrow_mut().frame_clock(&clock);
                 }
-
-                self.pulse_1.borrow_mut().decrement_timer();
-                self.pulse_2.borrow_mut().decrement_timer();
+                None => {}
             }
-            self.triangle.borrow_mut().decrement_timer();
-            self.mixer.output(
-                self.pulse_1.borrow_mut().get_out(),
-                self.pulse_2.borrow_mut().get_out(),
-                self.triangle.borrow_mut().get_out(),
-            );
-        }
 
-        let num_apu_cycles = ((self.cpu_cycles % 2 + cycles) / 2) as u16;
-        self.cpu_cycles = self.cpu_cycles.wrapping_add(cycles);
+            self.pulse_1.borrow_mut().decrement_timer();
+            self.pulse_2.borrow_mut().decrement_timer();
+        }
+        self.triangle.borrow_mut().decrement_timer();
+        self.mixer.output(
+            self.pulse_1.borrow_mut().get_out(),
+            self.pulse_2.borrow_mut().get_out(),
+            self.triangle.borrow_mut().get_out(),
+        );
+
+        let num_apu_cycles = ((self.cpu_cycles % 2 + 1) / 2) as u16;
+        self.cpu_cycles = self.cpu_cycles.wrapping_add(1);
         self.sequencer_cycles = self.sequencer_cycles.wrapping_add(num_apu_cycles);
     }
 }

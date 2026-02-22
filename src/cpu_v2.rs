@@ -249,8 +249,8 @@ impl<T: Bus> fmt::Display for CpuV2<T> {
 }
 
 impl<T: Bus> Tick for CpuV2<T> {
-    fn tick(&mut self, cycles: u8) {
-        self.bus.borrow_mut().tick(cycles);
+    fn tick(&mut self) {
+        self.bus.borrow_mut().tick();
     }
 }
 
@@ -2184,8 +2184,8 @@ mod test {
     }
 
     impl Tick for BusStub {
-        fn tick(&mut self, cycles: u8) {
-            self.cycles += cycles as u64;
+        fn tick(&mut self) {
+            self.cycles += 1;
         }
     }
 

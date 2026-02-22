@@ -51,7 +51,7 @@ pub struct CpuV2<T: Bus> {
     //Internal state
     instruction_cycle: u16,
     current_op_cycle: u8,
-    current_op_start: u8,
+    current_op_length: u8,
     nmi_at_fetch: bool, //TODO - I wonder if we can get rid of this?
     op: OpCode,
     resolved_addr: u16,
@@ -288,7 +288,7 @@ impl<T: Bus> CpuV2<T> {
 
             instruction_cycle: 0,
             current_op_cycle: 0,
-            current_op_start: 0xFF,
+            current_op_length: 0xFF,
             nmi_at_fetch: false,
             op: **OPCODES_MAP.get(&0x00).unwrap(),
             resolved_addr: 0x0000,
@@ -482,8 +482,15 @@ impl<T: Bus> CpuV2<T> {
             return Ok(true);
         }
 
-        if self.current_op_start == 0xFF {
-            self.current_op_start = self.instruction_cycle as u8;
+        if self.current_op_length == 0xFF {
+            self.current_op_length = self.op.cycles - (1 + self.op.mode.base_cycles());
+            //Special case. If we have an extra cycle (because of a page cross), we know that
+            //memory write instructions ALWAYS do this. So we should do 1 less operation.
+            if (self.instruction_cycle != 1 + self.op.mode.base_cycles() as u16)
+                && self.op.behaviour == OpCodeBehaviour::MemoryWrite
+            {
+                self.current_op_length = self.current_op_length - 1;
+            }
         }
 
         //Special case for JMP. Should execute immediately without consuming a cycle
@@ -492,7 +499,7 @@ impl<T: Bus> CpuV2<T> {
             self.current_op_cycle = self.current_op_cycle + 1;
         }
 
-        if self.current_op_cycle < self.op.cycles - self.current_op_start {
+        if self.current_op_cycle < self.current_op_length {
             self.execute_op()?;
             self.current_op_cycle = self.current_op_cycle + 1;
             return Ok(true);
@@ -502,7 +509,7 @@ impl<T: Bus> CpuV2<T> {
             self.should_branch = false;
             return Ok(true);
         }
-        self.current_op_start = 0xFF;
+        self.current_op_length = 0xFF;
         self.current_op_cycle = 0;
         return Ok(false);
     }

@@ -72,6 +72,9 @@ impl<'call, T: Cpu<BusImpl<'call>>> NES<'call, T> {
     where
         F: FnMut(&mut NES<T>),
     {
+        //TODO - Need to wire this in
+        // (self.gameloop_callback)(&self.ppu, &self.apu, &mut self.joypad)
+
         loop {
             for master_clock in 0..12 {
                 if master_clock % 3 == 0 {
@@ -106,7 +109,6 @@ impl<'call, T: Cpu<BusImpl<'call>>> NES<'call, T> {
             // }
             callback(self);
         }
-        Result::Ok(())
     }
 }
 

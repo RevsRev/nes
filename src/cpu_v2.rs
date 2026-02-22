@@ -253,8 +253,8 @@ impl<T: Bus> fmt::Display for CpuV2<T> {
 }
 
 impl<T: Bus> Tick for CpuV2<T> {
-    fn tick(&mut self) {
-        self.bus.borrow_mut().tick();
+    fn tick(&mut self) -> Result<(), String> {
+        self.tick_2().map(|_| ())
     }
 }
 
@@ -2185,12 +2185,6 @@ mod test {
 
     impl Bus for BusStub {
         fn signal_cpu_start(&mut self) {}
-    }
-
-    impl Tick for BusStub {
-        fn tick(&mut self) {
-            self.cycles += 1;
-        }
     }
 
     impl Mem for BusStub {

@@ -241,21 +241,3 @@ impl<'a> Mem for BusImpl<'a> {
         };
     }
 }
-
-impl<'call> Tick for BusImpl<'call> {
-    fn tick(&mut self) {
-        // let nmi_before = self.ppu.poll(&InterruptType::Nmi).is_some();
-
-        for _ in 0..3 {
-            self.ppu.tick();
-            if self.ppu.new_frame {
-                (self.gameloop_callback)(&self.ppu, &self.apu, &mut self.joypad)
-            }
-        }
-        self.apu.tick();
-
-        // if !nmi_before && nmi_after {
-        //     (self.gameloop_callback)(&self.ppu)
-        // }
-    }
-}

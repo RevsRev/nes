@@ -109,7 +109,7 @@ impl APU {
 }
 
 impl Tick for APU {
-    fn tick(&mut self) {
+    fn tick(&mut self) -> Result<(), String> {
         self.frame.borrow_mut().step(1);
         let on_apu_clock_cycle = self.cpu_cycles.wrapping_add(1) % 2 == 0;
         if on_apu_clock_cycle {
@@ -137,5 +137,6 @@ impl Tick for APU {
         let num_apu_cycles = ((self.cpu_cycles % 2 + 1) / 2) as u16;
         self.cpu_cycles = self.cpu_cycles.wrapping_add(1);
         self.sequencer_cycles = self.sequencer_cycles.wrapping_add(num_apu_cycles);
+        Ok(())
     }
 }

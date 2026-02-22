@@ -188,19 +188,7 @@ fn main() {
     let result = match args.version {
         2 => {
             let mut nes = nes_with_cpu_v2(rom, halt, args.trace, gameloop_callback);
-
-            nes.run_with_callback(move |nes| {
-                if !args.trace {
-                    return;
-                }
-
-                match nes.trace.as_ref() {
-                    Option::None => println!("NULL Trace"),
-                    Option::Some(s) => {
-                        println!("{}", trace_formatter.format(s))
-                    }
-                };
-            })
+            nes.run_with_callback(|trace| println!("{}", trace_formatter.format(trace)))
         }
         v => panic!("Unknown NES Emulator CPU version {}", v),
     };

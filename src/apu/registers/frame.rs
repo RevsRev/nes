@@ -12,7 +12,6 @@ const INTERRUPT: u8 = 0b0100_0000;
 pub struct FrameCounter {
     data: u8,
     frame_cycles: u32,
-    cpu_cycles: u64,
     written_during_cycle: bool,
     reset_timer_countdown: u64,
     clock: Option<FrameClock>,
@@ -30,7 +29,6 @@ impl FrameCounter {
         FrameCounter {
             data: 0,
             frame_cycles: 0,
-            cpu_cycles: 0,
             written_during_cycle: false,
             reset_timer_countdown: 0,
             clock: Option::None,
@@ -46,14 +44,10 @@ impl FrameCounter {
             self.set_irq_flag(false);
         }
 
-        self.cpu_cycles = 0xFFFFFFFFFFFFFFFF;
+        self.reset_timer_countdown = 2;
 
         self.data = data;
         old_value
-    }
-
-    pub fn set_reset_timer_countdown(&mut self, countdown: u64) {
-        self.reset_timer_countdown = countdown;
     }
 
     pub fn get_data(&self) -> u8 {
@@ -71,31 +65,21 @@ impl FrameCounter {
         self.clock.take()
     }
 
-    pub fn step(&mut self, cycles: u8) {
-        if self.cpu_cycles == 0xFFFFFFFFFFFFFFFF {
-            self.cpu_cycles = 0;
-            // return;
-        }
-
-        if self.cpu_cycles == self.reset_timer_countdown {
-            if self.data & MODE == MODE {
-                self.clock = Option::Some(FrameClock::HALF);
+    pub fn step(&mut self) {
+        if self.reset_timer_countdown > 0 {
+            self.reset_timer_countdown = self.reset_timer_countdown - 1;
+            if self.reset_timer_countdown == 0 {
+                if self.data & MODE == MODE {
+                    self.clock = Option::Some(FrameClock::HALF);
+                }
+                self.frame_cycles = 0;
             }
-            self.frame_cycles = 0;
         }
-
-        if self.cpu_cycles % 2 == 1 {
-            self.cpu_cycles = self.cpu_cycles + 1;
-            return;
-        }
-
         if self.data & MODE == MODE {
             self.five_step_clock()
         } else {
             self.four_step_clock()
         }
-
-        self.cpu_cycles = self.cpu_cycles + 1;
     }
 
     fn four_step_clock(&mut self) {

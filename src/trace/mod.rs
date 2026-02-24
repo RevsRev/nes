@@ -97,7 +97,7 @@ impl ApuTraceFormatter {
 
         write!(
             out,
-            "P1(L: {}, LE: {}) P2(L: {}, LE: {}) F(IRQ: {} C:{})",
+            "P1(L: {}, LE: {}) P2(L: {}, LE: {}) F(IRQ: {} C: {})",
             apu_trace.pulse_1.len_counter,
             apu_trace.pulse_1.len_counter_enabled,
             apu_trace.pulse_2.len_counter,

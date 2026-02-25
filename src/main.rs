@@ -25,7 +25,7 @@ use trace::{
     ApuTraceFormatter, CpuTraceFormatOptions, CpuTraceFormatter, NesTraceFormatter,
     PpuTraceFormatter,
 };
-use traits::cpu::Cpu;
+use traits::{cpu::Cpu, mos_6502_registers::Registers, mos_65902::MOS6502};
 
 use crate::{apu::APU, io::audio::sound_frame::SoundFrame};
 
@@ -54,6 +54,14 @@ struct Args {
     file_path: Option<String>,
     #[arg(short = 'v', long = "version", default_value = "2")]
     version: u8,
+    #[arg(short = 'c', long = "cycles")]
+    cycles: Option<u64>,
+    #[arg(short = 's', long = "stack")]
+    stack: Option<u8>,
+    #[arg(short = 'p', long = "status")]
+    status: Option<u8>,
+    #[arg(long = "frame-dots")]
+    dots: Option<u16>,
 }
 
 impl fmt::Display for Args {
@@ -187,7 +195,29 @@ fn main() {
 
     let result = match args.version {
         2 => {
-            let mut nes = nes_with_cpu_v2(rom, halt, args.trace, gameloop_callback);
+            let mut nes: NES<CpuV2<BusImpl>> =
+                nes_with_cpu_v2(rom, halt, args.trace, gameloop_callback);
+
+            match args.cycles {
+                Some(cycles) => nes.cpu.set_cycles(cycles),
+                None => {}
+            }
+
+            match args.status {
+                Some(status) => nes.cpu.set_status(status),
+                None => {}
+            }
+
+            match args.stack {
+                Some(stack) => nes.cpu.set_stack_pointer(stack),
+                None => {}
+            }
+
+            match args.dots {
+                Some(dots) => nes.ppu.borrow_mut().frame_dots = dots as usize,
+                None => {}
+            }
+
             nes.run_with_callback(|trace| println!("{}", trace_formatter.format(trace)))
         }
         v => panic!("Unknown NES Emulator CPU version {}", v),

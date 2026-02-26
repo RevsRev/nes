@@ -17,13 +17,13 @@ use io::{
     joypad::{BUTTON_A, BUTTON_B, DOWN, Joypad, LEFT, RIGHT, SELECT, START, UP},
     render::frame::Frame,
 };
-use nes::{NES, nes_with_cpu_v2};
+use nes::{NES, TracingMode, nes_with_cpu_v2};
 use ppu::PPU;
 use rom::Rom;
 use sdl2::{event::Event, keyboard::Keycode, pixels::PixelFormatEnum};
 use trace::{
     ApuTraceFormatter, CpuTraceFormatOptions, CpuTraceFormatter, NesTraceFormatter,
-    PpuTraceFormatter,
+    NesTraceOptions, PpuTraceFormatter,
 };
 use traits::{cpu::Cpu, mos_6502_registers::Registers, mos_65902::MOS6502};
 
@@ -48,6 +48,8 @@ extern crate lazy_static;
 struct Args {
     #[arg(short = 't', long = "trace")]
     trace: bool,
+    #[arg(short = 'm', long = "micro-trace")]
+    micro_trace: bool,
     #[arg(short = 'd', long = "debug")]
     debug: bool,
     #[arg(short = 'f', long = "file")]
@@ -182,6 +184,9 @@ fn main() {
     stream.play().unwrap();
 
     let trace_formatter = NesTraceFormatter {
+        nes_options: NesTraceOptions {
+            write_cpu_cycles: true,
+        },
         cpu_formatter: CpuTraceFormatter {
             options: CpuTraceFormatOptions {
                 write_break_2_flag: true,
@@ -195,11 +200,19 @@ fn main() {
 
     let result = match args.version {
         2 => {
+            let tracing_mode = if args.micro_trace {
+                TracingMode::MicroEnabled
+            } else if args.trace {
+                TracingMode::Enabled
+            } else {
+                TracingMode::None
+            };
+
             let mut nes: NES<CpuV2<BusImpl>> =
-                nes_with_cpu_v2(rom, halt, args.trace, gameloop_callback);
+                nes_with_cpu_v2(rom, halt, tracing_mode, gameloop_callback);
 
             match args.cycles {
-                Some(cycles) => nes.cpu.set_cycles(cycles),
+                Some(cycles) => nes.set_master_clock(3 * cycles),
                 None => {}
             }
 

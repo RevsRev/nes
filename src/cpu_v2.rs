@@ -46,8 +46,6 @@ pub struct CpuV2<T: Bus> {
 
     halt: Arc<AtomicBool>,
 
-    total_cycles: u64,
-
     //Internal state
     instruction_cycle: u16,
     current_op_cycle: u8,
@@ -68,48 +66,6 @@ impl<T: Bus> Cpu<T> for CpuV2<T> {
 }
 
 impl<T: Bus> MOS6502<T> for CpuV2<T> {
-    fn get_cycles(&self) -> u64 {
-        self.total_cycles
-    }
-
-    fn set_cycles(&mut self, value: u64) {
-        self.total_cycles = value;
-    }
-
-    fn step_with_callback<F>(&mut self, mut callback: &mut F) -> Result<bool, String>
-    where
-        F: for<'a> FnMut(&'a Self),
-    {
-        loop {
-            if self.tick_2()? {
-                return Ok(false);
-            }
-            if self.instruction_cycle == 0 {
-                callback(self);
-                break;
-            }
-        }
-        return Ok(true);
-    }
-
-    fn run_with_callback<F>(&mut self, mut callback: F) -> Result<(), String>
-    where
-        F: for<'a> FnMut(&'a Self),
-    {
-        loop {
-            match self.step_with_callback(&mut callback) {
-                Ok(b) => match b {
-                    true => {}
-                    false => break,
-                },
-                Err(s) => {
-                    return Err(s);
-                }
-            }
-        }
-        Result::Ok(())
-    }
-
     fn load_with_start_address(&mut self, start_address: u16, program: Vec<u8>) {
         self.mem_write_vec(start_address, &program);
         self.mem_write_u16(0xFFFC, start_address);
@@ -126,7 +82,6 @@ impl<T: Bus> MOS6502<T> for CpuV2<T> {
             .borrow_mut()
             .mem_read_u16(PC_START_ADDRESS)
             .unwrap();
-        self.total_cycles = 0;
     }
 }
 
@@ -204,6 +159,21 @@ impl<T: Bus> Tracing for CpuV2<T> {
     fn set_tracing(&mut self, tracing: bool) {
         self.tracing = tracing;
     }
+
+    fn micro_trace(&mut self) -> Option<CpuTrace> {
+        Option::Some(CpuTrace {
+            pc: self.program_counter,
+            op_code: self.op,
+            absolute_address: Some(self.resolved_addr),
+            register_a: self.register_a,
+            register_x: self.register_x,
+            register_y: self.register_y,
+            status: self.status,
+            stack: self.stack_pointer,
+            reads: self.reads.clone(),
+            writes: self.writes.clone(),
+        })
+    }
 }
 
 impl<T: Bus> Mem for CpuV2<T> {
@@ -252,8 +222,8 @@ impl<T: Bus> fmt::Display for CpuV2<T> {
 }
 
 impl<T: Bus> Tick for CpuV2<T> {
-    fn tick(&mut self) -> Result<(), String> {
-        self.tick_2().map(|_| ())
+    fn tick(&mut self, total_cpu_cycles: u64) -> Result<(), String> {
+        self.tick_2(total_cpu_cycles).map(|_| ())
     }
 }
 
@@ -284,7 +254,6 @@ impl<T: Bus> CpuV2<T> {
             reads: Vec::new(),
             writes: Vec::new(),
             halt: halt,
-            total_cycles: 0,
 
             instruction_cycle: 0,
             current_op_cycle: 0,
@@ -302,7 +271,6 @@ impl<T: Bus> CpuV2<T> {
     fn store_trace(&mut self) {
         if self.tracing {
             self.trace = Option::Some(CpuTrace {
-                cpu_cycles: self.trace_cycles,
                 pc: self.trace_pc,
                 op_code: self.op,
                 absolute_address: Some(self.resolved_addr),
@@ -326,14 +294,13 @@ impl<T: Bus> CpuV2<T> {
         self.trace_reg_y = 0;
     }
 
-    fn tick_2(&mut self) -> Result<bool, String> {
+    fn tick_2(&mut self, total_cpu_cycles: u64) -> Result<bool, String> {
         //TODO - Remember to map err for this result at a higher level
 
         if !self.check_for_interrupts {
             match self.fetch_decode_execute()? {
                 true => {
                     self.instruction_cycle = self.instruction_cycle + 1;
-                    self.total_cycles = self.total_cycles + 1;
                     return Ok(false);
                 }
                 false => {
@@ -351,21 +318,19 @@ impl<T: Bus> CpuV2<T> {
 
         if nmi_in_progress {
             self.instruction_cycle = self.instruction_cycle + 1;
-            self.total_cycles = self.total_cycles + 1;
             return Ok(false);
         }
 
         let oam_stall = self.interrupt.borrow().poll_oam_data();
         let oam_stall_in_progress = match oam_stall {
             Some(page_hi) => {
-                let result = self.interrupt_oam_data(page_hi);
+                let result = self.interrupt_oam_data(total_cpu_cycles, page_hi);
                 result
             }
             None => Ok(false),
         }?;
 
         if oam_stall_in_progress {
-            self.total_cycles = self.total_cycles + 1;
             return Ok(false);
         }
 
@@ -377,7 +342,6 @@ impl<T: Bus> CpuV2<T> {
                 Ok(false)
             }?;
             if irq_in_progress {
-                self.total_cycles = self.total_cycles + 1;
                 self.instruction_cycle = self.instruction_cycle + 1;
                 return Ok(false);
             }
@@ -391,7 +355,7 @@ impl<T: Bus> CpuV2<T> {
         if self.halt.load(Ordering::Relaxed) {
             return Ok(true);
         }
-        self.tick_2() //We haven't processed anything, so we should start the next cycle
+        self.tick_2(total_cpu_cycles) //We haven't processed anything, so we should start the next cycle
     }
 
     fn interrupt_irq(&mut self) -> Result<bool, String> {
@@ -425,14 +389,13 @@ impl<T: Bus> CpuV2<T> {
     }
 
     //TODO - Move instruction cycle out of this level
-    fn interrupt_oam_data(&mut self, page_hi: u8) -> Result<bool, String> {
-        if self.instruction_cycle == 0 && self.total_cycles % 2 == 1 {
+    fn interrupt_oam_data(&mut self, total_cpu_cycles: u64, page_hi: u8) -> Result<bool, String> {
+        if self.instruction_cycle == 0 && total_cpu_cycles % 2 == 1 {
             return Ok(true);
         }
 
         if self.instruction_cycle == 0 {
             self.instruction_cycle = self.instruction_cycle + 1;
-            self.total_cycles = self.total_cycles + 1;
             return Ok(true);
         }
 
@@ -809,7 +772,6 @@ impl<T: Bus> CpuV2<T> {
     }
 
     fn cache_trace_state(&mut self) {
-        self.trace_cycles = self.total_cycles;
         self.trace_pc = self.program_counter;
         self.trace_sp = self.stack_pointer;
         self.trace_status = self.status;
@@ -2141,6 +2103,8 @@ impl<T: Bus> CpuV2<T> {
 #[cfg(test)]
 #[allow(non_snake_case)]
 mod test {
+    use std::string;
+
     use crate::{
         bus::BusImpl,
         opp::OPCODES_MAP,
@@ -2194,7 +2158,7 @@ mod test {
         }
     }
 
-    fn tracing_callback(cpu: &CpuV2<BusStub>) {
+    fn tracing_callback(trace: &CpuTrace) {
         let formatter = CpuTraceFormatter {
             options: CpuTraceFormatOptions {
                 write_break_2_flag: false,
@@ -2202,12 +2166,17 @@ mod test {
                 reads_offset: 1,
             },
         };
-        match &cpu.peek_trace() {
-            None => println!("NULL Trace"),
-            Some(s) => {
-                println!("{}", formatter.format(&s))
-            }
-        };
+        println!("{}", formatter.format(trace))
+    }
+
+    fn run_cpu(cpu: &mut CpuV2<BusStub>) -> Result<u64, String> {
+        let mut cpu_cycles = 0;
+        let mut cpu_run_result: Result<bool, String> = Ok(false);
+        while cpu_run_result == Ok(false) {
+            cpu_run_result = cpu.tick_2(cpu_cycles);
+            cpu_cycles = cpu_cycles + 1;
+        }
+        cpu_run_result.map(|_| cpu_cycles)
     }
 
     #[test]
@@ -2273,31 +2242,39 @@ mod test {
             _ => {}
         };
 
-        let start_cycles = cpu.get_cycles();
+        let mut cpu_cycles = 0;
 
         let brk = match OPCODES_MAP.get(&0x00) {
             Some(op) => op,
             None => panic!("Where is brk?"),
         };
 
-        let expected_final_cycles = opcode.cycles as u64;
+        let expected_final_cycles = opcode.cycles as u64 + 1; //one additional cycle to exit
 
         println!("Executing {:02X} ({})", opcode.code, opcode.mnemonic);
-        let run_result = cpu.run_with_callback(|cpu| tracing_callback(cpu));
+
+        let mut cpu_run_result: Result<bool, String> = Ok(false);
+        while cpu_run_result == Ok(false) {
+            cpu_run_result = cpu.tick_2(cpu_cycles);
+            cpu_cycles = cpu_cycles + 1;
+            match cpu.take_trace() {
+                Some(trace) => tracing_callback(&trace),
+                None => {}
+            }
+        }
+
         println!(
             "Finished executing {:02X} ({}). Final cycles: {}\n\n",
-            opcode.code,
-            opcode.mnemonic,
-            cpu.get_cycles()
+            opcode.code, opcode.mnemonic, cpu_cycles
         );
 
         let actual_final_cycles = if opcode.code == brk.code {
-            cpu.get_cycles() - start_cycles
+            cpu_cycles
         } else {
-            cpu.get_cycles() - start_cycles - brk.cycles as u64
+            cpu_cycles - brk.cycles as u64
         };
 
-        run_result.and_then(|_| {
+        cpu_run_result.and_then(|_| {
             if actual_final_cycles == expected_final_cycles {
                 return Ok(());
             } else {
@@ -2324,7 +2301,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x69, 0x82, 0x00]);
         cpu.reset();
         cpu.register_a = 0x7F;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0x01, cpu.register_a);
         assert!(CARRY_FLAG & cpu.status == CARRY_FLAG);
         assert!(OVERFLOW_FLAG & cpu.status == 0);
@@ -2343,7 +2320,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x69, 0x03, 0x00]);
         cpu.reset();
         cpu.register_a = 0x7F;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0x82, cpu.register_a);
         assert!(CARRY_FLAG & cpu.status == 0);
         assert!(OVERFLOW_FLAG & cpu.status == OVERFLOW_FLAG);
@@ -2362,7 +2339,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x69, 0x03, 0x00]);
         cpu.reset();
         cpu.register_a = 0x8F;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0x92, cpu.register_a);
         assert!(CARRY_FLAG & cpu.status == 0);
         assert!(OVERFLOW_FLAG & cpu.status == 0);
@@ -2381,7 +2358,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x69, 0x01, 0x00]);
         cpu.reset();
         cpu.register_a = 0xFF;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0x00, cpu.register_a);
         assert!(CARRY_FLAG & cpu.status == CARRY_FLAG);
         assert!(OVERFLOW_FLAG & cpu.status == 0);
@@ -2401,7 +2378,7 @@ mod test {
         cpu.reset();
         cpu.register_a = 0xFE;
         cpu.status = cpu.status | CARRY_FLAG;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0x00, cpu.register_a);
         assert!(CARRY_FLAG & cpu.status == CARRY_FLAG);
         assert!(OVERFLOW_FLAG & cpu.status == 0);
@@ -2419,7 +2396,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x29, 0xF1, 0x00]);
         cpu.reset();
         cpu.register_a = 0xB3;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0xB1, cpu.register_a);
         assert!(NEGATIVE_FLAG & cpu.status == NEGATIVE_FLAG);
     }
@@ -2436,7 +2413,7 @@ mod test {
         cpu.mem_write(0xa2f1, 0x03);
         cpu.reset();
         cpu.register_a = 0xB0;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0x00, cpu.register_a);
         assert!(NEGATIVE_FLAG & cpu.status == 0);
         assert!(ZERO_FLAG & cpu.status == ZERO_FLAG);
@@ -2453,7 +2430,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x0a, 0x00]);
         cpu.reset();
         cpu.register_a = 0xB2;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0x64, cpu.register_a);
         assert!(NEGATIVE_FLAG & cpu.status == 0);
         assert!(ZERO_FLAG & cpu.status == 0);
@@ -2471,7 +2448,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x0E, 0xF1, 0xA2, 0x00]);
         cpu.reset();
         cpu.mem_write_u16(0xA2F1, 0x43);
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0x86, cpu.mem_read_u16(0xA2F1).unwrap());
         assert!(NEGATIVE_FLAG & cpu.status == NEGATIVE_FLAG);
         assert!(ZERO_FLAG & cpu.status == 0);
@@ -2492,9 +2469,9 @@ mod test {
         bus.borrow_mut().mem_write_vec(0x8100, &vec![0x85, 0xA1]); //3 cycles 
         cpu.reset();
         cpu.register_a = 240;
-        let _ = cpu.run_with_callback(|cpu| tracing_callback(cpu)).unwrap(); //brk is 7 cycles
+        let cycles = run_cpu(&mut cpu).unwrap(); //brk is 7 cycles
         assert_eq!(240, bus.borrow_mut().mem_read(0x00A1).unwrap());
-        assert_eq!(14, cpu.get_cycles());
+        assert_eq!(14 + 1, cycles); //one extra cycle to exit
     }
 
     #[test]
@@ -2511,9 +2488,9 @@ mod test {
         cpu.reset();
         cpu.status = cpu.status | CARRY_FLAG;
         cpu.register_a = 240;
-        let _ = cpu.run_with_callback(|cpu| tracing_callback(cpu));
+        let cycles = run_cpu(&mut cpu).unwrap();
         assert_eq!(0, bus.borrow_mut().mem_read(0x00A1).unwrap());
-        assert_eq!(9, cpu.get_cycles());
+        assert_eq!(9 + 1, cycles); //one extra cycle to exit
     }
 
     #[test]
@@ -2528,7 +2505,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0xB0, 0x04, 0x00, 0x00, 0x00, 0x00, 0x85, 0xA1]);
         cpu.reset();
         cpu.register_a = 240;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0, cpu.mem_read(0x00A1).unwrap());
     }
 
@@ -2545,7 +2522,7 @@ mod test {
         cpu.reset();
         cpu.status = cpu.status | CARRY_FLAG;
         cpu.register_a = 240;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(240, cpu.mem_read(0x00A1).unwrap());
     }
 
@@ -2561,7 +2538,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0xF0, 0x04, 0x00, 0x00, 0x00, 0x00, 0x85, 0xA1]);
         cpu.reset();
         cpu.register_a = 240;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0, cpu.mem_read(0x00A1).unwrap());
     }
 
@@ -2578,7 +2555,7 @@ mod test {
         cpu.reset();
         cpu.status = cpu.status | ZERO_FLAG;
         cpu.register_a = 240;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(240, cpu.mem_read(0x00A1).unwrap());
     }
 
@@ -2595,7 +2572,7 @@ mod test {
         cpu.reset();
         cpu.mem_write(0xA1, 0b1001_0110);
         cpu.register_a = 0b0110_1001;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.status & ZERO_FLAG == ZERO_FLAG);
         assert!(cpu.status & NEGATIVE_FLAG == NEGATIVE_FLAG);
         assert!(cpu.status & OVERFLOW_FLAG == 0);
@@ -2614,7 +2591,7 @@ mod test {
         cpu.reset();
         cpu.mem_write_u16(0x0FA1, 0b0101_0110);
         cpu.register_a = 0b1110_1001;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.status & ZERO_FLAG == 0);
         assert!(cpu.status & NEGATIVE_FLAG == 0);
         assert!(cpu.status & OVERFLOW_FLAG == OVERFLOW_FLAG);
@@ -2632,7 +2609,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x30, 0x04, 0x00, 0x00, 0x00, 0x00, 0x85, 0xA1]);
         cpu.reset();
         cpu.register_a = 240;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0, cpu.mem_read(0x00A1).unwrap());
     }
 
@@ -2649,7 +2626,7 @@ mod test {
         cpu.reset();
         cpu.status = cpu.status | NEGATIVE_FLAG;
         cpu.register_a = 240;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(240, cpu.mem_read(0x00A1).unwrap());
     }
 
@@ -2665,7 +2642,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0xd0, 0x04, 0x00, 0x00, 0x00, 0x00, 0x85, 0xA1]);
         cpu.reset();
         cpu.register_a = 240;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(240, cpu.mem_read(0x00A1).unwrap());
     }
 
@@ -2682,7 +2659,7 @@ mod test {
         cpu.reset();
         cpu.status = cpu.status | ZERO_FLAG;
         cpu.register_a = 240;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0, cpu.mem_read(0x00A1).unwrap());
     }
 
@@ -2698,7 +2675,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x10, 0x04, 0x00, 0x00, 0x00, 0x00, 0x85, 0xA1]);
         cpu.reset();
         cpu.register_a = 240;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(240, cpu.mem_read(0x00A1).unwrap());
     }
 
@@ -2715,7 +2692,7 @@ mod test {
         cpu.reset();
         cpu.status = cpu.status | NEGATIVE_FLAG;
         cpu.register_a = 240;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0, cpu.mem_read(0x00A1).unwrap());
     }
 
@@ -2732,7 +2709,7 @@ mod test {
         cpu.reset();
         cpu.status = cpu.status | OVERFLOW_FLAG;
         cpu.register_a = 240;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0, cpu.mem_read(0x00A1).unwrap());
     }
 
@@ -2748,7 +2725,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x50, 0x04, 0x00, 0x00, 0x00, 0x00, 0x85, 0xA1]);
         cpu.reset();
         cpu.register_a = 240;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(240, cpu.mem_read(0x00A1).unwrap());
     }
 
@@ -2765,7 +2742,7 @@ mod test {
         cpu.reset();
         cpu.status = cpu.status | OVERFLOW_FLAG;
         cpu.register_a = 240;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(240, cpu.mem_read(0x00A1).unwrap());
     }
 
@@ -2781,7 +2758,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x70, 0x04, 0x00, 0x00, 0x00, 0x00, 0x85, 0xA1]);
         cpu.reset();
         cpu.register_a = 240;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0, cpu.mem_read(0x00A1).unwrap());
     }
 
@@ -2796,7 +2773,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x18, 0x00]);
         cpu.reset();
         cpu.status = cpu.status | CARRY_FLAG;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.status & CARRY_FLAG == 0);
     }
 
@@ -2811,7 +2788,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0xD8, 0x00]);
         cpu.reset();
         cpu.status = cpu.status | DECIMAL_MODE_FLAG;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.status & DECIMAL_MODE_FLAG == 0);
     }
 
@@ -2826,7 +2803,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x58, 0x00]);
         cpu.reset();
         cpu.status = cpu.status | INTERRUPT_DISABLE_FLAG;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.status & INTERRUPT_DISABLE_FLAG == 0);
     }
 
@@ -2841,7 +2818,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0xb8, 0x00]);
         cpu.reset();
         cpu.status = cpu.status | OVERFLOW_FLAG;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.status & OVERFLOW_FLAG == 0);
     }
 
@@ -2857,7 +2834,7 @@ mod test {
         cpu.mem_write(0xAAAA, 10);
         cpu.reset();
         cpu.register_a = 10;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.status & CARRY_FLAG == CARRY_FLAG);
         assert!(cpu.status & ZERO_FLAG == ZERO_FLAG);
         assert!(cpu.status & OVERFLOW_FLAG == 0);
@@ -2875,7 +2852,7 @@ mod test {
         cpu.mem_write(0xAAAA, 10);
         cpu.reset();
         cpu.register_a = 0;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.status & CARRY_FLAG == 0);
         assert!(cpu.status & ZERO_FLAG == 0);
         assert!(cpu.status & NEGATIVE_FLAG == NEGATIVE_FLAG);
@@ -2893,7 +2870,7 @@ mod test {
         cpu.mem_write(0xAAAA, 10);
         cpu.reset();
         cpu.register_x = 10;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.status & CARRY_FLAG == CARRY_FLAG);
         assert!(cpu.status & ZERO_FLAG == ZERO_FLAG);
         assert!(cpu.status & OVERFLOW_FLAG == 0);
@@ -2911,7 +2888,7 @@ mod test {
         cpu.mem_write(0xAAAA, 10);
         cpu.reset();
         cpu.register_x = 0;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.status & CARRY_FLAG == 0);
         assert!(cpu.status & ZERO_FLAG == 0);
         assert!(cpu.status & NEGATIVE_FLAG == NEGATIVE_FLAG);
@@ -2928,7 +2905,7 @@ mod test {
         cpu.mem_write(0xAAAA, 10);
         cpu.reset();
         cpu.register_y = 10;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.status & CARRY_FLAG == CARRY_FLAG);
         assert!(cpu.status & ZERO_FLAG == ZERO_FLAG);
         assert!(cpu.status & OVERFLOW_FLAG == 0);
@@ -2946,7 +2923,7 @@ mod test {
         cpu.mem_write(0xAAAA, 10);
         cpu.reset();
         cpu.register_y = 0;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.status & CARRY_FLAG == 0);
         assert!(cpu.status & ZERO_FLAG == 0);
         assert!(cpu.status & NEGATIVE_FLAG == NEGATIVE_FLAG);
@@ -2963,7 +2940,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0xCE, 0xAA, 0xAA, 0x00]);
         cpu.mem_write(0xAAAA, 0);
         cpu.reset();
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(cpu.mem_read(0xAAAA).unwrap(), 0xFF);
         assert!(cpu.status & ZERO_FLAG == 0);
         assert!(cpu.status & NEGATIVE_FLAG == NEGATIVE_FLAG);
@@ -2980,7 +2957,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0xCA, 0x00]);
         cpu.reset();
         cpu.register_x = 1;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(cpu.register_x, 0);
         assert!(cpu.status & ZERO_FLAG == ZERO_FLAG);
         assert!(cpu.status & NEGATIVE_FLAG == 0);
@@ -2997,7 +2974,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x88, 0x00]);
         cpu.reset();
         cpu.register_y = 0xF9;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(cpu.register_y, 0xF8);
         assert!(cpu.status & ZERO_FLAG == 0);
         assert!(cpu.status & NEGATIVE_FLAG == NEGATIVE_FLAG);
@@ -3015,7 +2992,7 @@ mod test {
         cpu.reset();
         cpu.mem_write(0xBAA4, 0b1001_1100);
         cpu.register_a = 0b0001_0111;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
 
         assert_eq!(0b1000_1011, cpu.register_a);
         assert!(cpu.status & NEGATIVE_FLAG == NEGATIVE_FLAG);
@@ -3034,7 +3011,7 @@ mod test {
         cpu.reset();
         cpu.mem_write(0xBAA4, 0b1001_0111);
         cpu.register_a = 0b1001_0111;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
 
         assert_eq!(0, cpu.register_a);
         assert!(cpu.status & NEGATIVE_FLAG == 0);
@@ -3052,7 +3029,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0xEE, 0xA4, 0xBA, 0x00]);
         cpu.reset();
         cpu.mem_write(0xBAA4, 250);
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
 
         let value = cpu.mem_read(0xBAA4).unwrap();
 
@@ -3071,7 +3048,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0xC8, 0x00]);
         cpu.reset();
         cpu.register_y = 100;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
 
         assert_eq!(101, cpu.register_y);
         assert!(cpu.register_y & NEGATIVE_FLAG == 0);
@@ -3091,7 +3068,7 @@ mod test {
         cpu.mem_write(0xBCAC, 0xE8); // INX
         cpu.mem_write(0xBCAD, 0x00); // BRK
         cpu.reset();
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
 
         assert_eq!(2, cpu.register_x);
     }
@@ -3111,7 +3088,7 @@ mod test {
         cpu.mem_write(0x0202, 0xE8); // INX
         cpu.mem_write(0x0203, 0x00); // BRK
         cpu.reset();
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
 
         assert_eq!(2, cpu.register_x);
     }
@@ -3132,9 +3109,9 @@ mod test {
         //increment x, branch if negative else loop back
         cpu.mem_write_vec(0x0201, &vec![0xE8, 0x30, 0x04, 0x6C, 0xAB, 0xBC, 0x00]);
         cpu.reset();
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(cpu.register_x, 128);
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
     }
 
     #[test]
@@ -3151,10 +3128,7 @@ mod test {
         bus.borrow_mut().mem_write(0xBCAC, 0xE8); // INX
         bus.borrow_mut().mem_write(0xBCAD, 0x00); // BRK
         cpu.reset();
-        let _ = cpu.run_with_callback(|cpu| {
-            tracing_callback(cpu);
-        });
-
+        let _ = run_cpu(&mut cpu);
         assert_eq!(STACK_RESET.wrapping_sub(5) as u8, cpu.stack_pointer); // 2 (jsr) + 3 (brk)
         assert_eq!(
             0x8002,
@@ -3173,7 +3147,7 @@ mod test {
         );
         cpu.load_with_start_address(0x8000, vec![0xA2, 21, 0x00]);
         cpu.reset();
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
 
         assert_eq!(21, cpu.register_x)
     }
@@ -3188,7 +3162,7 @@ mod test {
         );
         cpu.load_with_start_address(0x8000, vec![0xA0, 21, 0x00]);
         cpu.reset();
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
 
         assert_eq!(21, cpu.register_y)
     }
@@ -3204,7 +3178,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x4A, 0x00]);
         cpu.reset();
         cpu.register_a = 0xB2;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0x59, cpu.register_a);
         assert!(NEGATIVE_FLAG & cpu.status == 0);
         assert!(ZERO_FLAG & cpu.status == 0);
@@ -3222,7 +3196,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x4E, 0xF1, 0xA2, 0x00]);
         cpu.reset();
         cpu.mem_write_u16(0xA2F1, 0x43);
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0x21, cpu.mem_read_u16(0xA2F1).unwrap());
         assert!(NEGATIVE_FLAG & cpu.status == 0);
         assert!(ZERO_FLAG & cpu.status == 0);
@@ -3241,7 +3215,7 @@ mod test {
         cpu.reset();
         cpu.register_a = 0b1010_0010;
         cpu.mem_write_u16(0xA2F1, 0b0011_1010);
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0b1011_1010, cpu.register_a);
         assert!(NEGATIVE_FLAG & cpu.status == NEGATIVE_FLAG);
         assert!(ZERO_FLAG & cpu.status == 0);
@@ -3258,7 +3232,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x48, 0x00]);
         cpu.reset();
         cpu.register_a = 0xAA;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0xAA, cpu.mem_read((STACK_RESET as u16) + STACK).unwrap());
     }
 
@@ -3273,7 +3247,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x08, 0x00]);
         cpu.reset();
         cpu.status = 0xAC;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(
             0xAC | BREAK_FLAG | BREAK2_FLAG,
             cpu.mem_read((STACK_RESET as u16) + STACK).unwrap()
@@ -3291,7 +3265,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x68, 0x00]);
         cpu.reset();
         cpu.stack_push(0x87);
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0x87, cpu.register_a);
         assert!(NEGATIVE_FLAG & cpu.status == NEGATIVE_FLAG);
         assert!(ZERO_FLAG & cpu.status == 0);
@@ -3309,7 +3283,7 @@ mod test {
         cpu.reset();
         cpu.status = 0x6F;
         cpu.stack_pointer = 0xFB;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0x7F, cpu.register_a);
         //assert!(NEGATIVE_FLAG & cpu.status == NEGATIVE_FLAG);
         //assert!(ZERO_FLAG & cpu.status == 0);
@@ -3326,7 +3300,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x28, 0x00]);
         cpu.reset();
         cpu.stack_push(0x87);
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0x87 & !BREAK_FLAG | BREAK2_FLAG, cpu.status);
     }
 
@@ -3340,7 +3314,7 @@ mod test {
         );
         cpu.load_with_start_address(0x8000, vec![0xEA, 0x00]);
         cpu.reset();
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0, cpu.register_a);
     }
 
@@ -3356,7 +3330,7 @@ mod test {
         cpu.reset();
         cpu.status = CARRY_FLAG;
         cpu.register_a = 0b1001_0010;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0b0010_0101, cpu.register_a);
         assert!(cpu.status & CARRY_FLAG == CARRY_FLAG);
         assert!(cpu.status & NEGATIVE_FLAG == 0);
@@ -3374,7 +3348,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x2E, 0xAA, 0xAA, 0x00]);
         cpu.reset();
         cpu.mem_write_u16(0xAAAA, 0b0001_0010);
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0b0010_0100, cpu.mem_read_u16(0xAAAA).unwrap());
         assert!(cpu.status & CARRY_FLAG == 0);
         assert!(cpu.status & NEGATIVE_FLAG == 0);
@@ -3393,7 +3367,7 @@ mod test {
         cpu.reset();
         cpu.status = CARRY_FLAG;
         cpu.register_a = 0b1001_0010;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0b1100_1001, cpu.register_a);
         assert!(cpu.status & CARRY_FLAG == 0);
         assert!(cpu.status & NEGATIVE_FLAG == NEGATIVE_FLAG);
@@ -3411,7 +3385,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x6E, 0xAA, 0xAA, 0x00]);
         cpu.reset();
         cpu.mem_write_u16(0xAAAA, 0b1001_0011);
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0b0100_1001, cpu.mem_read_u16(0xAAAA).unwrap());
         assert!(cpu.status & CARRY_FLAG == CARRY_FLAG);
         assert!(cpu.status & NEGATIVE_FLAG == 0);
@@ -3442,7 +3416,7 @@ mod test {
                 0x00, //BRK
             ],
         );
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(1, cpu.register_x);
         assert_eq!(0x00, cpu.register_a); //hi bytes
         assert_eq!(
@@ -3475,7 +3449,7 @@ mod test {
                 0x40,
             ],
         ); //BRK
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(1, cpu.register_x);
         assert_eq!(0x00, cpu.register_a); //hi bytes
     }
@@ -3494,9 +3468,7 @@ mod test {
         bus.borrow_mut().mem_write(0xBCAC, 0xE8); // INX
         bus.borrow_mut().mem_write(0xBCAD, 0x60); // RTS, what we are testing
         cpu.reset();
-        let _ = cpu.run_with_callback(|cpu| {
-            tracing_callback(cpu);
-        });
+        let _ = run_cpu(&mut cpu);
 
         assert_eq!((STACK_RESET as u8).wrapping_sub(3), cpu.stack_pointer); //3 because the BRK
         //instruction adds sp (2) and status (1) to the stack before we quit
@@ -3515,7 +3487,7 @@ mod test {
         cpu.reset();
         cpu.register_a = 0x7F;
         cpu.status = cpu.status | CARRY_FLAG;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0x0F, cpu.register_a);
         assert!(CARRY_FLAG & cpu.status == CARRY_FLAG);
         assert!(OVERFLOW_FLAG & cpu.status == 0);
@@ -3535,7 +3507,7 @@ mod test {
         cpu.reset();
         cpu.register_a = 0x80;
         cpu.status = cpu.status | CARRY_FLAG;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0x7F, cpu.register_a);
         assert!(CARRY_FLAG & cpu.status == CARRY_FLAG);
         assert!(OVERFLOW_FLAG & cpu.status == OVERFLOW_FLAG);
@@ -3556,7 +3528,7 @@ mod test {
         cpu.reset();
         cpu.register_a = 0x8F;
         cpu.status = cpu.status | CARRY_FLAG;
-        let _ = cpu.run_with_callback(|cpu| tracing_callback(cpu));
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0x8C, cpu.register_a);
         assert!(CARRY_FLAG & cpu.status == CARRY_FLAG);
         assert!(OVERFLOW_FLAG & cpu.status == 0);
@@ -3576,7 +3548,7 @@ mod test {
         cpu.reset();
         cpu.register_a = 0x81;
         cpu.status = cpu.status | CARRY_FLAG;
-        let _ = cpu.run_with_callback(|_| {}).unwrap();
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0x00, cpu.register_a);
         assert!(CARRY_FLAG & cpu.status == CARRY_FLAG);
         assert!(OVERFLOW_FLAG & cpu.status == 0);
@@ -3596,7 +3568,7 @@ mod test {
         cpu.reset();
         cpu.register_a = 0x00;
         cpu.status = cpu.status | CARRY_FLAG;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0xFF, cpu.register_a);
         assert!(CARRY_FLAG & cpu.status == 0);
         assert!(OVERFLOW_FLAG & cpu.status == 0);
@@ -3614,7 +3586,7 @@ mod test {
         );
         cpu.load_with_start_address(0x8000, vec![0x38, 0x00]);
         cpu.reset();
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(CARRY_FLAG, cpu.status & CARRY_FLAG);
     }
 
@@ -3628,7 +3600,7 @@ mod test {
         );
         cpu.load_with_start_address(0x8000, vec![0xF8, 0x00]);
         cpu.reset();
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(DECIMAL_MODE_FLAG, DECIMAL_MODE_FLAG & cpu.status);
     }
 
@@ -3642,7 +3614,7 @@ mod test {
         );
         cpu.load_with_start_address(0x8000, vec![0x78, 0x00]);
         cpu.reset();
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(INTERRUPT_DISABLE_FLAG, cpu.status & INTERRUPT_DISABLE_FLAG);
     }
 
@@ -3657,7 +3629,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x85, 0xa1, 0x00]);
         cpu.reset();
         cpu.register_a = 240;
-        let _ = cpu.run_with_callback(|cpu| tracing_callback(cpu));
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.mem_read(0x00a1).unwrap() == 240);
     }
 
@@ -3673,7 +3645,7 @@ mod test {
         cpu.reset();
         cpu.register_a = 240;
         cpu.register_x = 2;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.mem_read(0x00a1).unwrap() == 240);
     }
 
@@ -3688,7 +3660,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x8d, 0xa1, 0xdd, 0x00]);
         cpu.reset();
         cpu.register_a = 0xf0;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.mem_read(0xdda1).unwrap() == 0xf0);
     }
 
@@ -3704,7 +3676,7 @@ mod test {
         cpu.reset();
         cpu.register_a = 0xf0;
         cpu.register_x = 0x11;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.mem_read(0xdda1).unwrap() == 0xf0);
     }
 
@@ -3720,7 +3692,7 @@ mod test {
         cpu.reset();
         cpu.register_a = 0xf0;
         cpu.register_y = 0x11;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.mem_read(0xdda1).unwrap() == 0xf0);
     }
 
@@ -3738,7 +3710,7 @@ mod test {
         cpu.reset();
         cpu.register_x = 0x04;
         cpu.register_a = 0xf0;
-        let _ = cpu.run_with_callback(|_| {}).unwrap();
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.mem_read(0xdda1).unwrap() == 0xf0);
     }
 
@@ -3756,7 +3728,7 @@ mod test {
         cpu.reset();
         cpu.register_y = 0x04;
         cpu.register_a = 0xf0;
-        let _ = cpu.run_with_callback(|_| {}).unwrap();
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0xf0, cpu.mem_read(0xDDA5).unwrap());
     }
 
@@ -3771,7 +3743,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x8E, 0xAA, 0xBB, 0x00]);
         cpu.reset();
         cpu.register_x = 0x05;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(cpu.mem_read(0xBBAA).unwrap(), 0x05);
     }
 
@@ -3786,7 +3758,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x8C, 0xAA, 0xBB, 0x00]);
         cpu.reset();
         cpu.register_y = 0x05;
-        let _ = cpu.run_with_callback(|_| {}).unwrap();
+        let _ = run_cpu(&mut cpu);
         assert_eq!(cpu.mem_read(0xBBAA).unwrap(), 0x05);
     }
 
@@ -3801,7 +3773,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0xaa, 0x00]);
         cpu.reset();
         cpu.register_a = 5;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(cpu.register_x, 0x05);
         assert!(cpu.status & 0b0000_0010 == 0b00);
         assert!(cpu.status & 0b1000_0000 == 0);
@@ -3818,7 +3790,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0xaa, 0x00]);
         cpu.reset();
         cpu.register_a = 0;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.status & 0b0000_0010 == 0b10);
     }
 
@@ -3833,7 +3805,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0xaa, 0x00]);
         cpu.reset();
         cpu.register_a = 250;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.status & 0b1000_0000 == 0b1000_0000);
     }
 
@@ -3848,7 +3820,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0xA8, 0x00]);
         cpu.reset();
         cpu.register_a = 5;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(cpu.register_y, 0x05);
         assert!(cpu.status & 0b0000_0010 == 0b00);
         assert!(cpu.status & 0b1000_0000 == 0);
@@ -3865,7 +3837,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0xA8, 0x00]);
         cpu.reset();
         cpu.register_a = 0;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.status & 0b0000_0010 == 0b10);
     }
 
@@ -3880,7 +3852,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0xA8, 0x00]);
         cpu.reset();
         cpu.register_a = 250;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.status & 0b1000_0000 == 0b1000_0000);
     }
 
@@ -3894,7 +3866,7 @@ mod test {
         );
         cpu.load_with_start_address(0x8000, vec![0xBA, 0x00]);
         cpu.reset();
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.register_x == STACK_RESET);
     }
 
@@ -3909,7 +3881,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x8A, 0x00]);
         cpu.reset();
         cpu.register_x = 0x05;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(cpu.register_a, 0x05);
     }
 
@@ -3933,7 +3905,7 @@ mod test {
         );
         cpu.reset();
         cpu.register_x = 0xFF;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(0x01, cpu.mem_read(0xAAAA).unwrap());
         assert_eq!(0xFF, cpu.register_x)
     }
@@ -3949,7 +3921,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x98, 0x00]);
         cpu.reset();
         cpu.register_y = 0x05;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(cpu.register_a, 0x05);
     }
 
@@ -3963,7 +3935,7 @@ mod test {
         );
         cpu.load_with_start_address(0x8000, vec![0xa9, 0x05, 0x00]);
         cpu.reset();
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(cpu.register_a, 0x05);
         assert!(cpu.status & 0b0000_0010 == 0b00);
         assert!(cpu.status & 0b1000_0000 == 0);
@@ -3979,7 +3951,7 @@ mod test {
         );
         cpu.load_with_start_address(0x8000, vec![0xa9, 0x00, 0x00]);
         cpu.reset();
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.status & 0b0000_0010 == 0b10);
     }
 
@@ -3993,7 +3965,7 @@ mod test {
         );
         cpu.load_with_start_address(0x8000, vec![0xa9, 0x90, 0x00]);
         cpu.reset();
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.status & 0b1000_0000 == 0b1000_0000);
     }
 
@@ -4008,7 +3980,7 @@ mod test {
         cpu.mem_write(0x00a1, 240);
         cpu.load_with_start_address(0x8000, vec![0xa5, 0xa1, 0x00]);
         cpu.reset();
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.register_a == 240);
     }
 
@@ -4024,7 +3996,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0xb5, 0x9f, 0x00]);
         cpu.reset();
         cpu.register_x = 2;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.register_a == 240);
     }
 
@@ -4039,7 +4011,7 @@ mod test {
         cpu.mem_write(0xdda1, 0xf0);
         cpu.load_with_start_address(0x8000, vec![0xad, 0xa1, 0xdd, 0x00]);
         cpu.reset();
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.register_a == 0xf0);
     }
 
@@ -4055,7 +4027,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0xbd, 0x90, 0xdd, 0x00]);
         cpu.reset();
         cpu.register_x = 0x11;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.register_a == 0xf0);
     }
 
@@ -4071,7 +4043,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0xb9, 0x90, 0xdd, 0x00]);
         cpu.reset();
         cpu.register_y = 0x11;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.register_a == 0xf0);
     }
 
@@ -4089,7 +4061,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0xa1, 0xe0, 0x00]);
         cpu.reset();
         cpu.register_x = 0x04;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.register_a == 0xf0);
     }
 
@@ -4107,7 +4079,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0xb1, 0xe0, 0x00]);
         cpu.reset();
         cpu.register_y = 0x04;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.register_a == 0xf0);
     }
 
@@ -4122,7 +4094,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0xe8, 0x00]);
         cpu.reset();
         cpu.register_x = 67;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(cpu.register_x, 68);
         assert!(cpu.status & 0b0000_0010 == 0b00);
         assert!(cpu.status & 0b1000_0000 == 0);
@@ -4139,7 +4111,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0xe8, 0x00]);
         cpu.reset();
         cpu.register_x = 255;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.status & 0b0000_0010 == 0b10);
     }
 
@@ -4154,7 +4126,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0xe8, 0x00]);
         cpu.reset();
         cpu.register_x = 250;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert!(cpu.status & 0b1000_0000 == 0b1000_0000);
     }
 
@@ -4168,7 +4140,7 @@ mod test {
         );
         cpu.load_with_start_address(0x8000, vec![0xa9, 0xc0, 0xaa, 0xe8, 0x00]);
         cpu.reset();
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(cpu.register_x, 0xc1)
     }
 
@@ -4183,7 +4155,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0xe8, 0xe8, 0x00]);
         cpu.reset();
         cpu.register_x = 0xff;
-        let _ = cpu.run_with_callback(|_| {});
+        let _ = run_cpu(&mut cpu);
         assert_eq!(cpu.register_x, 1)
     }
 }

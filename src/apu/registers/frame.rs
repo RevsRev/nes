@@ -13,7 +13,6 @@ pub struct FrameCounter {
     data: u8,
     frame_cycles: u32,
     written_during_cycle: bool,
-    reset_timer_countdown: u64,
     clock: Option<FrameClock>,
     interrupt: Rc<RefCell<InterruptImpl>>,
     irq_flag: bool,
@@ -30,7 +29,6 @@ impl FrameCounter {
             data: 0,
             frame_cycles: 0,
             written_during_cycle: false,
-            reset_timer_countdown: 0,
             clock: Option::None,
             interrupt: interrupt,
             irq_flag: false,
@@ -43,8 +41,6 @@ impl FrameCounter {
         if data & 0b0100_0000 == 0b0100_0000 {
             self.set_irq_flag(false);
         }
-
-        self.reset_timer_countdown = 2;
 
         self.data = data;
         old_value
@@ -65,16 +61,14 @@ impl FrameCounter {
         self.clock.take()
     }
 
-    pub fn step(&mut self) {
-        if self.reset_timer_countdown > 0 {
-            self.reset_timer_countdown = self.reset_timer_countdown - 1;
-            if self.reset_timer_countdown == 0 {
-                if self.data & MODE == MODE {
-                    self.clock = Option::Some(FrameClock::HALF);
-                }
-                self.frame_cycles = 0;
-            }
+    pub fn reset(&mut self) {
+        if self.data & MODE == MODE {
+            self.clock = Option::Some(FrameClock::HALF);
         }
+        self.frame_cycles = 0;
+    }
+
+    pub fn step(&mut self) {
         if self.data & MODE == MODE {
             self.five_step_clock()
         } else {

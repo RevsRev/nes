@@ -34,6 +34,7 @@ pub struct APU {
     mixer: Mixer,
 
     cpu_cycles: u8,
+    frame_countdown: u8,
     sequencer_cycles: u16,
     tracing: bool,
     trace: Option<ApuTrace>,
@@ -67,6 +68,7 @@ impl APU {
             interrupt: interrupt,
             mixer: Mixer::new(),
             cpu_cycles: 0,
+            frame_countdown: 0,
             sequencer_cycles: 0,
             tracing: false,
             trace: None,
@@ -79,8 +81,8 @@ impl APU {
     }
 
     pub fn write_to_frame_counter(&mut self, data: u8) -> u8 {
-        let r = self.frame.borrow_mut().write(data);
-        r
+        self.frame_countdown = 0xFF;
+        self.frame.borrow_mut().write(data)
     }
 
     pub fn output(&self) -> f32 {
@@ -115,24 +117,43 @@ impl APU {
 }
 
 impl Tick for APU {
-    fn tick(&mut self) -> Result<(), String> {
-        if self.cpu_cycles.wrapping_add(1) % 2 == 0 {
-            self.frame.borrow_mut().step();
+    fn tick(&mut self, total_cpu_cycles: u64) -> Result<(), String> {
+        let cycle_mod = 0;
 
-            let emit_clock = self.frame.borrow_mut().emit_clock();
+        if self.frame_countdown == 0xFF {
+            self.frame_countdown = if total_cpu_cycles % 2 == cycle_mod {
+                2
+            } else {
+                3
+            };
+        }
 
-            match emit_clock {
-                Some(clock) => {
-                    self.pulse_1.borrow_mut().frame_clock(&clock);
-                    self.pulse_2.borrow_mut().frame_clock(&clock);
-                    self.triangle.borrow_mut().frame_clock(&clock);
-                }
-                None => {}
+        let mut should_step_frame = true;
+        if self.frame_countdown != 0 {
+            self.frame_countdown = self.frame_countdown - 1;
+            if self.frame_countdown == 0 {
+                self.frame.borrow_mut().reset();
+                should_step_frame = false;
             }
+        }
 
+        if total_cpu_cycles % 2 == cycle_mod {
+            if should_step_frame {
+                self.frame.borrow_mut().step();
+            }
+        }
+
+        if let Some(clock) = self.frame.borrow_mut().emit_clock() {
+            self.pulse_1.borrow_mut().frame_clock(&clock);
+            self.pulse_2.borrow_mut().frame_clock(&clock);
+            self.triangle.borrow_mut().frame_clock(&clock);
+        };
+
+        if total_cpu_cycles % 2 == cycle_mod {
             self.pulse_1.borrow_mut().decrement_timer();
             self.pulse_2.borrow_mut().decrement_timer();
         }
+
         self.triangle.borrow_mut().decrement_timer();
         self.mixer.output(
             self.pulse_1.borrow_mut().get_out(),

@@ -71,7 +71,7 @@ pub struct PPU {
 }
 
 impl Tick for PPU {
-    fn tick(&mut self) -> Result<(), String> {
+    fn tick(&mut self, total_cpu_cycles: u64) -> Result<(), String> {
         self.total_ppu_cycles += 1;
         // self.frame_cycles += cycles as usize;
         self.new_frame = false;

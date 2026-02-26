@@ -5,13 +5,13 @@ use crate::{
 use std::fmt;
 
 pub struct NesTrace {
+    pub master_clock: u64,
     pub cpu_trace: CpuTrace,
     pub ppu_trace: PpuTrace,
     pub apu_trace: ApuTrace,
 }
 
 pub struct CpuTrace {
-    pub cpu_cycles: u64,
     pub pc: u16,
     pub op_code: OpCode,
     pub absolute_address: Option<u16>,
@@ -51,6 +51,10 @@ pub struct FrameTrace {
 }
 
 #[derive(Clone, Copy)]
+pub struct NesTraceOptions {
+    pub write_cpu_cycles: bool,
+}
+#[derive(Clone, Copy)]
 pub struct CpuTraceFormatOptions {
     pub write_break_2_flag: bool,
     pub write_cpu_cycles: bool,
@@ -64,6 +68,7 @@ pub struct PpuTraceFormatter {}
 pub struct ApuTraceFormatter {}
 
 pub struct NesTraceFormatter {
+    pub nes_options: NesTraceOptions,
     pub cpu_formatter: CpuTraceFormatter,
     pub ppu_formatter: Option<PpuTraceFormatter>,
     pub apu_formatter: Option<ApuTraceFormatter>,
@@ -74,6 +79,9 @@ impl NesTraceFormatter {
         use std::fmt::Write;
         let mut out = String::new();
 
+        if self.nes_options.write_cpu_cycles {
+            write!(out, "c{:<10}", nes_trace.master_clock / 3);
+        }
         let _ = write!(out, "{}", self.cpu_formatter.format(&nes_trace.cpu_trace));
 
         let _ = match self.ppu_formatter.as_ref() {
@@ -135,10 +143,6 @@ impl CpuTraceFormatter {
     pub fn format(&self, cpu_trace: &CpuTrace) -> String {
         use std::fmt::Write;
         let mut out = String::new();
-
-        if self.options.write_cpu_cycles {
-            write!(out, "c{:<10}", cpu_trace.cpu_cycles);
-        }
 
         let p = if self.options.write_break_2_flag {
             cpu_trace.status

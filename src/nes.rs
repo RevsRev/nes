@@ -11,15 +11,29 @@ use crate::interrupt::InterruptImpl;
 use crate::io::joypad::Joypad;
 use crate::ppu::PPU;
 use crate::rom::Rom;
-use crate::trace::{CpuTraceFormatOptions, CpuTraceFormatter, NesTrace, NesTraceFormatter};
+use crate::trace::{
+    CpuTrace, CpuTraceFormatOptions, CpuTraceFormatter, NesTrace, NesTraceFormatter,
+    NesTraceOptions,
+};
 use crate::traits::cpu::Cpu;
 use crate::traits::mos_65902::MOS6502;
 use crate::traits::tick::Tick;
 use crate::traits::tracing::Tracing;
 
+#[derive(PartialEq, PartialOrd)]
+pub enum TracingMode {
+    None,
+    Enabled,
+    MicroEnabled,
+}
+
 pub struct NES<'call, T: Cpu<BusImpl>> {
-    tracing: bool,
+    tracing: TracingMode,
+    format_options: NesTraceOptions,
     pub trace: Option<NesTrace>,
+
+    master_clock: u64,
+
     pub cpu: T,
     pub ppu: Rc<RefCell<PPU>>,
     pub apu: Rc<RefCell<APU>>,
@@ -37,7 +51,7 @@ impl<'call, T: Cpu<BusImpl>> fmt::Display for NES<'call, T> {
 pub fn nes_with_cpu_v2<'call, F>(
     rom: Rom,
     halt: Arc<AtomicBool>,
-    tracing: bool,
+    tracing: TracingMode,
     gameloop_callback: F,
 ) -> NES<'call, CpuV2<BusImpl>>
 where
@@ -62,25 +76,37 @@ where
         apu.clone(),
     )));
     let mut cpu = CpuV2::new(Rc::clone(&bus), interrupt_cpu, halt);
-    ppu.borrow_mut().set_tracing(tracing);
-    apu.borrow_mut().set_tracing(tracing);
-    cpu.set_tracing(tracing);
+    ppu.borrow_mut().set_tracing(tracing != TracingMode::None);
+    apu.borrow_mut().set_tracing(tracing != TracingMode::None);
+    cpu.set_tracing(tracing != TracingMode::None);
     cpu.reset();
+
+    let format_options = NesTraceOptions {
+        write_cpu_cycles: true,
+    };
+
+    let master_clock = 0;
 
     NES {
         cpu,
         ppu,
         apu,
         bus,
-        tracing: tracing,
+        master_clock,
+        tracing,
         trace: None,
+        format_options,
         gameloop_callback: Box::from(gameloop_callback),
     }
 }
 
 impl<'call, T: Cpu<BusImpl>> NES<'call, T> {
     pub fn set_tracing(&mut self, tracing: bool) {
-        self.tracing = tracing;
+        self.tracing = if tracing {
+            TracingMode::Enabled
+        } else {
+            TracingMode::None
+        };
         self.cpu.set_tracing(tracing);
         self.ppu.borrow_mut().set_tracing(tracing);
         self.apu.borrow_mut().set_tracing(tracing);
@@ -95,50 +121,103 @@ impl<'call, T: Cpu<BusImpl>> NES<'call, T> {
         //
         let mut take_first_ppu_trace = true;
 
+        if self.tracing == TracingMode::MicroEnabled {
+            self.ppu.borrow_mut().take_trace();
+            self.apu.borrow_mut().take_trace();
+        }
+
+        let mut master_clock_trace = self.master_clock;
+
         loop {
-            for master_clock in 0..12 {
-                if master_clock % 3 == 0 {
-                    self.cpu.tick()?;
-                    self.apu.borrow_mut().tick()?;
-                }
+            let cpu_cycle = self.master_clock / 3;
 
-                self.ppu.borrow_mut().tick()?;
+            if self.tracing == TracingMode::MicroEnabled {
+                match self.cpu.micro_trace() {
+                    Some(cpu_trace) => {
+                        let mut reads = cpu_trace.reads.clone();
+                        reads.resize(5, (0x0000, 0x00));
 
-                if take_first_ppu_trace && master_clock % 3 == 1 {
-                    take_first_ppu_trace = false;
-                    self.apu.borrow_mut().take_trace();
-                    self.ppu.borrow_mut().take_trace();
-                }
+                        // Copy writes and pad to 5
+                        let mut writes = cpu_trace.writes.clone();
+                        writes.resize(5, (0x0000, 0x00));
 
-                if master_clock % 3 == 1 && self.tracing {
-                    match self.cpu.take_trace() {
-                        Some(cpu_trace) => {
-                            let nes_trace = NesTrace {
-                                cpu_trace: cpu_trace,
-                                ppu_trace: self.ppu.borrow_mut().take_trace().unwrap(),
-                                apu_trace: self.apu.borrow_mut().take_trace().unwrap(),
-                            };
-                            trace_callback(&nes_trace);
-                            self.trace = Option::Some(nes_trace);
-                        }
-                        None => {}
+                        let nes_trace = NesTrace {
+                            master_clock: master_clock_trace,
+                            cpu_trace: CpuTrace {
+                                absolute_address: cpu_trace.absolute_address,
+                                pc: cpu_trace.pc,
+                                op_code: cpu_trace.op_code,
+                                register_a: cpu_trace.register_a,
+                                register_x: cpu_trace.register_x,
+                                register_y: cpu_trace.register_y,
+                                status: cpu_trace.status,
+                                stack: cpu_trace.stack,
+                                reads,
+                                writes,
+                            },
+                            ppu_trace: self.ppu.borrow_mut().take_trace().unwrap(),
+                            apu_trace: self.apu.borrow_mut().take_trace().unwrap(),
+                        };
+                        trace_callback(&nes_trace);
+                        master_clock_trace = self.master_clock;
+                        self.trace = Option::Some(nes_trace);
                     }
+                    None => {}
                 }
+            }
 
-                let new_frame = self.ppu.borrow_mut().new_frame;
-                if new_frame {
-                    (self.gameloop_callback)(
-                        &self.ppu.borrow_mut(),
-                        &self.apu.borrow_mut(),
-                        &mut self.bus.borrow_mut().joypad,
-                    )
+            if self.master_clock % 3 == 0 {
+                self.cpu.tick(cpu_cycle)?;
+            }
+
+            if self.master_clock % 3 == 2 {
+                self.apu.borrow_mut().tick(cpu_cycle)?;
+            }
+
+            self.ppu.borrow_mut().tick(cpu_cycle)?;
+
+            if take_first_ppu_trace && self.master_clock % 3 == 1 {
+                take_first_ppu_trace = false;
+                self.apu.borrow_mut().take_trace();
+                self.ppu.borrow_mut().take_trace();
+            }
+
+            if self.master_clock % 3 == 1 && self.tracing == TracingMode::Enabled {
+                match self.cpu.take_trace() {
+                    Some(cpu_trace) => {
+                        let nes_trace = NesTrace {
+                            master_clock: master_clock_trace,
+                            cpu_trace: cpu_trace,
+                            ppu_trace: self.ppu.borrow_mut().take_trace().unwrap(),
+                            apu_trace: self.apu.borrow_mut().take_trace().unwrap(),
+                        };
+                        trace_callback(&nes_trace);
+                        master_clock_trace = self.master_clock;
+                        self.trace = Option::Some(nes_trace);
+                    }
+                    None => {}
                 }
+            }
+
+            let new_frame = self.ppu.borrow_mut().new_frame;
+            if new_frame {
+                (self.gameloop_callback)(
+                    &self.ppu.borrow_mut(),
+                    &self.apu.borrow_mut(),
+                    &mut self.bus.borrow_mut().joypad,
+                )
             }
 
             if self.cpu.should_halt() {
                 return Ok(());
             }
+
+            self.master_clock = self.master_clock + 1;
         }
+    }
+
+    pub fn set_master_clock(&mut self, cycles: u64) {
+        self.master_clock = cycles;
     }
 }
 
@@ -155,7 +234,7 @@ mod test {
     use crate::rom::{self, Rom};
     use crate::trace::{
         ApuTraceFormatter, CpuTraceFormatOptions, CpuTraceFormatter, NesTraceFormatter,
-        PpuTraceFormatter,
+        NesTraceOptions, PpuTraceFormatter,
     };
     use crate::traits::cpu::Cpu;
     use crate::traits::mem::Mem;
@@ -201,7 +280,7 @@ mod test {
         return nes_with_cpu_v2(
             rom,
             Arc::clone(halt),
-            true,
+            super::TracingMode::Enabled,
             |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
         );
 
@@ -244,6 +323,7 @@ mod test {
         });
 
         let formatter = NesTraceFormatter {
+            nes_options: nes.format_options,
             cpu_formatter: CpuTraceFormatter {
                 options: nes.cpu.format_options(false, false),
             },
@@ -305,6 +385,7 @@ mod test {
         });
 
         let formatter = NesTraceFormatter {
+            nes_options: nes.format_options,
             cpu_formatter: CpuTraceFormatter {
                 options: nes.cpu.format_options(false, false),
             },
@@ -345,6 +426,7 @@ mod test {
         });
 
         let formatter = NesTraceFormatter {
+            nes_options: nes.format_options,
             cpu_formatter: CpuTraceFormatter {
                 options: nes.cpu.format_options(true, false),
             },
@@ -654,7 +736,7 @@ mod test {
                 register_a: 0,
                 register_x: 0,
                 status: 04,
-                stack_pointer: 0xFD,
+                stack_pointer: 0xF8,
                 ppu_frame_cycles: 25,
             }),
             265758,
@@ -697,7 +779,7 @@ mod test {
                 register_a: 0,
                 register_x: 0,
                 status: 04,
-                stack_pointer: 0xFD,
+                stack_pointer: 0xF6,
                 ppu_frame_cycles: 25,
             }),
             -1,
@@ -748,6 +830,7 @@ mod test {
         });
 
         let nes_formatter = NesTraceFormatter {
+            nes_options: nes.format_options,
             cpu_formatter: CpuTraceFormatter {
                 options: nes.cpu.format_options(false, true),
             },
@@ -811,7 +894,7 @@ mod test {
 
         match nes_init {
             Some(init) => {
-                nes.cpu.set_cycles(init.cycles);
+                nes.set_master_clock(3 * init.cycles);
                 nes.cpu.set_register_a(init.register_a);
                 nes.cpu.set_register_x(init.register_x);
                 nes.cpu.set_status(init.status);
@@ -839,6 +922,7 @@ mod test {
         });
 
         let nes_tr_formatter = NesTraceFormatter {
+            nes_options: nes.format_options,
             cpu_formatter: CpuTraceFormatter {
                 options: nes.cpu.format_options(false, true),
             },

@@ -57,6 +57,10 @@ impl FrameCounter {
         retval
     }
 
+    pub fn pending_frame_clock(&self) -> bool {
+        self.clock.is_some()
+    }
+
     pub fn emit_clock(&mut self) -> Option<FrameClock> {
         self.clock.take()
     }

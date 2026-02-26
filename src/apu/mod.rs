@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, future::pending, rc::Rc};
 
 use crate::{
     apu::{
@@ -35,6 +35,7 @@ pub struct APU {
 
     cpu_cycles: u8,
     frame_countdown: u8,
+    jitter: u64,
     sequencer_cycles: u16,
     tracing: bool,
     trace: Option<ApuTrace>,
@@ -68,6 +69,7 @@ impl APU {
             interrupt: interrupt,
             mixer: Mixer::new(),
             cpu_cycles: 0,
+            jitter: 0,
             frame_countdown: 0,
             sequencer_cycles: 0,
             tracing: false,
@@ -118,38 +120,32 @@ impl APU {
 
 impl Tick for APU {
     fn tick(&mut self, total_cpu_cycles: u64) -> Result<(), String> {
-        let cycle_mod = 0;
-
         if self.frame_countdown == 0xFF {
-            self.frame_countdown = if total_cpu_cycles % 2 == cycle_mod {
-                2
-            } else {
-                3
-            };
+            self.frame_countdown = if total_cpu_cycles % 2 == 0 { 3 } else { 4 };
         }
 
-        let mut should_step_frame = true;
+        let mut pending_clock = self.frame.borrow_mut().pending_frame_clock();
         if self.frame_countdown != 0 {
             self.frame_countdown = self.frame_countdown - 1;
             if self.frame_countdown == 0 {
                 self.frame.borrow_mut().reset();
-                should_step_frame = false;
+                pending_clock = true;
             }
         }
 
-        if total_cpu_cycles % 2 == cycle_mod {
-            if should_step_frame {
-                self.frame.borrow_mut().step();
-            }
+        if total_cpu_cycles % 2 == 0 {
+            self.frame.borrow_mut().step();
         }
 
-        if let Some(clock) = self.frame.borrow_mut().emit_clock() {
-            self.pulse_1.borrow_mut().frame_clock(&clock);
-            self.pulse_2.borrow_mut().frame_clock(&clock);
-            self.triangle.borrow_mut().frame_clock(&clock);
+        if pending_clock {
+            if let Some(clock) = self.frame.borrow_mut().emit_clock() {
+                self.pulse_1.borrow_mut().frame_clock(&clock);
+                self.pulse_2.borrow_mut().frame_clock(&clock);
+                self.triangle.borrow_mut().frame_clock(&clock);
+            }
         };
 
-        if total_cpu_cycles % 2 == cycle_mod {
+        if total_cpu_cycles % 2 == 0 {
             self.pulse_1.borrow_mut().decrement_timer();
             self.pulse_2.borrow_mut().decrement_timer();
         }

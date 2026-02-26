@@ -33,6 +33,7 @@ pub struct NES<'call, T: Cpu<BusImpl>> {
     pub trace: Option<NesTrace>,
 
     master_clock: u64,
+    max_master_clock: u64,
 
     pub cpu: T,
     pub ppu: Rc<RefCell<PPU>>,
@@ -93,6 +94,7 @@ where
         apu,
         bus,
         master_clock,
+        max_master_clock: 0xFFFFFFFFFFFFFFFF,
         tracing,
         trace: None,
         format_options,
@@ -116,9 +118,6 @@ impl<'call, T: Cpu<BusImpl>> NES<'call, T> {
     where
         F: FnMut(&NesTrace),
     {
-        //TODO - Need to wire this in
-        // (self.gameloop_callback)(&self.ppu, &self.apu, &mut self.joypad)
-        //
         let mut take_first_ppu_trace = true;
 
         if self.tracing == TracingMode::MicroEnabled {
@@ -129,6 +128,10 @@ impl<'call, T: Cpu<BusImpl>> NES<'call, T> {
         let mut master_clock_trace = self.master_clock;
 
         loop {
+            if self.master_clock > self.max_master_clock {
+                return Ok(());
+            }
+
             let cpu_cycle = self.master_clock / 3;
 
             if self.tracing == TracingMode::MicroEnabled {
@@ -218,6 +221,10 @@ impl<'call, T: Cpu<BusImpl>> NES<'call, T> {
 
     pub fn set_master_clock(&mut self, cycles: u64) {
         self.master_clock = cycles;
+    }
+
+    fn set_max_master_cycles(&mut self, max_cycles: u64) {
+        self.max_master_clock = max_cycles;
     }
 }
 
@@ -323,7 +330,9 @@ mod test {
         });
 
         let formatter = NesTraceFormatter {
-            nes_options: nes.format_options,
+            nes_options: NesTraceOptions {
+                write_cpu_cycles: false,
+            },
             cpu_formatter: CpuTraceFormatter {
                 options: nes.cpu.format_options(false, false),
             },
@@ -385,7 +394,9 @@ mod test {
         });
 
         let formatter = NesTraceFormatter {
-            nes_options: nes.format_options,
+            nes_options: NesTraceOptions {
+                write_cpu_cycles: false,
+            },
             cpu_formatter: CpuTraceFormatter {
                 options: nes.cpu.format_options(false, false),
             },
@@ -426,7 +437,9 @@ mod test {
         });
 
         let formatter = NesTraceFormatter {
-            nes_options: nes.format_options,
+            nes_options: NesTraceOptions {
+                write_cpu_cycles: false,
+            },
             cpu_formatter: CpuTraceFormatter {
                 options: nes.cpu.format_options(true, false),
             },
@@ -559,7 +572,7 @@ mod test {
             stack_pointer: 0xFD,
             ppu_frame_cycles: 25,
         };
-        should_match_mesen(rom, nes_test_log, Some(nes_init), -1);
+        should_match_mesen(rom, nes_test_log, Some(nes_init), 267913);
     }
 
     #[test]
@@ -617,10 +630,10 @@ mod test {
             register_x: 0,
             status: 0x05,
             stack_pointer: 0xEF,
-            ppu_frame_cycles: 27,
+            ppu_frame_cycles: 25,
         };
 
-        should_match_mesen(rom, nes_test_log, Some(nes_init), -1);
+        should_match_mesen(rom, nes_test_log, Some(nes_init), 0xFFFFFFFFFFFFFFFF);
     }
 
     #[test]
@@ -637,7 +650,7 @@ mod test {
             ppu_frame_cycles: 25,
         };
 
-        should_match_mesen(rom, nes_test_log, Some(nes_init), -1);
+        should_match_mesen(rom, nes_test_log, Some(nes_init), 177192);
     }
 
     /*
@@ -739,7 +752,7 @@ mod test {
                 stack_pointer: 0xF8,
                 ppu_frame_cycles: 25,
             }),
-            265758,
+            265640,
         );
     }
 
@@ -764,7 +777,7 @@ mod test {
     fn nestest_blargg_05_len_timing_mode0() {
         let rom = Rom::from_file("nestest/apu/05.len_timing_mode0.nes");
         let nes_test_log = read_file("nestest/apu/05_fceux.log");
-        should_match_fceux(rom, nes_test_log, 812136);
+        should_match_fceux(rom, nes_test_log, 44850);
     }
 
     #[test]
@@ -782,7 +795,7 @@ mod test {
                 stack_pointer: 0xF6,
                 ppu_frame_cycles: 25,
             }),
-            -1,
+            506321,
         );
     }
 
@@ -799,9 +812,9 @@ mod test {
                 register_x: 0,
                 status: 04,
                 stack_pointer: 0xFD,
-                ppu_frame_cycles: 27,
+                ppu_frame_cycles: 25,
             }),
-            -1,
+            327634,
         );
     }
 
@@ -857,7 +870,7 @@ mod test {
         rom: Rom,
         mesen_log: Vec<String>,
         nes_init: Option<NesInit>,
-        max_cycles: i64,
+        max_cycles: u64,
     ) {
         should_match(
             rom,
@@ -868,12 +881,12 @@ mod test {
         );
     }
 
-    fn should_match_fceux(rom: Rom, fceux_log: Vec<String>, max_cycles: i64) {
+    fn should_match_fceux(rom: Rom, fceux_log: Vec<String>, max_cycles: u64) {
         should_match(rom, fceux_log, max_cycles, None, |i, fceux_log, nes_log| {
             nes_fceux_line_matches(i, fceux_log, nes_log)
         });
     }
-    fn should_match_nes(rom: Rom, fceux_log: Vec<String>, max_cycles: i64) {
+    fn should_match_nes(rom: Rom, fceux_log: Vec<String>, max_cycles: u64) {
         should_match(rom, fceux_log, max_cycles, None, |i, nes_gold, nes_log| {
             nes_nes_line_matches(i, nes_gold, nes_log)
         });
@@ -882,7 +895,7 @@ mod test {
     fn should_match<F>(
         rom: Rom,
         compare_log: Vec<String>,
-        max_cycles: i64,
+        max_cpu_cycles: u64,
         nes_init: Option<NesInit>,
         line_matches: F,
     ) where
@@ -902,6 +915,10 @@ mod test {
                 nes.ppu.borrow_mut().frame_dots = init.ppu_frame_cycles;
             }
             None => {}
+        }
+
+        if max_cpu_cycles != 0xFFFFFFFFFFFFFFFF {
+            nes.set_max_master_cycles(max_cpu_cycles * 3);
         }
 
         let mut result: Vec<String> = Vec::new();

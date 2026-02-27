@@ -124,12 +124,11 @@ impl Tick for APU {
             self.frame_countdown = if total_cpu_cycles % 2 == 0 { 3 } else { 4 };
         }
 
-        let mut pending_clock = self.frame.borrow_mut().pending_frame_clock();
+        let pending_clock = self.frame.borrow_mut().pending_frame_clock();
         if self.frame_countdown != 0 {
             self.frame_countdown = self.frame_countdown - 1;
             if self.frame_countdown == 0 {
                 self.frame.borrow_mut().reset();
-                pending_clock = true;
             }
         }
 

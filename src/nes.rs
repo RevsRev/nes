@@ -800,6 +800,25 @@ mod test {
     }
 
     #[test]
+    fn nestest_blargg_06_len_timing_mode1_mesen() {
+        let rom = Rom::from_file("nestest/apu/06.len_timing_mode1.nes");
+        let nes_test_log = read_file("nestest/apu/06_mesen.log");
+        should_match_mesen(
+            rom,
+            nes_test_log,
+            Some(NesInit {
+                cycles: 8,
+                register_a: 0,
+                register_x: 0,
+                status: 04,
+                stack_pointer: 0xF6,
+                ppu_frame_cycles: 25,
+            }),
+            536097,
+        );
+    }
+
+    #[test]
     fn nestest_blargg_07_irq_flag_timing_mesen() {
         let rom = Rom::from_file("nestest/apu/07.irq_flag_timing.nes");
         let nes_test_log = read_file("nestest/apu/07_mesen.log");

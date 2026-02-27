@@ -105,6 +105,14 @@ impl APU {
         retval
     }
 
+    pub fn trace_now(&self) -> ApuTrace {
+        ApuTrace {
+            pulse_1: self.pulse_1.borrow().trace(),
+            pulse_2: self.pulse_2.borrow().trace(),
+            frame_trace: self.frame.borrow().trace(),
+        }
+    }
+
     pub fn trace(&self) -> Option<ApuTrace> {
         if !self.tracing {
             return None;

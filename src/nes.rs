@@ -158,8 +158,8 @@ impl<'call, T: Cpu<BusImpl>> NES<'call, T> {
                                 reads,
                                 writes,
                             },
-                            ppu_trace: self.ppu.borrow_mut().take_trace().unwrap(),
-                            apu_trace: self.apu.borrow_mut().take_trace().unwrap(),
+                            ppu_trace: self.ppu.borrow_mut().trace_now(),
+                            apu_trace: self.apu.borrow_mut().trace_now(),
                         };
                         trace_callback(&nes_trace);
                         master_clock_trace = self.master_clock;
@@ -794,9 +794,9 @@ mod test {
             nes_test_log,
             Some(NesInit {
                 cycles: 8,
-                register_a: 0,
-                register_x: 0,
-                register_y: 0,
+                register_a: 0x7B,
+                register_x: 0x35,
+                register_y: 0x1D,
                 status: 04,
                 stack_pointer: 0xF6,
                 ppu_frame_cycles: 25,

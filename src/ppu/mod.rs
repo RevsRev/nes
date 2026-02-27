@@ -228,6 +228,10 @@ impl PPU {
         retval
     }
 
+    pub fn trace_now(&self) -> PpuTrace {
+        self.trace()
+    }
+
     pub fn read_data(&mut self) -> Result<u8, String> {
         let addr = self.v;
         self.increment_vram_addr();

@@ -83,7 +83,9 @@ impl APU {
     }
 
     pub fn write_to_frame_counter(&mut self, data: u8) -> u8 {
-        self.frame_countdown = 0xFF;
+        if self.frame_countdown == 0 {
+            self.frame_countdown = 0xFF;
+        }
         self.frame.borrow_mut().write(data)
     }
 

@@ -30,6 +30,7 @@ pub struct CpuV2<T: Bus> {
     bus: Rc<RefCell<T>>,
 
     interrupt: Rc<RefCell<InterruptImpl>>,
+    irq_in_progress: bool,
 
     //tracing info
     tracing: bool,
@@ -242,6 +243,7 @@ impl<T: Bus> CpuV2<T> {
             stack_pointer: STACK_RESET,
             bus: bus,
             interrupt: interrupt,
+            irq_in_progress: false,
             tracing: false,
             trace: Option::None,
             trace_cycles: 0,
@@ -334,14 +336,15 @@ impl<T: Bus> CpuV2<T> {
             return Ok(false);
         }
 
-        if !Self::get_flag(self.status, INTERRUPT_DISABLE_FLAG) {
+        if self.irq_in_progress || !Self::get_flag(self.status, INTERRUPT_DISABLE_FLAG) {
             let irq_interrupt = self.interrupt.borrow().poll_irq();
-            let irq_in_progress = if irq_interrupt {
-                self.interrupt_irq()
+            self.irq_in_progress = if irq_interrupt {
+                let retval = self.interrupt_irq();
+                retval
             } else {
                 Ok(false)
             }?;
-            if irq_in_progress {
+            if self.irq_in_progress {
                 self.instruction_cycle = self.instruction_cycle + 1;
                 return Ok(false);
             }

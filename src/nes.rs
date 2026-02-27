@@ -265,6 +265,7 @@ mod test {
         cycles: u64,
         register_a: u8,
         register_x: u8,
+        register_y: u8,
         status: u8,
         stack_pointer: u8,
         ppu_frame_cycles: usize,
@@ -568,6 +569,7 @@ mod test {
             cycles: 8,
             register_a: 0,
             register_x: 0,
+            register_y: 0,
             status: 0x04,
             stack_pointer: 0xFD,
             ppu_frame_cycles: 25,
@@ -628,6 +630,7 @@ mod test {
             cycles: 8,
             register_a: 0x1A,
             register_x: 0,
+            register_y: 0,
             status: 0x05,
             stack_pointer: 0xEF,
             ppu_frame_cycles: 25,
@@ -645,6 +648,7 @@ mod test {
             cycles: 8,
             register_a: 0x00,
             register_x: 0,
+            register_y: 0,
             status: 0x04,
             stack_pointer: 0xFD,
             ppu_frame_cycles: 25,
@@ -748,6 +752,7 @@ mod test {
                 cycles: 8,
                 register_a: 0,
                 register_x: 0,
+                register_y: 0,
                 status: 04,
                 stack_pointer: 0xF8,
                 ppu_frame_cycles: 25,
@@ -791,6 +796,7 @@ mod test {
                 cycles: 8,
                 register_a: 0,
                 register_x: 0,
+                register_y: 0,
                 status: 04,
                 stack_pointer: 0xF6,
                 ppu_frame_cycles: 25,
@@ -810,6 +816,7 @@ mod test {
                 cycles: 8,
                 register_a: 0,
                 register_x: 0,
+                register_y: 0,
                 status: 04,
                 stack_pointer: 0xF6,
                 ppu_frame_cycles: 25,
@@ -829,11 +836,32 @@ mod test {
                 cycles: 8,
                 register_a: 0,
                 register_x: 0,
+                register_y: 0,
                 status: 04,
                 stack_pointer: 0xFD,
                 ppu_frame_cycles: 25,
             }),
             327634,
+        );
+    }
+
+    #[test]
+    fn nestest_blargg_08_irq_timing_mesen() {
+        let rom = Rom::from_file("nestest/apu/08.irq_timing.nes");
+        let nes_test_log = read_file("nestest/apu/08_mesen.log");
+        should_match_mesen(
+            rom,
+            nes_test_log,
+            Some(NesInit {
+                cycles: 8,
+                register_a: 0x02,
+                register_x: 0x07,
+                register_y: 0x18,
+                status: 04,
+                stack_pointer: 0xFA,
+                ppu_frame_cycles: 25,
+            }),
+            1000000,
         );
     }
 
@@ -929,6 +957,7 @@ mod test {
                 nes.set_master_clock(3 * init.cycles);
                 nes.cpu.set_register_a(init.register_a);
                 nes.cpu.set_register_x(init.register_x);
+                nes.cpu.set_register_y(init.register_y);
                 nes.cpu.set_status(init.status);
                 nes.cpu.set_stack_pointer(init.stack_pointer);
                 nes.ppu.borrow_mut().frame_dots = init.ppu_frame_cycles;

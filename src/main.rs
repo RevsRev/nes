@@ -172,7 +172,7 @@ fn main() {
             &config,
             move |data: &mut [f32], _| {
                 for sample in data {
-                    *sample = audio_sound_frame.lock().unwrap().output;
+                    *sample = audio_sound_frame.lock().unwrap().get_output();
                 }
             },
             move |err| eprintln!("stream error: {err}"),

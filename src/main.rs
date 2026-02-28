@@ -160,7 +160,7 @@ fn main() {
         .supported_output_configs()
         .expect("error while querying configs");
     let supported_config = supported_configs_range
-        .next()
+        .find(|c| c.sample_format() == SampleFormat::F32)
         .expect("no supported config?!")
         .with_sample_rate(SampleRate(44100));
 
@@ -168,7 +168,7 @@ fn main() {
     let sample_format = supported_config.sample_format();
     let config = supported_config.into();
     let stream = match sample_format {
-        SampleFormat::U8 => device.build_output_stream(
+        SampleFormat::F32 => device.build_output_stream(
             &config,
             move |data: &mut [f32], _| {
                 for sample in data {

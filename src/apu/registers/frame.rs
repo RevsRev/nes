@@ -82,6 +82,9 @@ impl FrameCounter {
 
     fn four_step_clock(&mut self) {
         if self.frame_cycles > 14914 {
+            if self.data & 0b0100_0000 == 0b0 {
+                self.set_irq_flag(true);
+            }
             self.frame_cycles = 0;
         }
 

@@ -39,7 +39,7 @@ impl FrameCounter {
         let old_value = self.data;
 
         if data & 0b0100_0000 == 0b0100_0000 {
-            self.set_irq_flag(false);
+            self.set_irq_flag(None);
         }
 
         self.data = data;
@@ -50,10 +50,12 @@ impl FrameCounter {
         self.data
     }
 
-    pub fn set_irq_flag(&mut self, flag: bool) -> bool {
+    pub fn set_irq_flag(&mut self, value: Option<u64>) -> bool {
         let retval = self.irq_flag;
-        self.irq_flag = flag;
-        self.interrupt.borrow_mut().set_irq(self.irq_flag);
+        self.irq_flag = value.is_some();
+        if !(self.interrupt.borrow().poll_irq().is_some() && value.is_some()) {
+            self.interrupt.borrow_mut().set_irq(value);
+        }
         retval
     }
 
@@ -72,18 +74,18 @@ impl FrameCounter {
         self.frame_cycles = 0;
     }
 
-    pub fn step(&mut self) {
+    pub fn step(&mut self, total_cpu_cycles: u64) {
         if self.data & MODE == MODE {
             self.five_step_clock()
         } else {
-            self.four_step_clock()
+            self.four_step_clock(total_cpu_cycles)
         }
     }
 
-    fn four_step_clock(&mut self) {
+    fn four_step_clock(&mut self, total_cpu_cycles: u64) {
         if self.frame_cycles > 14914 {
             if self.data & 0b0100_0000 == 0b0 {
-                self.set_irq_flag(true);
+                self.set_irq_flag(Some(total_cpu_cycles));
             }
             self.frame_cycles = 0;
         }
@@ -95,7 +97,7 @@ impl FrameCounter {
         }
 
         if self.frame_cycles == 14914 && self.data & 0b0100_0000 == 0b0 {
-            self.set_irq_flag(true);
+            self.set_irq_flag(Some(total_cpu_cycles));
         }
         self.frame_cycles = self.frame_cycles + 1;
     }

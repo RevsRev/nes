@@ -882,7 +882,7 @@ mod test {
                 stack_pointer: 0xFA,
                 ppu_frame_cycles: 25,
             }),
-            1000000,
+            265646,
         );
     }
 

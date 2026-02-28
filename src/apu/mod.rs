@@ -143,7 +143,7 @@ impl Tick for APU {
         }
 
         if total_cpu_cycles % 2 == 0 {
-            self.frame.borrow_mut().step();
+            self.frame.borrow_mut().step(total_cpu_cycles);
         }
 
         if pending_clock {

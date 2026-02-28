@@ -338,12 +338,18 @@ impl<T: Bus> CpuV2<T> {
 
         if self.irq_in_progress || !Self::get_flag(self.status, INTERRUPT_DISABLE_FLAG) {
             let irq_interrupt = self.interrupt.borrow().poll_irq();
-            self.irq_in_progress = if irq_interrupt {
-                let retval = self.interrupt_irq();
-                retval
-            } else {
-                Ok(false)
-            }?;
+            self.irq_in_progress = match irq_interrupt {
+                Some(cpu_cycles) => {
+                    // For **hardware reasons** it takes 2 cycles to propogate the irq line, so we
+                    // only start 2 (or more) cycles later
+                    if total_cpu_cycles > cpu_cycles + 2 {
+                        self.interrupt_irq()?
+                    } else {
+                        false
+                    }
+                }
+                None => false,
+            };
             if self.irq_in_progress {
                 self.instruction_cycle = self.instruction_cycle + 1;
                 return Ok(false);

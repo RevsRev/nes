@@ -85,7 +85,7 @@ impl Status {
     pub fn read(&mut self) -> Result<u8, String> {
         let mut read = 0b0;
 
-        if self.frame.borrow_mut().set_irq_flag(false) {
+        if self.frame.borrow_mut().set_irq_flag(None) {
             read |= 0b0100_0000;
         }
         if !self.pulse_1.borrow_mut().len_counter_expired() {

@@ -9,13 +9,15 @@ use crate::{
     ppu::registers::ctl::ControlRegister,
     rom::{Mirroring, Rom},
     trace::PpuTrace,
-    traits::tick::Tick,
+    traits::{mem::Mem, tick::Tick},
 };
 
 pub mod registers;
 
 pub const WIDTH: usize = 256;
 pub const HEIGHT: usize = 240;
+
+pub const PPU_REGISTERS_MIRRORS_END: u16 = 0x3FFF;
 
 struct SpriteShift {
     start_x: u8,
@@ -39,6 +41,7 @@ pub struct PPU {
     pub frame: Frame,
 
     internal_data_buf: u8,
+    open_bus: u8,
 
     mask: MaskRegister,
     pub ctl: ControlRegister,
@@ -156,6 +159,49 @@ impl Tick for PPU {
     }
 }
 
+impl Mem for PPU {
+    fn mem_read(&mut self, addr: u16) -> Result<u8, String> {
+        let read = match addr {
+            0x2000 | 0x2001 | 0x2003 | 0x2005 | 0x2006 => {
+                // panic!("Attempt to read from write-only PPU address {:#04X}", addr);
+                Result::Ok(0)
+            }
+
+            0x2002 => {
+                let status_read = self.read_status();
+                let ret_val = (status_read & 0xE0) | (self.open_bus & 0x1F);
+                Ok(ret_val)
+            }
+            0x2004 => Result::Ok(self.read_oam_data()),
+            0x2007 => self.read_data(),
+
+            0x2008..=PPU_REGISTERS_MIRRORS_END => {
+                let mirror_down_addr = addr & 0b0010_0000_0000_0111;
+                self.mem_read(mirror_down_addr)
+            }
+            unknown => Err(format!("Unrecognised read address: {}", unknown)),
+        }?;
+        self.open_bus = read;
+        Ok(read)
+    }
+
+    fn mem_write(&mut self, addr: u16, data: u8) -> Result<u8, String> {
+        self.open_bus = data;
+        match addr {
+            0x2000 => Result::Ok(self.write_to_ctl(data)),
+            0x2001 => Result::Ok(self.write_to_mask(data)),
+            0x2002 => Result::Ok(0),
+            0x2003 => Result::Ok(self.write_to_oam_addr(data)),
+            0x2004 => Result::Ok(self.write_to_oam_data(data)),
+            0x2005 => Result::Ok(self.write_to_scroll(data)),
+            0x2006 => Result::Ok(self.write_to_ppu_addr(data)),
+            0x2007 => self.write_data(data),
+            0x4014 => Result::Ok(self.write_to_oam_dma(data)),
+            unknown => Err(format!("Unrecognised write address {}", unknown)),
+        }
+    }
+}
+
 impl PPU {
     pub fn new(rom: Rc<RefCell<Rom>>, interrupt: Rc<RefCell<InterruptImpl>>) -> Self {
         PPU {
@@ -172,6 +218,7 @@ impl PPU {
             frame: Frame::new(),
 
             internal_data_buf: 0x0000,
+            open_bus: 0x00,
 
             mask: MaskRegister::new(),
             ctl: ControlRegister::new(),
@@ -236,27 +283,29 @@ impl PPU {
         let addr = self.v;
         self.increment_vram_addr();
 
-        match addr {
+        let read = match addr {
             0x0000..=0x1FFF => {
                 let result = self.internal_data_buf;
                 self.internal_data_buf = self.rom.borrow().chr_rom[addr as usize];
-                Result::Ok(result)
+                result
             }
             0x2000..=0x2FFF => {
                 let result = self.internal_data_buf;
                 self.internal_data_buf = self.vram[self.mirror_vram_addr(addr) as usize];
-                Result::Ok(result)
+                result
             }
 
             0x3F00..=0x3FFF => {
                 self.internal_data_buf = self.vram[self.mirror_vram_addr(addr & 0x2FFF) as usize];
-                Result::Ok(self.palette_table[(self.mirror_pallette_addr(addr) - 0x3F00) as usize])
+                self.palette_table[(self.mirror_pallette_addr(addr) - 0x3F00) as usize]
             }
-            _ => Result::Err(format!("Unexpected access to mirrored space {:#04X}", addr)),
-        }
+            _ => return Result::Err(format!("Unexpected access to mirrored space {:#04X}", addr)),
+        };
+        Ok(read)
     }
 
     pub fn write_data(&mut self, value: u8) -> Result<u8, String> {
+        self.open_bus = value;
         let retval: Result<u8, String>;
         let addr = self.v;
         match addr {

@@ -5,7 +5,7 @@ use std::rc::Rc;
 use crate::apu::APU;
 use crate::interrupt::InterruptImpl;
 use crate::io::joypad::Joypad;
-use crate::ppu::PPU;
+use crate::ppu::{PPU, PPU_REGISTERS_MIRRORS_END};
 use crate::rom::Rom;
 use crate::traits::bus::Bus;
 use crate::traits::mem::Mem;
@@ -13,7 +13,6 @@ use crate::traits::tick::Tick;
 
 const RAM: u16 = 0x0000;
 const RAM_MIRRORS_END: u16 = 0x1FFF;
-const PPU_REGISTERS_MIRRORS_END: u16 = 0x3FFF;
 const PRG_RAM_START: u16 = 0x6000;
 const PRG_RAM_END: u16 = 0x7FFF;
 const ROM_START: u16 = 0x8000;
@@ -83,23 +82,16 @@ impl Mem for BusImpl {
                 let mirror_down_addr = addr & 0b0000111_11111111;
                 Result::Ok(self.cpu_vram[mirror_down_addr as usize])
             }
-            0x2000 | 0x2001 | 0x2003 | 0x2005 | 0x2006 => {
-                // panic!("Attempt to read from write-only PPU address {:#04X}", addr);
-                Result::Ok(0)
-            }
 
-            0x2002 => {
-                let status_read = self.ppu.borrow_mut().read_status();
-                let ret_val = (status_read & 0xE0) | (self.open_bus & 0x1F);
-                Ok(ret_val)
-            }
-            0x2004 => Result::Ok(self.ppu.borrow_mut().read_oam_data()),
-            0x2007 => self.ppu.borrow_mut().read_data(),
-
-            0x2008..=PPU_REGISTERS_MIRRORS_END => {
-                let mirror_down_addr = addr & 0b0010_0000_0000_0111;
-                self.mem_read(mirror_down_addr)
-            }
+            0x2000
+            | 0x2001
+            | 0x2002
+            | 0x2003
+            | 0x2004
+            | 0x2005
+            | 0x2006
+            | 0x2007
+            | 0x2008..=PPU_REGISTERS_MIRRORS_END => self.ppu.borrow_mut().mem_read(addr),
 
             0x4000..=0x4013 => Result::Ok(0),
             // 0x4000..=0x4013 => Result::Err(format!(
@@ -147,14 +139,10 @@ impl Mem for BusImpl {
                 self.cpu_vram[mirror_down_addr as usize] = data;
                 Result::Ok(retval)
             }
-            0x2000 => Result::Ok(self.ppu.borrow_mut().write_to_ctl(data)),
-            0x2001 => Result::Ok(self.ppu.borrow_mut().write_to_mask(data)),
-            0x2002 => Result::Ok(0),
-            0x2003 => Result::Ok(self.ppu.borrow_mut().write_to_oam_addr(data)),
-            0x2004 => Result::Ok(self.ppu.borrow_mut().write_to_oam_data(data)),
-            0x2005 => Result::Ok(self.ppu.borrow_mut().write_to_scroll(data)),
-            0x2006 => Result::Ok(self.ppu.borrow_mut().write_to_ppu_addr(data)),
-            0x2007 => self.ppu.borrow_mut().write_data(data),
+
+            0x2000 | 0x2001 | 0x2002 | 0x2003 | 0x2004 | 0x2005 | 0x2006 | 0x2007 | 0x4014 => {
+                self.ppu.borrow_mut().mem_write(addr, data)
+            }
 
             0x2008..=PPU_REGISTERS_MIRRORS_END => {
                 let mirror_down_addr = addr & 0b0010_0000_0000_0111;
@@ -303,15 +291,6 @@ impl Mem for BusImpl {
             0x4017 => Result::Ok(self.apu.borrow_mut().write_to_frame_counter(data)),
 
             0x4016 => Result::Ok(self.joypad.write(data)),
-
-            // https://wiki.nesdev.com/w/index.php/PPU_programmer_reference#OAM_DMA_.28.244014.29_.3E_write
-            0x4014 => {
-                Result::Ok(self.ppu.borrow_mut().write_to_oam_dma(data))
-
-                // todo: handle this eventually
-                // let add_cycles: u16 = if self.cycles % 2 == 1 { 514 } else { 513 };
-                // self.tick(add_cycles); //todo this will cause weird effects as PPU will have 513/514 * 3 ticks
-            }
 
             PRG_RAM_START..=PRG_RAM_END => Result::Ok(self.write_prg_ram(addr, data)),
 

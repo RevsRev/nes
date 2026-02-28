@@ -825,24 +825,45 @@ mod test {
         );
     }
 
+    //This test is bit useless because although mesen passes blargg 07 when tracing is not enabled,
+    //it doesn't once you enable tracing. So comparing to the log won't help us :(
+    // #[test]
+    // fn nestest_blargg_07_irq_flag_timing_mesen() {
+    //     let rom = Rom::from_file("nestest/apu/07.irq_flag_timing.nes");
+    //     let nes_test_log = read_file("nestest/apu/07_mesen.log");
+    //     should_match_mesen(
+    //         rom,
+    //         nes_test_log,
+    //         Some(NesInit {
+    //             cycles: 8,
+    //             register_a: 0,
+    //             register_x: 0,
+    //             register_y: 0,
+    //             status: 04,
+    //             stack_pointer: 0xFD,
+    //             ppu_frame_cycles: 25,
+    //         }),
+    //         327634,
+    //     );
+    // }
+
+    //Because of the above, now that 07 is passing on my emulator, this is by far the most useful
+    //regression test!
     #[test]
-    fn nestest_blargg_07_irq_flag_timing_mesen() {
+    fn nestest_regression_blargg_07_irq_flag_timing() {
+        let regen_logs = std::env::var("REGEN_LOGS").is_ok();
+
+        if regen_logs {
+            write_nes_logs(
+                "nestest/apu/07.irq_flag_timing.nes",
+                "nestest/apu/07_nes.log",
+                1_000_000,
+            );
+        }
+
         let rom = Rom::from_file("nestest/apu/07.irq_flag_timing.nes");
-        let nes_test_log = read_file("nestest/apu/07_mesen.log");
-        should_match_mesen(
-            rom,
-            nes_test_log,
-            Some(NesInit {
-                cycles: 8,
-                register_a: 0,
-                register_x: 0,
-                register_y: 0,
-                status: 04,
-                stack_pointer: 0xFD,
-                ppu_frame_cycles: 25,
-            }),
-            327634,
-        );
+        let nes_test_log = read_file("nestest/apu/07_nes.log");
+        should_match_nes(rom, nes_test_log, 1_000_000);
     }
 
     #[test]

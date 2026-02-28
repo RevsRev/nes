@@ -164,6 +164,7 @@ fn main() {
         .expect("no supported config?!")
         .with_max_sample_rate();
 
+    println!("Audio sample rate: {}Hz", supported_config.sample_rate().0);
     let sample_format = supported_config.sample_format();
     let config = supported_config.into();
     let stream = match sample_format {

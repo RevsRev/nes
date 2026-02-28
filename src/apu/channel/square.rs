@@ -226,12 +226,11 @@ impl SquareChannel {
             }
             FrameClock::HALF => {
                 self.envelope.frame_clock();
-                if self.len_counter.get() != 0
-                    && !(self.envelope.data & ENVELOPE_LENGTH_COUNTER_HALT
-                        == ENVELOPE_LENGTH_COUNTER_HALT)
-                {
-                    self.len_counter.decrement();
-                }
+                self.len_counter.set_halt(
+                    self.envelope.data & ENVELOPE_LENGTH_COUNTER_HALT
+                        == ENVELOPE_LENGTH_COUNTER_HALT,
+                );
+                self.len_counter.decrement();
                 let time = self.get_time();
                 let next_time = self.sweep.on_frame(time);
                 self.set_time(next_time);
@@ -239,12 +238,8 @@ impl SquareChannel {
         }
     }
 
-    pub fn disable(&mut self) {
-        self.len_counter.disable();
-    }
-
-    pub fn enable(&mut self) {
-        self.len_counter.enable();
+    pub fn enable(&mut self, state: bool) {
+        self.len_counter.enable(state);
     }
 
     pub fn len_counter_expired(&self) -> bool {

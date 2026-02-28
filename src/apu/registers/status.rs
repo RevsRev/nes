@@ -52,28 +52,22 @@ impl Status {
         if !self.pulse_2.borrow_mut().len_counter_expired() {
             old_val |= 0b0000_0010;
         }
-        if !self.triangle.borrow_mut().len_counter_expired() {
+        if !self.triangle.borrow_mut().len_counter_enabled() {
             old_val |= 0b0000_0100;
         }
 
         //Do this while we haven't implemented noise/dmc properly
         old_val |= 0b1111_1000;
 
-        if !Self::has_flag(data, PULSE_1) {
-            self.pulse_1.borrow_mut().disable();
-        } else {
-            self.pulse_1.borrow_mut().enable();
-        }
-        if !Self::has_flag(data, PULSE_2) {
-            self.pulse_2.borrow_mut().disable();
-        } else {
-            self.pulse_2.borrow_mut().enable();
-        }
-        if !Self::has_flag(data, TRIANGLE) {
-            self.triangle.borrow_mut().disable();
-        } else {
-            self.triangle.borrow_mut().enable();
-        }
+        self.pulse_1
+            .borrow_mut()
+            .enable(Self::has_flag(data, PULSE_1));
+        self.pulse_2
+            .borrow_mut()
+            .enable(Self::has_flag(data, PULSE_2));
+        self.triangle
+            .borrow_mut()
+            .enable(Self::has_flag(data, TRIANGLE));
 
         old_val
     }
@@ -94,7 +88,7 @@ impl Status {
         if !self.pulse_2.borrow_mut().len_counter_expired() {
             read |= 0b0000_0010;
         }
-        if !self.triangle.borrow_mut().len_counter_expired() {
+        if !self.triangle.borrow_mut().len_counter_enabled() {
             read |= 0b0000_0100;
         }
         Result::Ok(read)

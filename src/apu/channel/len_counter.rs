@@ -1,6 +1,7 @@
 pub struct LenCounter {
     len_counter: u8,
-    disabled: bool,
+    enabled: bool,
+    halt: bool,
 }
 
 pub const LENGTH_TABLE: [u8; 32] = [
@@ -42,7 +43,8 @@ impl LenCounter {
     pub fn new() -> Self {
         LenCounter {
             len_counter: 0x00,
-            disabled: true,
+            enabled: false,
+            halt: true,
         }
     }
 
@@ -51,26 +53,32 @@ impl LenCounter {
     }
 
     pub fn decrement(&mut self) {
-        self.len_counter = self.len_counter - 1;
+        if self.enabled && !self.halt && self.len_counter > 0 {
+            self.len_counter = self.len_counter - 1;
+        }
     }
 
     pub fn set(&mut self, len_indx: usize) {
-        if self.disabled {
+        if !self.enabled {
             return;
         }
         self.len_counter = LENGTH_TABLE[len_indx];
     }
 
-    pub fn disable(&mut self) {
-        self.len_counter = 0;
-        self.disabled = true;
+    pub fn enable(&mut self, state: bool) {
+        if state {
+            self.enabled = true;
+        } else {
+            self.len_counter = 0;
+            self.enabled = false;
+        }
     }
 
-    pub fn enable(&mut self) {
-        self.disabled = false;
+    pub fn set_halt(&mut self, halt: bool) {
+        self.halt = halt;
     }
 
     pub fn enabled(&self) -> bool {
-        !self.disabled
+        self.enabled
     }
 }

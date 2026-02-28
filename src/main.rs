@@ -9,7 +9,7 @@ use std::{
 use bus::BusImpl;
 use clap::Parser;
 use cpal::{
-    SampleFormat,
+    SampleFormat, SampleRate,
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
 use cpu_v2::CpuV2;
@@ -162,7 +162,7 @@ fn main() {
     let supported_config = supported_configs_range
         .next()
         .expect("no supported config?!")
-        .with_max_sample_rate();
+        .with_sample_rate(SampleRate(44100));
 
     println!("Audio sample rate: {}Hz", supported_config.sample_rate().0);
     let sample_format = supported_config.sample_format();

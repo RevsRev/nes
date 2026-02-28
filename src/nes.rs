@@ -906,6 +906,26 @@ mod test {
         );
     }
 
+    #[test]
+    fn nestest_apu_mixer_square() {
+        let rom = Rom::from_file("nestest/apu/apu_mixer/square.nes");
+        let nes_test_log = read_file("nestest/apu/apu_mixer/square.log");
+        should_match_mesen(
+            rom,
+            nes_test_log,
+            Some(NesInit {
+                cycles: 8,
+                register_a: 0x16,
+                register_x: 0x09,
+                register_y: 0x16,
+                status: 0x06,
+                stack_pointer: 0xF8,
+                ppu_frame_cycles: 25,
+            }),
+            1000000,
+        );
+    }
+
     fn write_nes_logs(rom_path: &str, out_path: &str, max_cycles: i64) {
         let file = File::create(out_path).expect("failed to create log file");
         let writer = RefCell::new(BufWriter::new(file));

@@ -95,7 +95,6 @@ impl Envelope {
     pub fn write(&mut self, data: u8) -> u8 {
         let old_val = self.data;
         self.data = data;
-        self.start_flag = true;
         old_val
     }
 
@@ -107,15 +106,17 @@ impl Envelope {
     }
 
     pub fn duty(&self) -> u8 {
-        self.data & ENVELOPE_DUTY_SELECTOR >> 6
+        (self.data & ENVELOPE_DUTY_SELECTOR) >> 6
     }
 
     pub fn frame_clock(&mut self) {
         if self.start_flag {
             self.divider
                 .reset_reload_value((self.data & VOLUME_SELECTOR) as u16);
+            self.divider.reset_counter();
             self.decay_counter = 15;
             self.start_flag = false;
+            return;
         }
 
         if self.divider.clock() {
@@ -171,7 +172,7 @@ impl SquareChannel {
     }
 
     pub fn write_to_len_timerh(&mut self, data: u8) -> u8 {
-        let timer_h_bits = ((self.timer.reload_value() & 0b0000_0111_0000_000) >> 8) as u8;
+        let timer_h_bits = ((self.timer.reload_value() & 0b0000_0111_0000_0000) >> 8) as u8;
         let old_value = self.length_counter_idx | timer_h_bits;
 
         self.length_counter_idx = (data & 0b1111_1000) >> 3;
@@ -206,6 +207,8 @@ impl SquareChannel {
     }
 
     pub fn decrement_timer(&mut self) {
+        let time = self.get_time();
+        self.sweep.tick(time);
         if self.timer.clock() {
             self.sequence_step = (self.sequence_step + 1) % 8;
         }

@@ -14,6 +14,7 @@ pub struct Sweep {
     reload_flag: bool,
 
     muted: bool,
+    target_period: u16,
     change_method: SweepChangeMethod,
 }
 
@@ -28,6 +29,7 @@ impl Sweep {
             reload_flag: false,
 
             muted: false,
+            target_period: 0,
             change_method: change_method,
         }
     }
@@ -37,7 +39,8 @@ impl Sweep {
         self.data = data;
 
         self.enabled = data & 0b1000_0000 == 0b1000_0000;
-        // self.divider.reset_reload_value(data & (0b0111_0000) >> 4);
+        self.divider
+            .reset_reload_value(((data & 0b0111_0000) >> 4) as u16);
         self.negate_flag = data & 0b0000_1000 == 0b0000_1000;
         self.shift_count = data & 0b0000_0111;
 
@@ -46,9 +49,7 @@ impl Sweep {
         old_val
     }
 
-    pub fn on_frame(&mut self, current_period: u16) -> u16 {
-        let clocked = self.divider.clock();
-
+    pub fn tick(&mut self, current_period: u16) {
         let change_amount = (current_period >> self.shift_count) as i16;
 
         let signed_change_amount = match (self.negate_flag, &self.change_method) {
@@ -57,27 +58,26 @@ impl Sweep {
             (true, SweepChangeMethod::TWOS_COMPLIMENT) => -1 * change_amount,
         };
 
-        let target_period: u16 = (current_period as i16)
-            .wrapping_add(signed_change_amount)
-            .clamp(0, 0b0000_0111_1111_1111)
-            .try_into()
-            .unwrap();
+        let raw_target = (current_period as i16).wrapping_add(signed_change_amount);
 
-        self.muted = target_period > 0x7FF || current_period < 8;
+        self.muted = raw_target > 0x7FF || current_period < 8;
+        self.target_period = raw_target.clamp(0, 0x7FF) as u16;
+    }
 
-        if clocked && self.enabled && self.shift_count != 0 {
-            if !self.muted {
-                return target_period;
-            }
-        }
+    pub fn on_frame(&mut self, current_period: u16) -> u16 {
+        let clock = self.divider.clock();
+
+        let retval = if clock && self.enabled && self.shift_count != 0 && !self.muted {
+            self.target_period
+        } else {
+            current_period
+        };
 
         if self.reload_flag {
-            self.divider
-                .reset_reload_value((self.data & (0b0111_0000) >> 4) as u16);
+            self.divider.reset_counter();
             self.reload_flag = false;
         }
-
-        return current_period;
+        return retval;
     }
 
     pub fn is_muted(&self) -> bool {

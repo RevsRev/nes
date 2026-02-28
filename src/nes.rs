@@ -5,6 +5,8 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::SystemTime;
 
+use ringbuf::HeapProducer;
+
 use crate::apu::APU;
 use crate::bus::BusImpl;
 use crate::cpu_v2::CpuV2;
@@ -12,10 +14,7 @@ use crate::interrupt::InterruptImpl;
 use crate::io::joypad::Joypad;
 use crate::ppu::PPU;
 use crate::rom::Rom;
-use crate::trace::{
-    CpuTrace, CpuTraceFormatOptions, CpuTraceFormatter, NesTrace, NesTraceFormatter,
-    NesTraceOptions,
-};
+use crate::trace::{CpuTrace, NesTrace};
 use crate::traits::cpu::Cpu;
 use crate::traits::mos_65902::MOS6502;
 use crate::traits::tick::Tick;
@@ -30,7 +29,6 @@ pub enum TracingMode {
 
 pub struct NES<'call, T: Cpu<BusImpl>> {
     tracing: TracingMode,
-    format_options: NesTraceOptions,
     pub trace: Option<NesTrace>,
 
     master_clock: u64,
@@ -55,6 +53,7 @@ pub fn nes_with_cpu_v2<'call, F>(
     halt: Arc<AtomicBool>,
     tracing: TracingMode,
     gameloop_callback: F,
+    producer: HeapProducer<f32>,
 ) -> NES<'call, CpuV2<BusImpl>>
 where
     F: FnMut(&PPU, &APU, &mut Joypad) + 'call,
@@ -67,7 +66,7 @@ where
     let ppu_rom = Rc::new(RefCell::new(rom));
     let bus_rom = ppu_rom.clone();
     let new_ppu = PPU::new(ppu_rom, interrupt_ppu);
-    let new_apu = APU::new(interrupt_apu);
+    let new_apu = APU::new(producer, interrupt_apu);
 
     let ppu = Rc::new(RefCell::new(new_ppu));
     let apu = Rc::new(RefCell::new(new_apu));
@@ -83,10 +82,6 @@ where
     cpu.set_tracing(tracing != TracingMode::None);
     cpu.reset();
 
-    let format_options = NesTraceOptions {
-        write_cpu_cycles: true,
-    };
-
     let master_clock = 0;
 
     NES {
@@ -98,7 +93,6 @@ where
         max_master_clock: 0xFFFFFFFFFFFFFFFF,
         tracing,
         trace: None,
-        format_options,
         gameloop_callback: Box::from(gameloop_callback),
     }
 }
@@ -128,7 +122,7 @@ impl<'call, T: Cpu<BusImpl>> NES<'call, T> {
 
         let mut now = SystemTime::now();
         let mut master_clock_trace = self.master_clock;
-        let mut master_clock_last_second: u64 = 0;
+        let mut _master_clock_last_second: u64 = 0;
 
         loop {
             if self.master_clock > self.max_master_clock {
@@ -193,7 +187,7 @@ impl<'call, T: Cpu<BusImpl>> NES<'call, T> {
                     Some(cpu_trace) => {
                         let nes_trace = NesTrace {
                             master_clock: master_clock_trace,
-                            cpu_trace: cpu_trace,
+                            cpu_trace,
                             ppu_trace: self.ppu.borrow_mut().take_trace().unwrap(),
                             apu_trace: self.apu.borrow_mut().take_trace().unwrap(),
                         };
@@ -219,7 +213,7 @@ impl<'call, T: Cpu<BusImpl>> NES<'call, T> {
             }
 
             if now.elapsed().unwrap().as_millis() > 1000 {
-                master_clock_last_second = self.master_clock;
+                _master_clock_last_second = self.master_clock;
                 now = SystemTime::now();
             }
 
@@ -230,10 +224,6 @@ impl<'call, T: Cpu<BusImpl>> NES<'call, T> {
     pub fn set_master_clock(&mut self, cycles: u64) {
         self.master_clock = cycles;
     }
-
-    fn set_max_master_cycles(&mut self, max_cycles: u64) {
-        self.max_master_clock = max_cycles;
-    }
 }
 
 #[cfg(test)]
@@ -241,6 +231,7 @@ mod test {
     use clap::error::Result;
     use once_cell::sync::Lazy;
     use regex::Regex;
+    use ringbuf::{HeapProducer, HeapRb, Producer};
 
     use crate::apu::APU;
     use crate::bus::BusImpl;
@@ -248,8 +239,7 @@ mod test {
     use crate::ppu::PPU;
     use crate::rom::{self, Rom};
     use crate::trace::{
-        ApuTraceFormatter, CpuTraceFormatOptions, CpuTraceFormatter, NesTraceFormatter,
-        NesTraceOptions, PpuTraceFormatter,
+        ApuTraceFormatter, CpuTraceFormatter, NesTraceFormatter, NesTraceOptions, PpuTraceFormatter,
     };
     use crate::traits::cpu::Cpu;
     use crate::traits::mem::Mem;
@@ -298,6 +288,7 @@ mod test {
             Arc::clone(halt),
             super::TracingMode::Enabled,
             |_ppu: &PPU, _apu: &APU, _joypad: &mut Joypad| {},
+            HeapRb::new(1024).split().0,
         );
 
         // return nes_with_cpu_v1(
@@ -959,7 +950,9 @@ mod test {
         });
 
         let nes_formatter = NesTraceFormatter {
-            nes_options: nes.format_options,
+            nes_options: NesTraceOptions {
+                write_cpu_cycles: true,
+            },
             cpu_formatter: CpuTraceFormatter {
                 options: nes.cpu.format_options(false, true),
             },
@@ -1035,7 +1028,7 @@ mod test {
         }
 
         if max_cpu_cycles != 0xFFFFFFFFFFFFFFFF {
-            nes.set_max_master_cycles(max_cpu_cycles * 3);
+            nes.max_master_clock = max_cpu_cycles * 3;
         }
 
         let mut result: Vec<String> = Vec::new();
@@ -1056,7 +1049,9 @@ mod test {
         });
 
         let nes_tr_formatter = NesTraceFormatter {
-            nes_options: nes.format_options,
+            nes_options: NesTraceOptions {
+                write_cpu_cycles: true,
+            },
             cpu_formatter: CpuTraceFormatter {
                 options: nes.cpu.format_options(false, true),
             },
@@ -1289,8 +1284,8 @@ mod test {
                 status: status_extract(line).unwrap(),
                 mem_addr: capture_mem_addr(line),
                 cycles: capture_cycles(line).unwrap(),
-                scanline: scanline,
-                dot: dot,
+                scanline,
+                dot,
             }
         }
     }

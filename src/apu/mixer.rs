@@ -1,13 +1,23 @@
+use ringbuf::HeapProducer;
+
+const CPU_FREQUENCY: f32 = 1_790_000.0;
+const SAMPLE_FREQUENCY: f32 = 44_100.0;
+const FLUSH_SIZE: f32 = CPU_FREQUENCY / SAMPLE_FREQUENCY;
+
 pub struct Mixer {
-    apu_cycles: u8,
-    pub output: f32, //TODO - Should this be a f32?
+    sample_sum: f32,
+    sample_count: f32,
+    last_output: f32,
+    producer: HeapProducer<f32>,
 }
 
 impl Mixer {
-    pub fn new() -> Self {
+    pub fn new(producer: HeapProducer<f32>) -> Self {
         Mixer {
-            apu_cycles: 0,
-            output: 0.0,
+            sample_sum: 0.0,
+            sample_count: 0.0,
+            last_output: 0.0,
+            producer,
         }
     }
 
@@ -34,6 +44,29 @@ impl Mixer {
                     + 100.0)
         };
 
-        self.output = pulse_out + tnd_out;
+        let out = pulse_out + tnd_out;
+        self.add_output(out);
+    }
+
+    pub fn flush(&mut self) {
+        let sample = if self.sample_count == 0.0 {
+            self.last_output
+        } else {
+            self.last_output = 3.0 * self.sample_sum / self.sample_count;
+            self.sample_sum = 0.0;
+            self.sample_count = 0.0;
+
+            self.last_output
+        };
+        self.producer.push(sample).unwrap();
+    }
+
+    pub fn add_output(&mut self, output: f32) {
+        self.sample_sum += output;
+        self.sample_count += 1.0;
+
+        if self.sample_count > FLUSH_SIZE {
+            self.flush();
+        }
     }
 }

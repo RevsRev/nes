@@ -1,5 +1,7 @@
 use std::{cell::RefCell, future::pending, rc::Rc};
 
+use ringbuf::HeapProducer;
+
 use crate::{
     apu::{
         channel::{
@@ -42,7 +44,7 @@ pub struct APU {
 }
 
 impl APU {
-    pub fn new(interrupt: Rc<RefCell<InterruptImpl>>) -> Self {
+    pub fn new(producer: HeapProducer<f32>, interrupt: Rc<RefCell<InterruptImpl>>) -> Self {
         let pulse_1 = Rc::new(RefCell::new(SquareChannel::new(ONES_COMPLIMENT)));
         let pulse_2 = Rc::new(RefCell::new(SquareChannel::new(TWOS_COMPLIMENT)));
         let triangle = Rc::new(RefCell::new(TriangleChannel::new()));
@@ -67,7 +69,7 @@ impl APU {
             status,
             frame: frame.clone(),
             interrupt: interrupt,
-            mixer: Mixer::new(),
+            mixer: Mixer::new(producer),
             cpu_cycles: 0,
             jitter: 0,
             frame_countdown: 0,
@@ -87,10 +89,6 @@ impl APU {
             self.frame_countdown = 0xFF;
         }
         self.frame.borrow_mut().write(data)
-    }
-
-    pub fn output(&self) -> f32 {
-        self.mixer.output
     }
 
     pub fn read_status(&mut self) -> Result<u8, String> {

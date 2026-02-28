@@ -1,9 +1,9 @@
 use std::{
     collections::HashMap,
-    fmt::{self, Debug},
+    fmt::{self},
     fs::File,
     io::Read,
-    sync::{Arc, Mutex, atomic::AtomicBool},
+    sync::{Arc, atomic::AtomicBool},
 };
 
 use bus::BusImpl;
@@ -13,21 +13,19 @@ use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
 use cpu_v2::CpuV2;
-use io::{
-    joypad::{BUTTON_A, BUTTON_B, DOWN, Joypad, LEFT, RIGHT, SELECT, START, UP},
-    render::frame::Frame,
-};
+use io::joypad::{BUTTON_A, BUTTON_B, DOWN, Joypad, LEFT, RIGHT, SELECT, START, UP};
 use nes::{NES, TracingMode, nes_with_cpu_v2};
 use ppu::PPU;
+use ringbuf::HeapRb;
 use rom::Rom;
 use sdl2::{event::Event, keyboard::Keycode, pixels::PixelFormatEnum};
 use trace::{
     ApuTraceFormatter, CpuTraceFormatOptions, CpuTraceFormatter, NesTraceFormatter,
     NesTraceOptions, PpuTraceFormatter,
 };
-use traits::{cpu::Cpu, mos_6502_registers::Registers, mos_65902::MOS6502};
+use traits::mos_6502_registers::Registers;
 
-use crate::{apu::APU, io::audio::sound_frame::SoundFrame};
+use crate::apu::APU;
 
 mod apu;
 mod bus;
@@ -117,12 +115,13 @@ fn main() {
         .create_texture_target(PixelFormatEnum::RGB24, 256, 240)
         .unwrap();
 
-    let mut event_loop_sound_frame = Arc::new(Mutex::new(SoundFrame::new()));
-    let audio_sound_frame = event_loop_sound_frame.clone();
+    let ring_buffer = HeapRb::<f32>::new(8192);
+    let (producer, mut consumer) = ring_buffer.split();
+    // let mut sound_frame = SoundFrame::new(producer);
     let halt = Arc::new(AtomicBool::new(false));
 
-    let gameloop_callback = move |ppu: &PPU, apu: &APU, joypad: &mut Joypad| {
-        io::audio::sound(&mut event_loop_sound_frame, apu);
+    let gameloop_callback = move |ppu: &PPU, _: &APU, joypad: &mut Joypad| {
+        // io::audio::sound(&mut sound_frame, apu);
 
         texture.update(None, &ppu.frame.data, 256 * 3).unwrap();
         canvas.copy(&texture, None, None).unwrap();
@@ -172,7 +171,7 @@ fn main() {
             &config,
             move |data: &mut [f32], _| {
                 for sample in data {
-                    *sample = audio_sound_frame.lock().unwrap().get_output();
+                    *sample = consumer.pop().unwrap_or(0.0f32);
                 }
             },
             move |err| eprintln!("stream error: {err}"),
@@ -210,7 +209,7 @@ fn main() {
             };
 
             let mut nes: NES<CpuV2<BusImpl>> =
-                nes_with_cpu_v2(rom, halt, tracing_mode, gameloop_callback);
+                nes_with_cpu_v2(rom, halt, tracing_mode, gameloop_callback, producer);
 
             match args.cycles {
                 Some(cycles) => nes.set_master_clock(3 * cycles),

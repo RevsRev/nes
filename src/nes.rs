@@ -3,6 +3,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::time::SystemTime;
 
 use crate::apu::APU;
 use crate::bus::BusImpl;
@@ -125,7 +126,9 @@ impl<'call, T: Cpu<BusImpl>> NES<'call, T> {
             self.apu.borrow_mut().take_trace();
         }
 
+        let mut now = SystemTime::now();
         let mut master_clock_trace = self.master_clock;
+        let mut master_clock_last_second: u64 = 0;
 
         loop {
             if self.master_clock > self.max_master_clock {
@@ -213,6 +216,11 @@ impl<'call, T: Cpu<BusImpl>> NES<'call, T> {
 
             if self.cpu.should_halt() {
                 return Ok(());
+            }
+
+            if now.elapsed().unwrap().as_millis() > 1000 {
+                master_clock_last_second = self.master_clock;
+                now = SystemTime::now();
             }
 
             self.master_clock = self.master_clock + 1;

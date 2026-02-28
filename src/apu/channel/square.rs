@@ -138,7 +138,6 @@ pub struct SquareChannel {
     timer: Divider,
     length_counter_idx: u8,
     len_counter: LenCounter,
-    out: u8,
 }
 
 impl SquareChannel {
@@ -150,7 +149,6 @@ impl SquareChannel {
             timer: Divider::new(0xFFFF),
             length_counter_idx: 0xFF,
             len_counter: LenCounter::new(),
-            out: 0,
         }
     }
 
@@ -190,25 +188,27 @@ impl SquareChannel {
     }
 
     pub fn get_out(&mut self) -> u8 {
-        match self.sweep.is_muted() || self.timer.reload_value() < 8 {
-            true => 0,
-            false => self.out,
+        if self.len_counter.get() == 0 {
+            return 0;
         }
+
+        if self.sweep.is_muted() {
+            return 0;
+        }
+
+        if self.timer.reload_value() < 8 {
+            return 0;
+        }
+
+        let duty = self.envelope.duty();
+        let volume = self.envelope.volume();
+        volume * DUTY_PATTERNS[duty as usize][self.sequence_step as usize]
     }
 
     pub fn decrement_timer(&mut self) {
         if self.timer.clock() {
             self.sequence_step = (self.sequence_step + 1) % 8;
         }
-
-        if self.len_counter.get() == 0 {
-            self.out = 0;
-            return;
-        }
-
-        let duty = self.envelope.duty();
-        let volume = self.envelope.volume();
-        self.out = volume * DUTY_PATTERNS[duty as usize][self.sequence_step as usize];
     }
 
     fn get_time(&self) -> u16 {

@@ -131,10 +131,25 @@ impl APU {
 impl Tick for APU {
     fn tick(&mut self, total_cpu_cycles: u64) -> Result<(), String> {
         if self.frame_countdown == 0xFF {
-            self.frame_countdown = if total_cpu_cycles % 2 == 0 { 3 } else { 4 };
+            self.frame_countdown = if total_cpu_cycles % 2 == 0 { 2 } else { 3 };
         }
 
-        let pending_clock = self.frame.borrow_mut().pending_frame_clock();
+        if total_cpu_cycles % 2 == 0 {
+            self.pulse_1.borrow_mut().decrement_timer();
+            self.pulse_2.borrow_mut().decrement_timer();
+        }
+        self.triangle.borrow_mut().decrement_timer();
+
+        if let Some(clock) = self.frame.borrow_mut().emit_clock() {
+            self.pulse_1.borrow_mut().frame_clock(&clock);
+            self.pulse_2.borrow_mut().frame_clock(&clock);
+            self.triangle.borrow_mut().frame_clock(&clock);
+        }
+
+        if total_cpu_cycles % 2 == 0 {
+            self.frame.borrow_mut().step(total_cpu_cycles);
+        }
+
         if self.frame_countdown != 0 {
             self.frame_countdown = self.frame_countdown - 1;
             if self.frame_countdown == 0 {
@@ -142,24 +157,6 @@ impl Tick for APU {
             }
         }
 
-        if total_cpu_cycles % 2 == 0 {
-            self.frame.borrow_mut().step(total_cpu_cycles);
-        }
-
-        if pending_clock {
-            if let Some(clock) = self.frame.borrow_mut().emit_clock() {
-                self.pulse_1.borrow_mut().frame_clock(&clock);
-                self.pulse_2.borrow_mut().frame_clock(&clock);
-                self.triangle.borrow_mut().frame_clock(&clock);
-            }
-        };
-
-        if total_cpu_cycles % 2 == 0 {
-            self.pulse_1.borrow_mut().decrement_timer();
-            self.pulse_2.borrow_mut().decrement_timer();
-        }
-
-        self.triangle.borrow_mut().decrement_timer();
         self.mixer.output(
             self.pulse_1.borrow_mut().get_out(),
             self.pulse_2.borrow_mut().get_out(),

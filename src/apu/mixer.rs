@@ -14,12 +14,6 @@ impl Mixer {
     //TODO - Output type - f32?
     //TODO - Wire in other channel types
     pub fn output(&mut self, pulse1: u8, pulse2: u8, triangle_out: u8) {
-        self.apu_cycles = (self.apu_cycles + 1) % 20;
-
-        if self.apu_cycles % 20 != 0 {
-            return;
-        }
-
         let pulse_out = if pulse1 + pulse2 == 0 {
             0.0
         } else {

@@ -1,11 +1,10 @@
 use std::{cell::RefCell, rc::Rc};
 
 use registers::{mask::MaskRegister, status::StatusRegister};
-use sdl2::sys::SDL_PixelType;
 
 use crate::{
     interrupt::{Interrupt, InterruptImpl},
-    io::render::{background_pixel_at, frame::Frame, palette::SYSTEM_PALLETE},
+    io::render::{frame::Frame, palette::SYSTEM_PALLETE},
     ppu::registers::ctl::ControlRegister,
     rom::{Mirroring, Rom},
     trace::PpuTrace,
@@ -13,9 +12,6 @@ use crate::{
 };
 
 pub mod registers;
-
-pub const WIDTH: usize = 256;
-pub const HEIGHT: usize = 240;
 
 pub const PPU_REGISTERS_MIRRORS_END: u16 = 0x3FFF;
 
@@ -74,7 +70,7 @@ pub struct PPU {
 }
 
 impl Tick for PPU {
-    fn tick(&mut self, total_cpu_cycles: u64) -> Result<(), String> {
+    fn tick(&mut self, _total_cpu_cycles: u64) -> Result<(), String> {
         self.total_ppu_cycles += 1;
         // self.frame_cycles += cycles as usize;
         self.new_frame = false;
@@ -224,7 +220,7 @@ impl PPU {
             ctl: ControlRegister::new(),
             status: StatusRegister::new(),
             oam_addr: 0,
-            interrupt: interrupt,
+            interrupt,
             tracing: false,
             trace: None,
 
@@ -687,8 +683,8 @@ impl PPU {
 
             self.scanline_sprites.push(SpriteShift {
                 start_x: self.oam_data[i + 3],
-                lo: lo,
-                hi: hi,
+                lo,
+                hi,
                 palette_idx: self.oam_data[i + 2] & 0b11,
             });
 
@@ -783,7 +779,7 @@ pub mod test {
         let mut ppu = ppu_empty_rom(Mirroring::Horizontal);
         ppu.write_to_ppu_addr(0x23);
         ppu.write_to_ppu_addr(0x05);
-        ppu.write_data(0x66);
+        ppu.write_data(0x66).unwrap();
 
         assert_eq!(ppu.vram[0x0305], 0x66);
     }
@@ -848,12 +844,12 @@ pub mod test {
         ppu.write_to_ppu_addr(0x24);
         ppu.write_to_ppu_addr(0x05);
 
-        ppu.write_data(0x66); //write to a
+        ppu.write_data(0x66).unwrap(); //write to a
 
         ppu.write_to_ppu_addr(0x28);
         ppu.write_to_ppu_addr(0x05);
 
-        ppu.write_data(0x77); //write to B
+        ppu.write_data(0x77).unwrap(); //write to B
 
         ppu.write_to_ppu_addr(0x20);
         ppu.write_to_ppu_addr(0x05);
@@ -878,12 +874,12 @@ pub mod test {
         ppu.write_to_ppu_addr(0x20);
         ppu.write_to_ppu_addr(0x05);
 
-        ppu.write_data(0x66); //write to A
+        ppu.write_data(0x66).unwrap(); //write to A
 
         ppu.write_to_ppu_addr(0x2C);
         ppu.write_to_ppu_addr(0x05);
 
-        ppu.write_data(0x77); //write to b
+        ppu.write_data(0x77).unwrap(); //write to b
 
         ppu.write_to_ppu_addr(0x28);
         ppu.write_to_ppu_addr(0x05);

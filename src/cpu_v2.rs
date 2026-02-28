@@ -15,7 +15,6 @@ use crate::{opp, traits::mem::Mem};
 use indoc::indoc;
 use std::cell::RefCell;
 use std::fmt;
-use std::ops::Add;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -35,7 +34,6 @@ pub struct CpuV2<T: Bus> {
     //tracing info
     tracing: bool,
     trace: Option<CpuTrace>,
-    trace_cycles: u64,
     trace_pc: u16,
     trace_reg_a: u8,
     trace_reg_x: u8,
@@ -51,7 +49,6 @@ pub struct CpuV2<T: Bus> {
     instruction_cycle: u16,
     current_op_cycle: u8,
     current_op_length: u8,
-    nmi_at_fetch: bool, //TODO - I wonder if we can get rid of this?
     op: OpCode,
     resolved_addr: u16,
     resolved_mem_read: u8,
@@ -69,7 +66,7 @@ impl<T: Bus> Cpu<T> for CpuV2<T> {
 impl<T: Bus> MOS6502<T> for CpuV2<T> {
     fn load_with_start_address(&mut self, start_address: u16, program: Vec<u8>) {
         self.mem_write_vec(start_address, &program);
-        self.mem_write_u16(0xFFFC, start_address);
+        self.mem_write_u16(0xFFFC, start_address).unwrap();
     }
 
     fn reset(&mut self) {
@@ -152,7 +149,6 @@ impl<T: Bus> Tracing for CpuV2<T> {
     ) -> CpuTraceFormatOptions {
         CpuTraceFormatOptions {
             write_break_2_flag,
-            write_cpu_cycles: write_cycles,
             reads_offset: 1,
         }
     }
@@ -224,7 +220,9 @@ impl<T: Bus> fmt::Display for CpuV2<T> {
 
 impl<T: Bus> Tick for CpuV2<T> {
     fn tick(&mut self, total_cpu_cycles: u64) -> Result<(), String> {
-        self.tick_2(total_cpu_cycles).map(|_| ())
+        self.tick_internal(total_cpu_cycles)
+            .map(|_| ())
+            .map_err(|err| self.format_fatal_error(err))
     }
 }
 
@@ -241,12 +239,11 @@ impl<T: Bus> CpuV2<T> {
             status: 0,
             program_counter: 0,
             stack_pointer: STACK_RESET,
-            bus: bus,
-            interrupt: interrupt,
+            bus,
+            interrupt,
             irq_in_progress: false,
             tracing: false,
             trace: Option::None,
-            trace_cycles: 0,
             trace_pc: 0,
             trace_sp: 0,
             trace_status: 0,
@@ -255,12 +252,11 @@ impl<T: Bus> CpuV2<T> {
             trace_reg_y: 0,
             reads: Vec::new(),
             writes: Vec::new(),
-            halt: halt,
+            halt,
 
             instruction_cycle: 0,
             current_op_cycle: 0,
             current_op_length: 0xFF,
-            nmi_at_fetch: false,
             op: **OPCODES_MAP.get(&0x00).unwrap(),
             resolved_addr: 0x0000,
             resolved_mem_read: 0x0000,
@@ -296,7 +292,7 @@ impl<T: Bus> CpuV2<T> {
         self.trace_reg_y = 0;
     }
 
-    fn tick_2(&mut self, total_cpu_cycles: u64) -> Result<bool, String> {
+    fn tick_internal(&mut self, total_cpu_cycles: u64) -> Result<bool, String> {
         //TODO - Remember to map err for this result at a higher level
 
         if !self.check_for_interrupts {
@@ -364,7 +360,7 @@ impl<T: Bus> CpuV2<T> {
         if self.halt.load(Ordering::Relaxed) {
             return Ok(true);
         }
-        self.tick_2(total_cpu_cycles) //We haven't processed anything, so we should start the next cycle
+        self.tick_internal(total_cpu_cycles) //We haven't processed anything, so we should start the next cycle
     }
 
     fn interrupt_irq(&mut self) -> Result<bool, String> {
@@ -798,7 +794,6 @@ impl<T: Bus> CpuV2<T> {
             Some(t) => {
                 let fmt_options = CpuTraceFormatOptions {
                     write_break_2_flag: true,
-                    write_cpu_cycles: true,
                     reads_offset: 1,
                 };
                 let trace_formatter = CpuTraceFormatter {
@@ -839,29 +834,15 @@ impl<T: Bus> CpuV2<T> {
         self.mem_read((STACK as u16) + (self.stack_pointer as u16))
     }
 
-    fn stack_pop_u16(&mut self) -> Result<u16, String> {
-        let lo = self.stack_pop()? as u16;
-        let hi = self.stack_pop()? as u16;
-        Result::Ok(hi << 8 | lo)
-    }
-
     fn stack_push(&mut self, data: u8) -> Result<(), String> {
         self.mem_write((STACK as u16) + (self.stack_pointer as u16), data)?;
         self.stack_pointer = self.stack_pointer.wrapping_sub(1);
         Result::Ok(())
     }
 
-    fn stack_push_u16(&mut self, data: u16) -> Result<(), String> {
-        let hi = (data >> 8) as u8;
-        let lo = (data & 0xFF) as u8;
-        self.stack_push(hi)?;
-        self.stack_push(lo)?;
-        Result::Ok(())
-    }
-
     fn mem_write_vec(&mut self, addr: u16, program: &Vec<u8>) {
         for i in 0..(program.len() as u16) {
-            self.mem_write(addr + i, program[i as usize]);
+            self.mem_write(addr + i, program[i as usize]).unwrap();
         }
     }
 
@@ -976,7 +957,7 @@ impl<T: Bus> CpuV2<T> {
                 self.resolved_mem_read = self.mem_read(self.resolved_addr)?;
             }
             1 => {
-                self.mem_write(self.resolved_addr, self.resolved_mem_read << 1);
+                self.mem_write(self.resolved_addr, self.resolved_mem_read << 1)?;
             }
             2 => {
                 let old = self.resolved_mem_read;
@@ -994,7 +975,7 @@ impl<T: Bus> CpuV2<T> {
     fn sta(&mut self) -> Result<(), String> {
         Ok(match self.current_op_cycle {
             0 => {
-                self.mem_write(self.resolved_addr, self.register_a);
+                self.mem_write(self.resolved_addr, self.register_a)?;
             }
             c => return self.unexpected_op_cycle(c),
         })
@@ -1482,7 +1463,7 @@ impl<T: Bus> CpuV2<T> {
         // }
         Ok(match self.current_op_cycle {
             0 => {
-                self.mem_read(self.resolved_addr);
+                self.mem_read(self.resolved_addr)?;
             }
             c => return self.unexpected_op_cycle(c),
         })
@@ -1491,7 +1472,7 @@ impl<T: Bus> CpuV2<T> {
     fn dop(&mut self) -> Result<(), String> {
         Ok(match self.current_op_cycle {
             0 => {
-                self.mem_read(self.resolved_addr);
+                self.mem_read(self.resolved_addr)?;
             }
             c => return self.unexpected_op_cycle(c),
         })
@@ -1500,7 +1481,7 @@ impl<T: Bus> CpuV2<T> {
     fn top(&mut self) -> Result<(), String> {
         Ok(match self.current_op_cycle {
             0 => {
-                self.mem_read(self.resolved_addr);
+                self.mem_read(self.resolved_addr)?;
             }
             c => return self.unexpected_op_cycle(c),
         })
@@ -1944,7 +1925,7 @@ impl<T: Bus> CpuV2<T> {
                 self.resolved_mem_read = self.mem_read(self.resolved_addr)?;
             }
             1 => {
-                self.mem_write(self.resolved_addr, self.resolved_mem_read >> 1);
+                self.mem_write(self.resolved_addr, self.resolved_mem_read >> 1)?;
             }
             2 => {
                 let result = self.register_a ^ (self.resolved_mem_read >> 1);
@@ -2112,22 +2093,13 @@ impl<T: Bus> CpuV2<T> {
 #[cfg(test)]
 #[allow(non_snake_case)]
 mod test {
-    use std::string;
 
-    use crate::{
-        bus::BusImpl,
-        opp::OPCODES_MAP,
-        traits::{
-            mos_65902::{BRK_INTERRUPT_ADDRESS, HALT_VALUE, STACK},
-            tick::Tick,
-        },
-    };
+    use crate::traits::mos_65902::{BRK_INTERRUPT_ADDRESS, HALT_VALUE, STACK};
 
     use super::*;
 
     struct BusStub {
         pub memory: [u8; 0x00010000],
-        pub cycles: u64,
     }
 
     impl BusStub {
@@ -2136,20 +2108,17 @@ mod test {
             mem[BRK_INTERRUPT_ADDRESS as usize] = (HALT_VALUE & 0xFF) as u8;
             mem[(BRK_INTERRUPT_ADDRESS + 1) as usize] = (HALT_VALUE >> 8) as u8;
 
-            BusStub {
-                memory: mem,
-                cycles: 0,
-            }
+            BusStub { memory: mem }
         }
 
         fn load_with_start_address(&mut self, start_address: u16, program: Vec<u8>) {
             self.mem_write_vec(start_address, &program);
-            self.mem_write_u16(0xFFFC, start_address);
+            self.mem_write_u16(0xFFFC, start_address).unwrap();
         }
 
         fn mem_write_vec(&mut self, addr: u16, program: &Vec<u8>) {
             for i in 0..(program.len() as u16) {
-                self.mem_write(addr + i, program[i as usize]);
+                self.mem_write(addr + i, program[i as usize]).unwrap();
             }
         }
     }
@@ -2171,7 +2140,6 @@ mod test {
         let formatter = CpuTraceFormatter {
             options: CpuTraceFormatOptions {
                 write_break_2_flag: false,
-                write_cpu_cycles: true,
                 reads_offset: 1,
             },
         };
@@ -2182,7 +2150,7 @@ mod test {
         let mut cpu_cycles = 0;
         let mut cpu_run_result: Result<bool, String> = Ok(false);
         while cpu_run_result == Ok(false) {
-            cpu_run_result = cpu.tick_2(cpu_cycles);
+            cpu_run_result = cpu.tick_internal(cpu_cycles);
             cpu_cycles = cpu_cycles + 1;
         }
         cpu_run_result.map(|_| cpu_cycles)
@@ -2264,7 +2232,7 @@ mod test {
 
         let mut cpu_run_result: Result<bool, String> = Ok(false);
         while cpu_run_result == Ok(false) {
-            cpu_run_result = cpu.tick_2(cpu_cycles);
+            cpu_run_result = cpu.tick_internal(cpu_cycles);
             cpu_cycles = cpu_cycles + 1;
             match cpu.take_trace() {
                 Some(trace) => tracing_callback(&trace),
@@ -2419,7 +2387,7 @@ mod test {
             Arc::new(AtomicBool::new(false)),
         );
         cpu.load_with_start_address(0x8000, vec![0x3d, 0xF1, 0xa2, 0x00]);
-        cpu.mem_write(0xa2f1, 0x03);
+        cpu.mem_write(0xa2f1, 0x03).unwrap();
         cpu.reset();
         cpu.register_a = 0xB0;
         let _ = run_cpu(&mut cpu);
@@ -2456,7 +2424,7 @@ mod test {
         );
         cpu.load_with_start_address(0x8000, vec![0x0E, 0xF1, 0xA2, 0x00]);
         cpu.reset();
-        cpu.mem_write_u16(0xA2F1, 0x43);
+        cpu.mem_write_u16(0xA2F1, 0x43).unwrap();
         let _ = run_cpu(&mut cpu);
         assert_eq!(0x86, cpu.mem_read_u16(0xA2F1).unwrap());
         assert!(NEGATIVE_FLAG & cpu.status == NEGATIVE_FLAG);
@@ -2579,7 +2547,7 @@ mod test {
         //Jump forward by 4 (to a STA instruction, check that we do in fact store)
         cpu.load_with_start_address(0x8000, vec![0x24, 0xA1]);
         cpu.reset();
-        cpu.mem_write(0xA1, 0b1001_0110);
+        cpu.mem_write(0xA1, 0b1001_0110).unwrap();
         cpu.register_a = 0b0110_1001;
         let _ = run_cpu(&mut cpu);
         assert!(cpu.status & ZERO_FLAG == ZERO_FLAG);
@@ -2598,7 +2566,7 @@ mod test {
         //Jump forward by 4 (to a STA instruction, check that we do in fact store)
         cpu.load_with_start_address(0x8000, vec![0x2c, 0xA1, 0x0F, 0x00]);
         cpu.reset();
-        cpu.mem_write_u16(0x0FA1, 0b0101_0110);
+        cpu.mem_write_u16(0x0FA1, 0b0101_0110).unwrap();
         cpu.register_a = 0b1110_1001;
         let _ = run_cpu(&mut cpu);
         assert!(cpu.status & ZERO_FLAG == 0);
@@ -2840,7 +2808,7 @@ mod test {
             Arc::new(AtomicBool::new(false)),
         );
         cpu.load_with_start_address(0x8000, vec![0xCD, 0xAA, 0xAA, 0x00]);
-        cpu.mem_write(0xAAAA, 10);
+        cpu.mem_write(0xAAAA, 10).unwrap();
         cpu.reset();
         cpu.register_a = 10;
         let _ = run_cpu(&mut cpu);
@@ -2858,7 +2826,7 @@ mod test {
             Arc::new(AtomicBool::new(false)),
         );
         cpu.load_with_start_address(0x8000, vec![0xCD, 0xAA, 0xAA, 0x00]);
-        cpu.mem_write(0xAAAA, 10);
+        cpu.mem_write(0xAAAA, 10).unwrap();
         cpu.reset();
         cpu.register_a = 0;
         let _ = run_cpu(&mut cpu);
@@ -2876,7 +2844,7 @@ mod test {
             Arc::new(AtomicBool::new(false)),
         );
         cpu.load_with_start_address(0x8000, vec![0xEC, 0xAA, 0xAA, 0x00]);
-        cpu.mem_write(0xAAAA, 10);
+        cpu.mem_write(0xAAAA, 10).unwrap();
         cpu.reset();
         cpu.register_x = 10;
         let _ = run_cpu(&mut cpu);
@@ -2894,7 +2862,7 @@ mod test {
             Arc::new(AtomicBool::new(false)),
         );
         cpu.load_with_start_address(0x8000, vec![0xEC, 0xAA, 0xAA, 0x00]);
-        cpu.mem_write(0xAAAA, 10);
+        cpu.mem_write(0xAAAA, 10).unwrap();
         cpu.reset();
         cpu.register_x = 0;
         let _ = run_cpu(&mut cpu);
@@ -2911,7 +2879,7 @@ mod test {
             Arc::new(AtomicBool::new(false)),
         );
         cpu.load_with_start_address(0x8000, vec![0xCC, 0xAA, 0xAA, 0x00]);
-        cpu.mem_write(0xAAAA, 10);
+        cpu.mem_write(0xAAAA, 10).unwrap();
         cpu.reset();
         cpu.register_y = 10;
         let _ = run_cpu(&mut cpu);
@@ -2929,7 +2897,7 @@ mod test {
             Arc::new(AtomicBool::new(false)),
         );
         cpu.load_with_start_address(0x8000, vec![0xCC, 0xAA, 0xAA, 0x00]);
-        cpu.mem_write(0xAAAA, 10);
+        cpu.mem_write(0xAAAA, 10).unwrap();
         cpu.reset();
         cpu.register_y = 0;
         let _ = run_cpu(&mut cpu);
@@ -2947,7 +2915,7 @@ mod test {
             Arc::new(AtomicBool::new(false)),
         );
         cpu.load_with_start_address(0x8000, vec![0xCE, 0xAA, 0xAA, 0x00]);
-        cpu.mem_write(0xAAAA, 0);
+        cpu.mem_write(0xAAAA, 0).unwrap();
         cpu.reset();
         let _ = run_cpu(&mut cpu);
         assert_eq!(cpu.mem_read(0xAAAA).unwrap(), 0xFF);
@@ -2999,7 +2967,7 @@ mod test {
         );
         cpu.load_with_start_address(0x8000, vec![0x4D, 0xA4, 0xBA, 0x00]);
         cpu.reset();
-        cpu.mem_write(0xBAA4, 0b1001_1100);
+        cpu.mem_write(0xBAA4, 0b1001_1100).unwrap();
         cpu.register_a = 0b0001_0111;
         let _ = run_cpu(&mut cpu);
 
@@ -3018,7 +2986,7 @@ mod test {
         );
         cpu.load_with_start_address(0x8000, vec![0x4D, 0xA4, 0xBA, 0x00]);
         cpu.reset();
-        cpu.mem_write(0xBAA4, 0b1001_0111);
+        cpu.mem_write(0xBAA4, 0b1001_0111).unwrap();
         cpu.register_a = 0b1001_0111;
         let _ = run_cpu(&mut cpu);
 
@@ -3037,7 +3005,7 @@ mod test {
         );
         cpu.load_with_start_address(0x8000, vec![0xEE, 0xA4, 0xBA, 0x00]);
         cpu.reset();
-        cpu.mem_write(0xBAA4, 250);
+        cpu.mem_write(0xBAA4, 250).unwrap();
         let _ = run_cpu(&mut cpu);
 
         let value = cpu.mem_read(0xBAA4).unwrap();
@@ -3073,9 +3041,9 @@ mod test {
             Arc::new(AtomicBool::new(false)),
         );
         cpu.load_with_start_address(0x8000, vec![0x4C, 0xAB, 0xBC]);
-        cpu.mem_write(0xBCAB, 0xE8); // INX
-        cpu.mem_write(0xBCAC, 0xE8); // INX
-        cpu.mem_write(0xBCAD, 0x00); // BRK
+        cpu.mem_write(0xBCAB, 0xE8).unwrap(); // INX
+        cpu.mem_write(0xBCAC, 0xE8).unwrap(); // INX
+        cpu.mem_write(0xBCAD, 0x00).unwrap(); // BRK
         cpu.reset();
         let _ = run_cpu(&mut cpu);
 
@@ -3091,11 +3059,11 @@ mod test {
             Arc::new(AtomicBool::new(false)),
         );
         cpu.load_with_start_address(0x8000, vec![0x6C, 0xAB, 0xBC]); // JMP 0xBCAB
-        cpu.mem_write(0xBCAB, 0x01); // Lo of real jump location
-        cpu.mem_write(0xBCAC, 0x02); // Hi of real jump location
-        cpu.mem_write(0x0201, 0xE8); // INX
-        cpu.mem_write(0x0202, 0xE8); // INX
-        cpu.mem_write(0x0203, 0x00); // BRK
+        cpu.mem_write(0xBCAB, 0x01).unwrap(); // Lo of real jump location
+        cpu.mem_write(0xBCAC, 0x02).unwrap(); // Hi of real jump location
+        cpu.mem_write(0x0201, 0xE8).unwrap(); // INX
+        cpu.mem_write(0x0202, 0xE8).unwrap(); // INX
+        cpu.mem_write(0x0203, 0x00).unwrap(); // BRK
         cpu.reset();
         let _ = run_cpu(&mut cpu);
 
@@ -3112,8 +3080,8 @@ mod test {
         );
         cpu.load_with_start_address(0x8000, vec![0x6C, 0xAB, 0xBC]);
 
-        cpu.mem_write(0xBCAB, 0x01); // Lo of real jump location
-        cpu.mem_write(0xBCAC, 0x02); // Hi of real jump location
+        cpu.mem_write(0xBCAB, 0x01).unwrap(); // Lo of real jump location
+        cpu.mem_write(0xBCAC, 0x02).unwrap(); // Hi of real jump location
 
         //increment x, branch if negative else loop back
         cpu.mem_write_vec(0x0201, &vec![0xE8, 0x30, 0x04, 0x6C, 0xAB, 0xBC, 0x00]);
@@ -3133,9 +3101,9 @@ mod test {
         );
         bus.borrow_mut()
             .load_with_start_address(0x8000, vec![0x20, 0xAB, 0xBC]);
-        bus.borrow_mut().mem_write(0xBCAB, 0xE8); // INX
-        bus.borrow_mut().mem_write(0xBCAC, 0xE8); // INX
-        bus.borrow_mut().mem_write(0xBCAD, 0x00); // BRK
+        bus.borrow_mut().mem_write(0xBCAB, 0xE8).unwrap(); // INX
+        bus.borrow_mut().mem_write(0xBCAC, 0xE8).unwrap(); // INX
+        bus.borrow_mut().mem_write(0xBCAD, 0x00).unwrap(); // BRK
         cpu.reset();
         let _ = run_cpu(&mut cpu);
         assert_eq!(STACK_RESET.wrapping_sub(5) as u8, cpu.stack_pointer); // 2 (jsr) + 3 (brk)
@@ -3204,7 +3172,7 @@ mod test {
         );
         cpu.load_with_start_address(0x8000, vec![0x4E, 0xF1, 0xA2, 0x00]);
         cpu.reset();
-        cpu.mem_write_u16(0xA2F1, 0x43);
+        cpu.mem_write_u16(0xA2F1, 0x43).unwrap();
         let _ = run_cpu(&mut cpu);
         assert_eq!(0x21, cpu.mem_read_u16(0xA2F1).unwrap());
         assert!(NEGATIVE_FLAG & cpu.status == 0);
@@ -3223,7 +3191,7 @@ mod test {
         cpu.load_with_start_address(0x8000, vec![0x0D, 0xF1, 0xA2, 0x00]);
         cpu.reset();
         cpu.register_a = 0b1010_0010;
-        cpu.mem_write_u16(0xA2F1, 0b0011_1010);
+        cpu.mem_write_u16(0xA2F1, 0b0011_1010).unwrap();
         let _ = run_cpu(&mut cpu);
         assert_eq!(0b1011_1010, cpu.register_a);
         assert!(NEGATIVE_FLAG & cpu.status == NEGATIVE_FLAG);
@@ -3273,7 +3241,7 @@ mod test {
         );
         cpu.load_with_start_address(0x8000, vec![0x68, 0x00]);
         cpu.reset();
-        cpu.stack_push(0x87);
+        cpu.stack_push(0x87).unwrap();
         let _ = run_cpu(&mut cpu);
         assert_eq!(0x87, cpu.register_a);
         assert!(NEGATIVE_FLAG & cpu.status == NEGATIVE_FLAG);
@@ -3308,7 +3276,7 @@ mod test {
         );
         cpu.load_with_start_address(0x8000, vec![0x28, 0x00]);
         cpu.reset();
-        cpu.stack_push(0x87);
+        cpu.stack_push(0x87).unwrap();
         let _ = run_cpu(&mut cpu);
         assert_eq!(0x87 & !BREAK_FLAG | BREAK2_FLAG, cpu.status);
     }
@@ -3356,7 +3324,7 @@ mod test {
         );
         cpu.load_with_start_address(0x8000, vec![0x2E, 0xAA, 0xAA, 0x00]);
         cpu.reset();
-        cpu.mem_write_u16(0xAAAA, 0b0001_0010);
+        cpu.mem_write_u16(0xAAAA, 0b0001_0010).unwrap();
         let _ = run_cpu(&mut cpu);
         assert_eq!(0b0010_0100, cpu.mem_read_u16(0xAAAA).unwrap());
         assert!(cpu.status & CARRY_FLAG == 0);
@@ -3393,7 +3361,7 @@ mod test {
         );
         cpu.load_with_start_address(0x8000, vec![0x6E, 0xAA, 0xAA, 0x00]);
         cpu.reset();
-        cpu.mem_write_u16(0xAAAA, 0b1001_0011);
+        cpu.mem_write_u16(0xAAAA, 0b1001_0011).unwrap();
         let _ = run_cpu(&mut cpu);
         assert_eq!(0b0100_1001, cpu.mem_read_u16(0xAAAA).unwrap());
         assert!(cpu.status & CARRY_FLAG == CARRY_FLAG);
@@ -3411,8 +3379,8 @@ mod test {
         );
         cpu.load_with_start_address(0x8000, vec![0x00]); //Break immediately, which will take us to 0xAABB
         cpu.reset();
-        cpu.mem_write_u16(BRK_INTERRUPT_ADDRESS, 0xAABB); //So we don't quit immediately
-        cpu.mem_write_u16(0x0000, HALT_VALUE); //Store the HALT value at 0x0000
+        cpu.mem_write_u16(BRK_INTERRUPT_ADDRESS, 0xAABB).unwrap(); //So we don't quit immediately
+        cpu.mem_write_u16(0x0000, HALT_VALUE).unwrap(); //Store the HALT value at 0x0000
         cpu.mem_write_vec(
             0xAABB,
             &vec![
@@ -3445,8 +3413,8 @@ mod test {
         );
         cpu.load_with_start_address(0x8000, vec![0x00, 0x00]); //First 0x00 takes us to 0xAABB, second exits program
         cpu.reset();
-        cpu.mem_write_u16(BRK_INTERRUPT_ADDRESS, 0xAABB); //So we don't quit immediately
-        cpu.mem_write_u16(0x0000, HALT_VALUE); //Store the HALT value at 0x0000
+        cpu.mem_write_u16(BRK_INTERRUPT_ADDRESS, 0xAABB).unwrap(); //So we don't quit immediately
+        cpu.mem_write_u16(0x0000, HALT_VALUE).unwrap(); //Store the HALT value at 0x0000
         cpu.mem_write_vec(
             0xAABB,
             &vec![
@@ -3473,9 +3441,9 @@ mod test {
         );
         bus.borrow_mut()
             .load_with_start_address(0x8000, vec![0x20, 0xAB, 0xBC, 0xE8]);
-        bus.borrow_mut().mem_write(0xBCAB, 0xE8); // INX
-        bus.borrow_mut().mem_write(0xBCAC, 0xE8); // INX
-        bus.borrow_mut().mem_write(0xBCAD, 0x60); // RTS, what we are testing
+        bus.borrow_mut().mem_write(0xBCAB, 0xE8).unwrap(); // INX
+        bus.borrow_mut().mem_write(0xBCAC, 0xE8).unwrap(); // INX
+        bus.borrow_mut().mem_write(0xBCAD, 0x60).unwrap(); // RTS, what we are testing
         cpu.reset();
         let _ = run_cpu(&mut cpu);
 
@@ -3713,8 +3681,8 @@ mod test {
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
         );
-        cpu.mem_write(0x00e4, 0xa1);
-        cpu.mem_write(0x00e5, 0xdd);
+        cpu.mem_write(0x00e4, 0xa1).unwrap();
+        cpu.mem_write(0x00e5, 0xdd).unwrap();
         cpu.load_with_start_address(0x8000, vec![0x81, 0xe0, 0x00]);
         cpu.reset();
         cpu.register_x = 0x04;
@@ -3731,8 +3699,8 @@ mod test {
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
         );
-        cpu.mem_write(0x00e0, 0xa1);
-        cpu.mem_write(0x00e1, 0xdd);
+        cpu.mem_write(0x00e0, 0xa1).unwrap();
+        cpu.mem_write(0x00e1, 0xdd).unwrap();
         cpu.load_with_start_address(0x8000, vec![0x91, 0xe0, 0x00]);
         cpu.reset();
         cpu.register_y = 0x04;
@@ -3986,7 +3954,7 @@ mod test {
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
         );
-        cpu.mem_write(0x00a1, 240);
+        cpu.mem_write(0x00a1, 240).unwrap();
         cpu.load_with_start_address(0x8000, vec![0xa5, 0xa1, 0x00]);
         cpu.reset();
         let _ = run_cpu(&mut cpu);
@@ -4001,7 +3969,7 @@ mod test {
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
         );
-        cpu.mem_write(0x00a1, 240);
+        cpu.mem_write(0x00a1, 240).unwrap();
         cpu.load_with_start_address(0x8000, vec![0xb5, 0x9f, 0x00]);
         cpu.reset();
         cpu.register_x = 2;
@@ -4017,7 +3985,7 @@ mod test {
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
         );
-        cpu.mem_write(0xdda1, 0xf0);
+        cpu.mem_write(0xdda1, 0xf0).unwrap();
         cpu.load_with_start_address(0x8000, vec![0xad, 0xa1, 0xdd, 0x00]);
         cpu.reset();
         let _ = run_cpu(&mut cpu);
@@ -4032,7 +4000,7 @@ mod test {
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
         );
-        cpu.mem_write(0xdda1, 0xf0);
+        cpu.mem_write(0xdda1, 0xf0).unwrap();
         cpu.load_with_start_address(0x8000, vec![0xbd, 0x90, 0xdd, 0x00]);
         cpu.reset();
         cpu.register_x = 0x11;
@@ -4048,7 +4016,7 @@ mod test {
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
         );
-        cpu.mem_write(0xdda1, 0xf0);
+        cpu.mem_write(0xdda1, 0xf0).unwrap();
         cpu.load_with_start_address(0x8000, vec![0xb9, 0x90, 0xdd, 0x00]);
         cpu.reset();
         cpu.register_y = 0x11;
@@ -4064,9 +4032,9 @@ mod test {
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
         );
-        cpu.mem_write(0x00e4, 0xa1);
-        cpu.mem_write(0x00e5, 0xdd);
-        cpu.mem_write(0xdda1, 0xf0);
+        cpu.mem_write(0x00e4, 0xa1).unwrap();
+        cpu.mem_write(0x00e5, 0xdd).unwrap();
+        cpu.mem_write(0xdda1, 0xf0).unwrap();
         cpu.load_with_start_address(0x8000, vec![0xa1, 0xe0, 0x00]);
         cpu.reset();
         cpu.register_x = 0x04;
@@ -4082,9 +4050,9 @@ mod test {
             Rc::new(RefCell::new(InterruptImpl::new())),
             Arc::new(AtomicBool::new(false)),
         );
-        cpu.mem_write(0x00e0, 0xa1);
-        cpu.mem_write(0x00e1, 0xdd);
-        cpu.mem_write(0xdda5, 0xf0);
+        cpu.mem_write(0x00e0, 0xa1).unwrap();
+        cpu.mem_write(0x00e1, 0xdd).unwrap();
+        cpu.mem_write(0xdda5, 0xf0).unwrap();
         cpu.load_with_start_address(0x8000, vec![0xb1, 0xe0, 0x00]);
         cpu.reset();
         cpu.register_y = 0x04;

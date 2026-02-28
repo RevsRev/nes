@@ -231,7 +231,7 @@ mod test {
     use clap::error::Result;
     use once_cell::sync::Lazy;
     use regex::Regex;
-    use ringbuf::{HeapProducer, HeapRb, Producer};
+    use ringbuf::HeapRb;
 
     use crate::apu::APU;
     use crate::bus::BusImpl;
@@ -312,11 +312,11 @@ mod test {
         let mut result: Vec<String> = Vec::new();
 
         // nes.setDebug(true);
-        nes.bus.borrow_mut().mem_write(100, 0xA2);
-        nes.bus.borrow_mut().mem_write(101, 0x01);
-        nes.bus.borrow_mut().mem_write(102, 0xCA);
-        nes.bus.borrow_mut().mem_write(103, 0x88);
-        nes.bus.borrow_mut().mem_write(104, 0x00);
+        nes.bus.borrow_mut().mem_write(100, 0xA2).unwrap();
+        nes.bus.borrow_mut().mem_write(101, 0x01).unwrap();
+        nes.bus.borrow_mut().mem_write(102, 0xCA).unwrap();
+        nes.bus.borrow_mut().mem_write(103, 0x88).unwrap();
+        nes.bus.borrow_mut().mem_write(104, 0x00).unwrap();
 
         nes.cpu.set_program_counter(0x64);
         nes.cpu.set_register_a(1);
@@ -374,15 +374,15 @@ mod test {
         let mut nes = construct_nes(rom, &halt);
         let mut result: Vec<String> = Vec::new();
 
-        nes.bus.borrow_mut().mem_write(100, 0x11);
-        nes.bus.borrow_mut().mem_write(101, 0x33);
+        nes.bus.borrow_mut().mem_write(100, 0x11).unwrap();
+        nes.bus.borrow_mut().mem_write(101, 0x33).unwrap();
 
         //data
-        nes.bus.borrow_mut().mem_write(0x33, 00);
-        nes.bus.borrow_mut().mem_write(0x34, 04);
+        nes.bus.borrow_mut().mem_write(0x33, 00).unwrap();
+        nes.bus.borrow_mut().mem_write(0x34, 04).unwrap();
 
         //target cell
-        nes.bus.borrow_mut().mem_write(0x400, 0xAA);
+        nes.bus.borrow_mut().mem_write(0x400, 0xAA).unwrap();
 
         nes.cpu.set_program_counter(0x64);
         nes.cpu.set_register_y(0);
@@ -925,7 +925,7 @@ mod test {
         );
     }
 
-    fn write_nes_logs(rom_path: &str, out_path: &str, max_cycles: i64) {
+    fn write_nes_logs(rom_path: &str, out_path: &str, max_cycles: u64) {
         let file = File::create(out_path).expect("failed to create log file");
         let writer = RefCell::new(BufWriter::new(file));
 
@@ -933,6 +933,7 @@ mod test {
         let halt = Arc::new(AtomicBool::new(false));
 
         let mut nes = construct_nes(rom, &halt);
+        nes.max_master_clock = max_cycles * 3;
 
         let halt_share = halt.clone();
         let handle = thread::spawn(move || {

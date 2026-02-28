@@ -1,3 +1,3 @@
-use super::{mem::Mem, tick::Tick};
+use super::mem::Mem;
 
 pub trait Bus: Mem {}

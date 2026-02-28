@@ -3,7 +3,6 @@ use std::{cell::RefCell, rc::Rc};
 use crate::{
     interrupt::{Interrupt, InterruptImpl},
     trace::FrameTrace,
-    traits::tick::Tick,
 };
 
 const MODE: u8 = 0b1000_0000;

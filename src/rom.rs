@@ -85,10 +85,10 @@ impl Rom {
 
         Ok(Rom {
             prg_rom: raw[prg_rom_start..(prg_rom_start + prg_rom_size)].to_vec(),
-            chr_rom: chr_rom,
+            chr_rom,
             prg_ram: vec![0; 0x2000],
-            mapper: mapper,
-            screen_mirroring: screen_mirroring,
+            mapper,
+            screen_mirroring,
             allow_chr_writes: allow_chr_rom_writes,
         })
     }

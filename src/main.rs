@@ -117,12 +117,9 @@ fn main() {
 
     let ring_buffer = HeapRb::<f32>::new(8192);
     let (producer, mut consumer) = ring_buffer.split();
-    // let mut sound_frame = SoundFrame::new(producer);
     let halt = Arc::new(AtomicBool::new(false));
 
     let gameloop_callback = move |ppu: &PPU, _: &APU, joypad: &mut Joypad| {
-        // io::audio::sound(&mut sound_frame, apu);
-
         texture.update(None, &ppu.frame.data, 256 * 3).unwrap();
         canvas.copy(&texture, None, None).unwrap();
         canvas.present();
@@ -190,7 +187,6 @@ fn main() {
         cpu_formatter: CpuTraceFormatter {
             options: CpuTraceFormatOptions {
                 write_break_2_flag: true,
-                write_cpu_cycles: true,
                 reads_offset: if args.version == 2 { 1 } else { 0 },
             },
         },

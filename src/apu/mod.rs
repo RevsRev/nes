@@ -1,4 +1,4 @@
-use std::{cell::RefCell, future::pending, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
 use ringbuf::HeapProducer;
 
@@ -8,14 +8,14 @@ use crate::{
             dmc::DmcChannel,
             noise::NoiseChannel,
             square::SquareChannel,
-            sweep::SweepChangeMethod::{ONES_COMPLIMENT, TWOS_COMPLIMENT},
+            sweep::SweepChangeMethod::{OnesCompliment, TwosCompliment},
             triangle::TriangleChannel,
         },
         mixer::Mixer,
         registers::{frame::FrameCounter, status::Status},
     },
     interrupt::{Interrupt, InterruptImpl},
-    trace::{ApuTrace, PulseTrace},
+    trace::ApuTrace,
     traits::tick::Tick,
 };
 
@@ -37,7 +37,6 @@ pub struct APU {
 
     cpu_cycles: u8,
     frame_countdown: u8,
-    jitter: u64,
     sequencer_cycles: u16,
     tracing: bool,
     trace: Option<ApuTrace>,
@@ -45,8 +44,8 @@ pub struct APU {
 
 impl APU {
     pub fn new(producer: HeapProducer<f32>, interrupt: Rc<RefCell<InterruptImpl>>) -> Self {
-        let pulse_1 = Rc::new(RefCell::new(SquareChannel::new(ONES_COMPLIMENT)));
-        let pulse_2 = Rc::new(RefCell::new(SquareChannel::new(TWOS_COMPLIMENT)));
+        let pulse_1 = Rc::new(RefCell::new(SquareChannel::new(OnesCompliment)));
+        let pulse_2 = Rc::new(RefCell::new(SquareChannel::new(TwosCompliment)));
         let triangle = Rc::new(RefCell::new(TriangleChannel::new()));
         let noise = Rc::new(RefCell::new(NoiseChannel::new()));
         let dmc = Rc::new(RefCell::new(DmcChannel::new()));
@@ -68,10 +67,9 @@ impl APU {
             dmc: dmc.clone(),
             status,
             frame: frame.clone(),
-            interrupt: interrupt,
+            interrupt,
             mixer: Mixer::new(producer),
             cpu_cycles: 0,
-            jitter: 0,
             frame_countdown: 0,
             sequencer_cycles: 0,
             tracing: false,

@@ -2,7 +2,6 @@ use crate::{
     opp::{AddressingMode, OpCode, OpCodeBehaviour},
     traits::mos_65902::BREAK2_FLAG,
 };
-use std::fmt;
 
 pub struct NesTrace {
     pub master_clock: u64,
@@ -57,7 +56,6 @@ pub struct NesTraceOptions {
 #[derive(Clone, Copy)]
 pub struct CpuTraceFormatOptions {
     pub write_break_2_flag: bool,
-    pub write_cpu_cycles: bool,
     pub reads_offset: u8,
 }
 
@@ -80,7 +78,7 @@ impl NesTraceFormatter {
         let mut out = String::new();
 
         if self.nes_options.write_cpu_cycles {
-            write!(out, "c{:<10}", nes_trace.master_clock / 3);
+            write!(out, "c{:<10}", nes_trace.master_clock / 3).unwrap();
         }
         let _ = write!(out, "{}", self.cpu_formatter.format(&nes_trace.cpu_trace));
 
@@ -112,7 +110,8 @@ impl ApuTraceFormatter {
             apu_trace.pulse_2.len_counter_enabled,
             apu_trace.frame_trace.irq_flag,
             apu_trace.frame_trace.apu_cycles,
-        );
+        )
+        .unwrap();
 
         out
     }
@@ -134,7 +133,8 @@ impl PpuTraceFormatter {
             ppu_trace.sprite_zero_y,
             ppu_trace.t,
             ppu_trace.v,
-        );
+        )
+        .unwrap();
         out
     }
 }
@@ -180,7 +180,8 @@ impl CpuTraceFormatter {
                     first_read,
                     overwritten_value,
                     registers_and_pointers
-                );
+                )
+                .unwrap();
             }
             AddressingMode::Absolute_X => {
                 let first_read = cpu_trace.reads[0 + self.options.reads_offset as usize].1;
@@ -208,7 +209,8 @@ impl CpuTraceFormatter {
                     cpu_trace.absolute_address.unwrap_or_default(),
                     overwritten_value,
                     registers_and_pointers
-                );
+                )
+                .unwrap();
             }
             AddressingMode::Absolute_Y => {
                 let first_read = cpu_trace.reads[0 + self.options.reads_offset as usize].1;
@@ -236,7 +238,8 @@ impl CpuTraceFormatter {
                     cpu_trace.absolute_address.unwrap_or_default(),
                     overwritten_value,
                     registers_and_pointers
-                );
+                )
+                .unwrap();
             }
             AddressingMode::Immediate => {
                 let first_read = cpu_trace.reads[0 + self.options.reads_offset as usize].1;
@@ -249,7 +252,8 @@ impl CpuTraceFormatter {
                     cpu_trace.op_code.mnemonic,
                     first_read,
                     registers_and_pointers
-                );
+                )
+                .unwrap();
             }
             AddressingMode::ZeroPage => {
                 let first_read = cpu_trace.reads[0 + self.options.reads_offset as usize].1;
@@ -270,7 +274,8 @@ impl CpuTraceFormatter {
                     first_read,
                     param,
                     registers_and_pointers
-                );
+                )
+                .unwrap();
             }
             AddressingMode::ZeroPage_X => {
                 let first_read = cpu_trace.reads[0 + self.options.reads_offset as usize].1;
@@ -292,7 +297,8 @@ impl CpuTraceFormatter {
                     first_read.wrapping_add(cpu_trace.register_x),
                     param,
                     registers_and_pointers
-                );
+                )
+                .unwrap();
             }
             AddressingMode::ZeroPage_Y => {
                 let first_read = cpu_trace.reads[0 + self.options.reads_offset as usize].1;
@@ -314,7 +320,8 @@ impl CpuTraceFormatter {
                     first_read.wrapping_add(cpu_trace.register_y),
                     param,
                     registers_and_pointers
-                );
+                )
+                .unwrap();
             }
             AddressingMode::Implied => {
                 write!(
@@ -324,7 +331,8 @@ impl CpuTraceFormatter {
                     cpu_trace.op_code.code,
                     cpu_trace.op_code.mnemonic,
                     registers_and_pointers
-                );
+                )
+                .unwrap();
             }
             AddressingMode::Relative => {
                 let first_read = cpu_trace.reads[0 + self.options.reads_offset as usize].1;
@@ -337,7 +345,8 @@ impl CpuTraceFormatter {
                     cpu_trace.op_code.mnemonic,
                     cpu_trace.absolute_address.unwrap_or_default(),
                     registers_and_pointers
-                );
+                )
+                .unwrap();
             }
             AddressingMode::Accumulator => {
                 write!(
@@ -347,7 +356,8 @@ impl CpuTraceFormatter {
                     cpu_trace.op_code.code,
                     cpu_trace.op_code.mnemonic,
                     registers_and_pointers
-                );
+                )
+                .unwrap();
             }
             AddressingMode::Indirect_X => {
                 let first_read = cpu_trace.reads[0 + self.options.reads_offset as usize].1;
@@ -371,7 +381,8 @@ impl CpuTraceFormatter {
                     cpu_trace.absolute_address.unwrap_or_default(),
                     read_value,
                     registers_and_pointers
-                );
+                )
+                .unwrap();
             }
             AddressingMode::Indirect_Y => {
                 let first_read = cpu_trace.reads[0 + self.options.reads_offset as usize].1;
@@ -397,7 +408,8 @@ impl CpuTraceFormatter {
                     cpu_trace.absolute_address.unwrap_or_default(),
                     read_value,
                     registers_and_pointers
-                );
+                )
+                .unwrap();
             }
             AddressingMode::Indirect => {
                 let first_read = cpu_trace.reads[0 + self.options.reads_offset as usize].1;
@@ -414,7 +426,8 @@ impl CpuTraceFormatter {
                     first_read,
                     cpu_trace.absolute_address.unwrap_or_default(),
                     registers_and_pointers
-                );
+                )
+                .unwrap();
             }
         };
         out

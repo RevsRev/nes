@@ -7,7 +7,7 @@ impl Divider {
     pub fn new(reload_value: u16) -> Self {
         Divider {
             counter: 0,
-            reload_value: reload_value,
+            reload_value,
         }
     }
 

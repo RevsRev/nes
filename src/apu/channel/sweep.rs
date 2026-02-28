@@ -1,8 +1,8 @@
 use crate::apu::registers::divider::Divider;
 
 pub enum SweepChangeMethod {
-    ONES_COMPLIMENT,
-    TWOS_COMPLIMENT,
+    OnesCompliment,
+    TwosCompliment,
 }
 
 pub struct Sweep {
@@ -30,7 +30,7 @@ impl Sweep {
 
             muted: false,
             target_period: 0,
-            change_method: change_method,
+            change_method,
         }
     }
 
@@ -54,8 +54,8 @@ impl Sweep {
 
         let signed_change_amount = match (self.negate_flag, &self.change_method) {
             (false, _) => change_amount,
-            (true, SweepChangeMethod::ONES_COMPLIMENT) => (-1 * change_amount).wrapping_sub(1),
-            (true, SweepChangeMethod::TWOS_COMPLIMENT) => -1 * change_amount,
+            (true, SweepChangeMethod::OnesCompliment) => (-1 * change_amount).wrapping_sub(1),
+            (true, SweepChangeMethod::TwosCompliment) => -1 * change_amount,
         };
 
         let raw_target = (current_period as i16).wrapping_add(signed_change_amount);

@@ -3,13 +3,11 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::apu::APU;
-use crate::interrupt::InterruptImpl;
 use crate::io::joypad::Joypad;
 use crate::ppu::{PPU, PPU_REGISTERS_MIRRORS_END};
 use crate::rom::Rom;
 use crate::traits::bus::Bus;
 use crate::traits::mem::Mem;
-use crate::traits::tick::Tick;
 
 const RAM: u16 = 0x0000;
 const RAM_MIRRORS_END: u16 = 0x1FFF;
@@ -33,10 +31,10 @@ impl BusImpl {
 
         BusImpl {
             cpu_vram: [0; 2048],
-            rom: rom,
+            rom,
             open_bus: 0,
-            ppu: ppu,
-            apu: apu,
+            ppu,
+            apu,
 
             joypad,
         }

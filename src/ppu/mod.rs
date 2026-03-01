@@ -102,8 +102,8 @@ impl Tick for PPU {
         }
 
         if self.scanline < 240 && self.frame_dots < 256 {
-            self.render_background();
-            if self.is_sprite_0_hit() {
+            let bg_pixel = self.render_background();
+            if self.is_sprite_0_hit(bg_pixel) {
                 self.status.set_sprite_0_hit(true);
             }
             self.render_sprites();
@@ -472,7 +472,7 @@ impl PPU {
         old
     }
 
-    pub fn is_sprite_0_hit(&self) -> bool {
+    pub fn is_sprite_0_hit(&self, bg_pixel: u8) -> bool {
         if !self.mask.is_rendering_enabled() {
             return false;
         }
@@ -506,7 +506,7 @@ impl PPU {
         }
 
         // self.frame.get_bg_pixel_at(x, y) != 0
-        return self.frame.get_bg_pixel_at(x, y) != 0 && self.frame.get_sprite_pixel_at(x, y) != 0;
+        return bg_pixel != 0 && self.frame.get_sprite_pixel_at(x, y) != 0;
     }
 
     pub fn nametable_address(&self) -> u16 {
@@ -624,7 +624,7 @@ impl PPU {
         };
     }
 
-    fn render_background(&mut self) {
+    fn render_background(&mut self) -> u8 {
         let bit_index = 15 - self.fine_scroll_x();
         let bg_lo = (self.bg_shift_lo >> bit_index) & 1;
         let bg_hi = (self.bg_shift_hi >> bit_index) & 1;
@@ -651,7 +651,8 @@ impl PPU {
         self.attr_shift_hi = self.attr_shift_hi << 1;
 
         self.frame
-            .set_background_pixel(self.frame_dots, self.scanline as usize, rgb, bg_value);
+            .set_background_pixel(self.frame_dots, self.scanline as usize, rgb);
+        return bg_value;
     }
 
     fn get_nametable(&self, nt_select: u8) -> usize {

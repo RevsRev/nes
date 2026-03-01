@@ -2,7 +2,6 @@ use super::{HEIGHT, WIDTH};
 
 pub struct Frame {
     pub data: Vec<u8>,
-    pub bg: Vec<u8>,
     pub sprite: Vec<u8>,
 }
 
@@ -10,16 +9,12 @@ impl Frame {
     pub fn new() -> Self {
         Frame {
             data: vec![0; (WIDTH) * (HEIGHT) * 3],
-            bg: vec![0; WIDTH * HEIGHT],
             sprite: vec![0; WIDTH * HEIGHT],
         }
     }
 
-    pub fn set_background_pixel(&mut self, x: usize, y: usize, rgb: (u8, u8, u8), bg: u8) {
+    pub fn set_background_pixel(&mut self, x: usize, y: usize, rgb: (u8, u8, u8)) {
         self.set_pixel(x, y, rgb);
-
-        let base = y * WIDTH + x;
-        self.bg[base] = bg;
     }
 
     pub fn clear_sprite_pixels(&mut self) {
@@ -42,11 +37,6 @@ impl Frame {
             self.data[base + 1] = rgb.1;
             self.data[base + 2] = rgb.2;
         }
-    }
-
-    pub fn get_bg_pixel_at(&self, x: usize, y: usize) -> u8 {
-        let base = y * WIDTH + x;
-        self.bg[base]
     }
 
     pub fn get_sprite_pixel_at(&self, x: usize, y: usize) -> u8 {

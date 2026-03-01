@@ -23,7 +23,11 @@ struct SpriteShift {
 }
 
 pub struct PPU {
-    pub rom: Rc<RefCell<Rom>>,
+    pub chr_rom: Vec<u8>,
+    pub mapper: u8,
+    pub screen_mirroring: Mirroring,
+    allow_chr_writes: bool,
+
     pub palette_table: [u8; 32],
     pub vram: [u8; 2048],
     pub oam_data: [u8; 256],
@@ -199,9 +203,19 @@ impl Mem for PPU {
 }
 
 impl PPU {
-    pub fn new(rom: Rc<RefCell<Rom>>, interrupt: Rc<RefCell<InterruptImpl>>) -> Self {
+    pub fn new(
+        chr_rom: Vec<u8>,
+        mapper: u8,
+        screen_mirroring: Mirroring,
+        allow_chr_writes: bool,
+        interrupt: Rc<RefCell<InterruptImpl>>,
+    ) -> Self {
         PPU {
-            rom,
+            chr_rom,
+            mapper,
+            screen_mirroring,
+            allow_chr_writes,
+
             palette_table: [0; 32],
             vram: [0; 2048],
             oam_data: [0; 256],
@@ -282,7 +296,7 @@ impl PPU {
         let read = match addr {
             0x0000..=0x1FFF => {
                 let result = self.internal_data_buf;
-                self.internal_data_buf = self.rom.borrow().chr_rom[addr as usize];
+                self.internal_data_buf = self.chr_rom[addr as usize];
                 result
             }
             0x2000..=0x2FFF => {
@@ -306,7 +320,7 @@ impl PPU {
         let addr = self.v;
         match addr {
             0x0000..=0x1FFF => {
-                retval = Result::Ok(self.rom.borrow_mut().write_to_chr_rom(addr as usize, value));
+                retval = Result::Ok(self.write_to_chr_rom(addr as usize, value));
             }
             0x2000..=0x2FFF => {
                 retval = Result::Ok(self.vram[self.mirror_vram_addr(addr) as usize]);
@@ -326,6 +340,17 @@ impl PPU {
         retval
     }
 
+    pub fn write_to_chr_rom(&mut self, addr: usize, data: u8) -> u8 {
+        if !self.allow_chr_writes {
+            return 0; //Going to ignore rather than producing a fatal error
+            // panic!("Attempt to write to chr rom space {:#04X}", addr);
+        }
+
+        let retval = self.chr_rom[addr];
+        self.chr_rom[addr] = data;
+        retval
+    }
+
     fn mirror_vram_addr(&self, addr: u16) -> u16 {
         // Horrizontal
         // A a
@@ -338,7 +363,7 @@ impl PPU {
         let mirrored_vram = addr & 0b0010_1111_1111_1111; // mirror down 0x3000-0x3eff to 0x2000 - 0x2eff
         let vram_index = mirrored_vram - 0x2000; // to vram vector
         let name_table = vram_index / 0x400;
-        match (&self.rom.borrow().screen_mirroring, name_table) {
+        match (&self.screen_mirroring, name_table) {
             (Mirroring::Vertical, 2) | (Mirroring::Vertical, 3) => vram_index - 0x800,
             (Mirroring::Horizontal, 2) => vram_index - 0x400,
             (Mirroring::Horizontal, 1) => vram_index - 0x400,
@@ -571,14 +596,14 @@ impl PPU {
                 self.pattern_lo_addr = bank + self.tile_idx * 16 + self.fine_scroll_y() as u16;
             }
             5 => {
-                self.pattern_lo = self.rom.borrow().chr_rom[self.pattern_lo_addr as usize];
+                self.pattern_lo = self.chr_rom[self.pattern_lo_addr as usize];
             }
             6 => {
                 let bank = self.ctl.bknd_pattern_addr();
                 self.pattern_hi_addr = bank + self.tile_idx * 16 + self.fine_scroll_y() as u16 + 8;
             }
             7 => {
-                self.pattern_hi = self.rom.borrow().chr_rom[self.pattern_hi_addr as usize];
+                self.pattern_hi = self.chr_rom[self.pattern_hi_addr as usize];
 
                 self.bg_shift_lo = (self.bg_shift_lo & 0xFF00) | self.pattern_lo as u16;
                 self.bg_shift_hi = (self.bg_shift_hi & 0xFF00) | self.pattern_hi as u16;
@@ -630,7 +655,7 @@ impl PPU {
     }
 
     fn get_nametable(&self, nt_select: u8) -> usize {
-        match self.rom.borrow().screen_mirroring {
+        match self.screen_mirroring {
             Mirroring::Vertical => {
                 return match nt_select {
                     0b00 | 0b11 => 0x000,
@@ -670,7 +695,7 @@ impl PPU {
 
             let bank = self.ctl.sprite_pattern_addr();
             let tile_idx = self.oam_data[i + 1] as u16;
-            let tile = &self.rom.borrow().chr_rom
+            let tile = &self.chr_rom
                 [(bank + tile_idx * 16) as usize..=(bank + tile_idx * 16 + 15) as usize];
 
             let flip_h = (self.oam_data[i + 2] >> 6) & 1 == 1;
@@ -769,7 +794,10 @@ pub mod test {
         ])
         .unwrap();
         PPU::new(
-            Rc::new(RefCell::new(rom)),
+            rom.chr_rom,
+            rom.mapper,
+            rom.screen_mirroring,
+            rom.allow_chr_writes,
             Rc::new(RefCell::new(InterruptImpl::new())),
         )
     }

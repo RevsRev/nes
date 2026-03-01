@@ -18,7 +18,10 @@ const ROM_END: u16 = 0xFFFF;
 
 pub struct BusImpl {
     cpu_vram: [u8; 2048],
-    rom: Rc<RefCell<Rom>>,
+
+    prg_rom: Vec<u8>,
+    prg_ram: Vec<u8>,
+
     open_bus: u8,
     pub ppu: Rc<RefCell<PPU>>,
     pub apu: Rc<RefCell<APU>>,
@@ -26,12 +29,18 @@ pub struct BusImpl {
 }
 
 impl BusImpl {
-    pub fn new(rom: Rc<RefCell<Rom>>, ppu: Rc<RefCell<PPU>>, apu: Rc<RefCell<APU>>) -> BusImpl {
+    pub fn new(
+        prg_rom: Vec<u8>,
+        prg_ram: Vec<u8>,
+        ppu: Rc<RefCell<PPU>>,
+        apu: Rc<RefCell<APU>>,
+    ) -> BusImpl {
         let joypad = Joypad::new();
 
         BusImpl {
             cpu_vram: [0; 2048],
-            rom,
+            prg_rom,
+            prg_ram,
             open_bus: 0,
             ppu,
             apu,
@@ -42,21 +51,21 @@ impl BusImpl {
 
     fn read_prg_rom(&self, mut addr: u16) -> u8 {
         addr -= 0x8000;
-        if self.rom.borrow().prg_rom.len() == 0x4000 && addr >= 0x4000 {
+        if self.prg_rom.len() == 0x4000 && addr >= 0x4000 {
             addr = addr % 0x4000;
         }
-        self.rom.borrow().prg_rom[addr as usize]
+        self.prg_rom[addr as usize]
     }
 
     fn read_prg_ram(&self, mut addr: u16) -> u8 {
         addr -= 0x6000;
-        self.rom.borrow().prg_ram[addr as usize]
+        self.prg_ram[addr as usize]
     }
 
-    fn write_prg_ram(&self, mut addr: u16, data: u8) -> u8 {
+    fn write_prg_ram(&mut self, mut addr: u16, data: u8) -> u8 {
         addr -= 0x6000;
-        let overwritten = self.rom.borrow().prg_ram[addr as usize];
-        self.rom.borrow_mut().prg_ram[addr as usize] = data;
+        let overwritten = self.prg_ram[addr as usize];
+        self.prg_ram[addr as usize] = data;
         overwritten
     }
 }
@@ -66,8 +75,7 @@ impl fmt::Display for BusImpl {
         write!(
             f,
             "\ncpu_vram: {:?}, \nrprg_romom: {:?}",
-            self.cpu_vram,
-            self.rom.borrow().prg_rom
+            self.cpu_vram, self.prg_rom
         )
     }
 }

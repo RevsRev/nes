@@ -63,16 +63,21 @@ where
 
     let interrupt_ppu = interrupt.clone();
     let interrupt_apu = interrupt.clone();
-    let ppu_rom = Rc::new(RefCell::new(rom));
-    let bus_rom = ppu_rom.clone();
-    let new_ppu = PPU::new(ppu_rom, interrupt_ppu);
+    let new_ppu = PPU::new(
+        rom.chr_rom,
+        rom.mapper,
+        rom.screen_mirroring,
+        rom.allow_chr_writes,
+        interrupt_ppu,
+    );
     let new_apu = APU::new(producer, interrupt_apu);
 
     let ppu = Rc::new(RefCell::new(new_ppu));
     let apu = Rc::new(RefCell::new(new_apu));
 
     let bus = Rc::new(RefCell::new(BusImpl::new(
-        bus_rom,
+        rom.prg_rom,
+        rom.prg_ram,
         ppu.clone(),
         apu.clone(),
     )));
@@ -120,9 +125,9 @@ impl<'call, T: Cpu<BusImpl>> NES<'call, T> {
             self.apu.borrow_mut().take_trace();
         }
 
-        let mut now = SystemTime::now();
+        // let mut now = SystemTime::now();
+        // let mut _master_clock_last_second: u64 = 0;
         let mut master_clock_trace = self.master_clock;
-        let mut _master_clock_last_second: u64 = 0;
 
         loop {
             if self.master_clock > self.max_master_clock {
@@ -212,10 +217,10 @@ impl<'call, T: Cpu<BusImpl>> NES<'call, T> {
                 return Ok(());
             }
 
-            if now.elapsed().unwrap().as_millis() > 1000 {
-                _master_clock_last_second = self.master_clock;
-                now = SystemTime::now();
-            }
+            // if now.elapsed().unwrap().as_millis() > 1000 {
+            //     _master_clock_last_second = self.master_clock;
+            //     now = SystemTime::now();
+            // }
 
             self.master_clock = self.master_clock + 1;
         }

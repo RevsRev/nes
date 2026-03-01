@@ -30,7 +30,7 @@ pub struct Rom {
     pub prg_ram: Vec<u8>,
     pub mapper: u8,
     pub screen_mirroring: Mirroring,
-    allow_chr_writes: bool,
+    pub allow_chr_writes: bool,
 }
 
 impl fmt::Display for Rom {
@@ -109,17 +109,6 @@ impl Rom {
             Ok(r) => r,
             Err(s) => panic!("{}", s),
         }
-    }
-
-    pub fn write_to_chr_rom(&mut self, addr: usize, data: u8) -> u8 {
-        if !self.allow_chr_writes {
-            return 0; //Going to ignore rather than producing a fatal error
-            // panic!("Attempt to write to chr rom space {:#04X}", addr);
-        }
-
-        let retval = self.chr_rom[addr];
-        self.chr_rom[addr] = data;
-        retval
     }
 }
 

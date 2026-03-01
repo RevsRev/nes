@@ -37,14 +37,14 @@ pub struct NES<'call, T: Cpu<BusImpl>> {
     pub cpu: T,
     pub ppu: Rc<RefCell<PPU>>,
     pub apu: Rc<RefCell<APU>>,
-    pub bus: Rc<RefCell<BusImpl>>,
 
     gameloop_callback: Box<dyn FnMut(&PPU, &APU, &mut Joypad) + 'call>,
+    joypad: Rc<RefCell<Joypad>>,
 }
 
 impl<'call, T: Cpu<BusImpl>> fmt::Display for NES<'call, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "\ncpu: {}, \nbus: {}", self.cpu, self.bus.borrow())
+        write!(f, "\ncpu: {}", self.cpu)
     }
 }
 
@@ -75,13 +75,18 @@ where
     let ppu = Rc::new(RefCell::new(new_ppu));
     let apu = Rc::new(RefCell::new(new_apu));
 
-    let bus = Rc::new(RefCell::new(BusImpl::new(
+    let joypad = Joypad::new();
+    let bus_joypad = Rc::new(RefCell::new(joypad));
+    let nes_joypad = bus_joypad.clone();
+
+    let bus = BusImpl::new(
         rom.prg_rom,
         rom.prg_ram,
         ppu.clone(),
         apu.clone(),
-    )));
-    let mut cpu = CpuV2::new(Rc::clone(&bus), interrupt_cpu, halt);
+        bus_joypad,
+    );
+    let mut cpu = CpuV2::new(bus, interrupt_cpu, halt);
     ppu.borrow_mut().set_tracing(tracing != TracingMode::None);
     apu.borrow_mut().set_tracing(tracing != TracingMode::None);
     cpu.set_tracing(tracing != TracingMode::None);
@@ -93,11 +98,11 @@ where
         cpu,
         ppu,
         apu,
-        bus,
         master_clock,
         max_master_clock: 0xFFFFFFFFFFFFFFFF,
         tracing,
         trace: None,
+        joypad: nes_joypad,
         gameloop_callback: Box::from(gameloop_callback),
     }
 }
@@ -209,7 +214,7 @@ impl<'call, T: Cpu<BusImpl>> NES<'call, T> {
                 (self.gameloop_callback)(
                     &self.ppu.borrow_mut(),
                     &self.apu.borrow_mut(),
-                    &mut self.bus.borrow_mut().joypad,
+                    &mut self.joypad.borrow_mut(),
                 )
             }
 
@@ -240,6 +245,7 @@ mod test {
 
     use crate::apu::APU;
     use crate::bus::BusImpl;
+    use crate::cpu_v2::CpuV2;
     use crate::io::joypad::Joypad;
     use crate::ppu::PPU;
     use crate::rom::{self, Rom};
@@ -286,7 +292,7 @@ mod test {
         reader.lines().filter_map(Result::ok).collect()
     }
 
-    fn construct_nes(rom: Rom, halt: &Arc<AtomicBool>) -> NES<'_, impl Cpu<BusImpl>> {
+    fn construct_nes(rom: Rom, halt: &Arc<AtomicBool>) -> NES<'_, CpuV2<BusImpl>> {
         //rust doesn't like polymorphism at runtime, so switch here to run different tests :(
         return nes_with_cpu_v2(
             rom,
@@ -317,11 +323,11 @@ mod test {
         let mut result: Vec<String> = Vec::new();
 
         // nes.setDebug(true);
-        nes.bus.borrow_mut().mem_write(100, 0xA2).unwrap();
-        nes.bus.borrow_mut().mem_write(101, 0x01).unwrap();
-        nes.bus.borrow_mut().mem_write(102, 0xCA).unwrap();
-        nes.bus.borrow_mut().mem_write(103, 0x88).unwrap();
-        nes.bus.borrow_mut().mem_write(104, 0x00).unwrap();
+        nes.cpu.mem_write(100, 0xA2).unwrap();
+        nes.cpu.mem_write(101, 0x01).unwrap();
+        nes.cpu.mem_write(102, 0xCA).unwrap();
+        nes.cpu.mem_write(103, 0x88).unwrap();
+        nes.cpu.mem_write(104, 0x00).unwrap();
 
         nes.cpu.set_program_counter(0x64);
         nes.cpu.set_register_a(1);
@@ -379,15 +385,15 @@ mod test {
         let mut nes = construct_nes(rom, &halt);
         let mut result: Vec<String> = Vec::new();
 
-        nes.bus.borrow_mut().mem_write(100, 0x11).unwrap();
-        nes.bus.borrow_mut().mem_write(101, 0x33).unwrap();
+        nes.cpu.mem_write(100, 0x11).unwrap();
+        nes.cpu.mem_write(101, 0x33).unwrap();
 
         //data
-        nes.bus.borrow_mut().mem_write(0x33, 00).unwrap();
-        nes.bus.borrow_mut().mem_write(0x34, 04).unwrap();
+        nes.cpu.mem_write(0x33, 00).unwrap();
+        nes.cpu.mem_write(0x34, 04).unwrap();
 
         //target cell
-        nes.bus.borrow_mut().mem_write(0x400, 0xAA).unwrap();
+        nes.cpu.mem_write(0x400, 0xAA).unwrap();
 
         nes.cpu.set_program_counter(0x64);
         nes.cpu.set_register_y(0);

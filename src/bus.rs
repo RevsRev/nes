@@ -25,7 +25,7 @@ pub struct BusImpl {
     open_bus: u8,
     pub ppu: Rc<RefCell<PPU>>,
     pub apu: Rc<RefCell<APU>>,
-    pub joypad: Joypad,
+    pub joypad: Rc<RefCell<Joypad>>,
 }
 
 impl BusImpl {
@@ -34,9 +34,8 @@ impl BusImpl {
         prg_ram: Vec<u8>,
         ppu: Rc<RefCell<PPU>>,
         apu: Rc<RefCell<APU>>,
+        joypad: Rc<RefCell<Joypad>>,
     ) -> BusImpl {
-        let joypad = Joypad::new();
-
         BusImpl {
             cpu_vram: [0; 2048],
             prg_rom,
@@ -109,7 +108,7 @@ impl Mem for BusImpl {
             0x4015 => self.apu.borrow_mut().read_status(),
 
             0x4016 => {
-                let read = self.joypad.read();
+                let read = self.joypad.borrow_mut().read();
                 let ret_val = (read & 0x01) | (self.open_bus & 0xFE);
                 Result::Ok(ret_val)
             }
@@ -296,7 +295,7 @@ impl Mem for BusImpl {
             }
             0x4017 => Result::Ok(self.apu.borrow_mut().write_to_frame_counter(data)),
 
-            0x4016 => Result::Ok(self.joypad.write(data)),
+            0x4016 => Result::Ok(self.joypad.borrow_mut().write(data)),
 
             PRG_RAM_START..=PRG_RAM_END => Result::Ok(self.write_prg_ram(addr, data)),
 

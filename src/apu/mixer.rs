@@ -58,7 +58,7 @@ impl Mixer {
 
             self.last_output
         };
-        self.producer.push(sample).unwrap();
+        let _ = self.producer.push(sample);
     }
 
     pub fn add_output(&mut self, output: f32) {
